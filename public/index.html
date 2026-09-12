@@ -11,11 +11,24 @@
     border-bottom: 1px solid var(--line);
     position: sticky; top: 0; background: var(--paper); z-index: 10;
   }
-  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; gap: 16px; }
   .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 1.3rem; font-weight: 600; }
   .brand .mark { width: 34px; height: 34px; border-radius: 9px; background: #142033; color: #e3ac4c; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; }
   .nav-links { display: flex; gap: 26px; font-weight: 600; font-size: 0.92rem; }
   .nav-links a { text-decoration: none; }
+  .nav-right { display: flex; align-items: center; gap: 10px; }
+  .menu-toggle {
+    display: none; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--paper-raised); color: var(--ink); align-items: center; justify-content: center;
+    font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+  }
+  .mobile-menu {
+    display: none; flex-direction: column; border-bottom: 1px solid var(--line); background: var(--paper);
+  }
+  .mobile-menu a {
+    padding: 14px 24px; font-weight: 600; text-decoration: none; border-top: 1px solid var(--line); font-size: 0.95rem;
+  }
+  .mobile-menu.open { display: flex; }
 
   .hero { padding: 72px 0 56px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
   .hero .eyebrow { color: var(--pass); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.78rem; }
@@ -70,6 +83,7 @@
     .hero { grid-template-columns: 1fr; }
     .grid-3, .grid-2, .pricing { grid-template-columns: 1fr; }
     .nav-links { display: none; }
+    .menu-toggle { display: flex; }
     .flow { flex-direction: column; }
     .flow-step { border-right: none; border-bottom: 1px dashed var(--line); }
   }
@@ -86,9 +100,34 @@
       <a href="#admin">For Schools</a>
       <a href="#pricing">Pricing</a>
     </nav>
-    <a class="btn btn-primary btn-sm" href="app.html">Open Learnza</a>
+    <div class="nav-right">
+      <a class="btn btn-primary btn-sm" href="app.html">Open Learnza</a>
+      <button class="menu-toggle" id="menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
+    </div>
   </div>
+  <nav class="mobile-menu" id="mobile-menu">
+    <a href="#learn">Learn</a>
+    <a href="#departments">Departments</a>
+    <a href="#admin">For Schools</a>
+    <a href="#pricing">Pricing</a>
+  </nav>
 </header>
+<script>
+  (function () {
+    const toggle = document.getElementById('menu-toggle');
+    const menu = document.getElementById('mobile-menu');
+    toggle.addEventListener('click', () => {
+      const open = menu.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? '✕' : '☰';
+    });
+    menu.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => {
+      menu.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.textContent = '☰';
+    }));
+  })();
+</script>
 
 <section class="hero container" style="border-top:none;">
   <div>
