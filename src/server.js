@@ -9,11 +9,16 @@ const libraryRoutes = require('./routes/library');
 const groupsRoutes = require('./routes/groups');
 const assessmentsRoutes = require('./routes/assessments');
 const adminRoutes = require('./routes/admin');
+const billingRoutes = require('./routes/billing');
+const aiTeacherRoutes = require('./routes/aiTeacher');
 
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+// `verify` stashes the raw body bytes on the request so payment-webhook signature
+// checks (HMAC over the exact bytes sent) work even though we still want express
+// to parse JSON for every other route.
+app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -23,6 +28,8 @@ app.use('/api', libraryRoutes);
 app.use('/api', groupsRoutes);
 app.use('/api', assessmentsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api', aiTeacherRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

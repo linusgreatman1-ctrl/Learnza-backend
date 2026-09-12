@@ -5,7 +5,8 @@ const prisma = require('./db');
 async function main() {
   const existing = await prisma.school.findFirst();
   if (existing) {
-    console.log('Database already seeded, skipping.');
+    console.log('Database already seeded, skipping full seed.');
+    await backfillDemoSubscription();
     return;
   }
 
@@ -60,6 +61,18 @@ async function main() {
       matricNumber: 'ECOE/23/CSC/041',
       departmentId: csc.id,
       schoolId: school.id,
+    },
+  });
+
+  // Demo account carries an active subscription so visitors can try the paid AI
+  // Teacher / recorded-lecture features without a real payment.
+  await prisma.subscription.create({
+    data: {
+      userId: student.id,
+      plan: 'YEARLY',
+      status: 'ACTIVE',
+      startedAt: new Date(),
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -178,6 +191,33 @@ async function main() {
   console.log('Admin login:    admin@edocoe.edu.ng / Admin@123');
   console.log('Lecturer login: lecturer@edocoe.edu.ng / Lecturer@123');
   console.log('Student login:  student@edocoe.edu.ng / Student@123');
+}
+
+// Runs even when the rest of the seed is skipped (production already has data), so a
+// redeploy after adding the Subscription model still gives the demo student an active
+// plan to show off AI Teacher / recorded lectures.
+async function backfillDemoSubscription() {
+  const demoStudent = await prisma.user.findUnique({ where: { email: 'student@edocoe.edu.ng' } });
+  if (!demoStudent) return;
+  const existingSub = await prisma.subscription.findUnique({ where: { userId: demoStudent.id } });
+  if (existingSub && existingSub.status === 'ACTIVE' && existingSub.expiresAt > new Date()) return;
+
+  await prisma.subscription.upsert({
+    where: { userId: demoStudent.id },
+    create: {
+      userId: demoStudent.id,
+      plan: 'YEARLY',
+      status: 'ACTIVE',
+      startedAt: new Date(),
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
+    update: {
+      status: 'ACTIVE',
+      startedAt: new Date(),
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
+  });
+  console.log('Backfilled an active demo subscription for student@edocoe.edu.ng');
 }
 
 if (require.main === module) {

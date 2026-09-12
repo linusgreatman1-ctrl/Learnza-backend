@@ -40,6 +40,37 @@ model User {
   assessmentsMade Assessment[]   @relation("AssessmentAuthor")
   submissions    Submission[]
   activityLogs   ActivityLog[]
+  subscription   Subscription?
+  payments       Payment[]
+  aiTeacherSessions AiTeacherSession[]
+}
+
+model Subscription {
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String    @unique
+  plan          String    // MONTHLY | YEARLY
+  status        String    // PENDING | ACTIVE | EXPIRED | CANCELLED
+  startedAt     DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  payments      Payment[]
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  user           User          @relation(fields: [userId], references: [id])
+  userId         String
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String?
+  provider       String        // PAYSTACK | FLUTTERWAVE
+  reference      String        @unique
+  plan           String        // MONTHLY | YEARLY
+  amountKobo     Int
+  status         String        // PENDING | SUCCESS | FAILED
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 }
 
 model Department {
@@ -67,6 +98,7 @@ model Course {
   enrollments  Enrollment[]
   groups       StudyGroup[]
   assessments  Assessment[]
+  aiTeacherSessions AiTeacherSession[]
 
   @@unique([departmentId, code])
 }
@@ -187,4 +219,33 @@ model ActivityLog {
   action    String
   detail    String?
   createdAt DateTime @default(now())
+}
+
+// Interactive AI Teacher: an LLM-generated lesson plan (sections with narration +
+// whiteboard text + an optional check question), walked through turn by turn, with
+// student interrupts and a final AI-graded assessment. Requires an active subscription.
+model AiTeacherSession {
+  id          String            @id @default(cuid())
+  student     User              @relation(fields: [studentId], references: [id])
+  studentId   String
+  course      Course            @relation(fields: [courseId], references: [id])
+  courseId    String
+  topic       String
+  planJson    String            // JSON-encoded lesson plan: { title, sections: [{title, boardText, speechText, checkQuestion}] }
+  sectionIdx  Int               @default(0)
+  status      String            @default("ACTIVE") // ACTIVE | COMPLETED
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  turns       AiTeacherTurn[]
+}
+
+model AiTeacherTurn {
+  id           String           @id @default(cuid())
+  session      AiTeacherSession @relation(fields: [sessionId], references: [id])
+  sessionId    String
+  role         String           // TEACHER | STUDENT
+  type         String           // SECTION | INTERRUPT_QUESTION | INTERRUPT_ANSWER | CHECK_ANSWER | FEEDBACK
+  content      String
+  sectionIdx   Int?
+  createdAt    DateTime         @default(now())
 }

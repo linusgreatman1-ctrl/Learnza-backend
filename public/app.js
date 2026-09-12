@@ -19,7 +19,12 @@
       body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    if (!res.ok) {
+      const err = new Error(data.error || 'Something went wrong');
+      err.code = data.code;
+      err.status = res.status;
+      throw err;
+    }
     return data;
   }
 
@@ -138,6 +143,7 @@
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['assessments', 'CBT & Tests'],
+      ['billing', 'Subscription'],
     ],
     LECTURER: [
       ['lect-courses', 'My Courses'],
@@ -187,6 +193,8 @@
         case 'group-chat': return renderGroupChat();
         case 'assessments': return renderAssessments(false);
         case 'take-assessment': return renderTakeAssessment();
+        case 'billing': return renderBilling();
+        case 'ai-teacher-session': return renderAiTeacherSession();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
@@ -200,8 +208,21 @@
         default: view.innerHTML = '<p>Not found.</p>';
       }
     } catch (err) {
+      if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
       view.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
     }
+  }
+
+  function renderUpgradePrompt(message) {
+    view.innerHTML = `
+      <div class="card" style="padding:32px; max-width:480px; margin:40px auto; text-align:center;">
+        <span class="pill pill-accent">Learnza subscription</span>
+        <h2 style="margin:14px 0 8px;">This needs an active subscription</h2>
+        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock AI Teacher lessons, recorded lectures and live classes.')}</p>
+        <button class="btn btn-accent" id="go-upgrade-btn">See plans — ₦10,000/month</button>
+      </div>
+    `;
+    document.getElementById('go-upgrade-btn').addEventListener('click', () => navigate('billing'));
   }
 
   // ================= STUDENT =================
@@ -274,12 +295,20 @@
         </div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to courses</button>
       </div>
+      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <span class="pill pill-accent">Subscription feature</span>
+          <div style="font-weight:600; margin-top:8px;">AI Teacher — ask about any topic in this course</div>
+          <div class="meta">A real AI lecturer builds a live lesson on the spot, section by section, and answers your questions.</div>
+        </div>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
+      </div>
       <div class="card">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
             <div>
-              <div style="font-weight:600;">${esc(l.title)}</div>
-              <div class="meta">${l.isAiTeacher ? 'AI Teacher · narrated lesson' : 'Recorded lesson'}${l.videoUrl ? ' · video available' : ''}</div>
+              <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
+              <div class="meta">${l.isAiTeacher ? 'AI Teacher · narrated lesson' : 'Recorded lesson'}${l.videoUrl || (!l.locked && l.isAiTeacher) ? ' · video available' : ''}</div>
             </div>
             <span class="pill pill-accent">Lesson ${l.order}</span>
           </div>
@@ -290,14 +319,43 @@
     view.querySelectorAll('[data-open-lesson]').forEach((el) => {
       el.addEventListener('click', () => navigate('lesson-player', { courseId: course.id, lessonId: el.dataset.openLesson }));
     });
+    document.getElementById('start-ai-teacher-btn').addEventListener('click', () => {
+      const topic = prompt(`What topic in ${course.title} should the AI Teacher cover?`);
+      if (!topic || !topic.trim()) return;
+      startAiTeacherSession(course.id, topic.trim());
+    });
   }
 
-  let speechState = { spans: [], utterance: null };
+  async function startAiTeacherSession(courseId, topic) {
+    try {
+      const { session } = await api(`/courses/${courseId}/ai-teacher/sessions`, { method: 'POST', body: { topic } });
+      navigate('ai-teacher-session', { sessionId: session.id });
+    } catch (err) {
+      if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+      toast(err.message);
+    }
+  }
 
   async function renderLessonPlayer() {
     const { lessons } = await api(`/courses/${state.view.courseId}/lessons`);
     const lesson = lessons.find((l) => l.id === state.view.lessonId);
     if (!lesson) { view.innerHTML = '<p>Lesson not found.</p>'; return; }
+
+    if (lesson.locked) {
+      view.innerHTML = `
+        <div class="page-head"><h1>${esc(lesson.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button></div>
+        <div class="card" style="padding:32px; text-align:center;">
+          <span class="pill pill-accent">Subscription feature</span>
+          <h2 style="margin:14px 0 8px;">This lesson needs an active subscription</h2>
+          <p class="muted" style="margin-bottom:20px;">AI Teacher narration and recorded lectures are part of Learnza's paid plan — ₦10,000/month or ₦105,000/year.</p>
+          <button class="btn btn-accent" id="go-upgrade-btn">See plans</button>
+        </div>
+      `;
+      document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: state.view.courseId }));
+      document.getElementById('go-upgrade-btn').addEventListener('click', () => navigate('billing'));
+      return;
+    }
+
     const words = lesson.script.split(/(\s+)/);
     const scriptHtml = words.map((w, i) => `<span data-w="${i}">${esc(w)}</span>`).join('');
 
@@ -307,7 +365,7 @@
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
       </div>
       <div class="card lesson-player">
-        <span class="pill pill-accent">AI Teacher — free narrated lesson</span>
+        <span class="pill pill-accent">AI Teacher — subscriber lesson</span>
         ${lesson.videoUrl ? `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>` : ''}
         <div class="controls">
           <button class="btn btn-primary" id="play-btn">▶ Play AI narration</button>
@@ -345,6 +403,179 @@
     });
     document.getElementById('pause-btn').addEventListener('click', () => synth && synth.pause());
     document.getElementById('stop-btn').addEventListener('click', () => synth && synth.cancel());
+  }
+
+  // ================= AI TEACHER (live interactive session) =================
+
+  function speak(text) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.98;
+    window.speechSynthesis.speak(utter);
+  }
+
+  async function renderAiTeacherSession() {
+    const { session } = await api(`/ai-teacher/sessions/${state.view.sessionId}`);
+    const section = session.plan.sections[session.sectionIdx];
+    const isLast = session.sectionIdx >= session.plan.sections.length - 1;
+    const { avatarConfigured } = await api('/config').catch(() => ({ avatarConfigured: false }));
+
+    view.innerHTML = `
+      <div class="page-head">
+        <div><span class="pill pill-accent">AI Teacher — live session</span><h1 style="margin-top:8px;">${esc(session.plan.title)}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
+      </div>
+      <div class="card lesson-player">
+        <div class="meta">Section ${session.sectionIdx + 1} of ${session.plan.sections.length}${session.status === 'COMPLETED' ? ' · Completed' : ''}</div>
+        <h3 style="margin:8px 0 12px;">${esc(section.title)}</h3>
+        ${avatarConfigured ? `<div id="avatar-box" style="background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px;">
+          <button class="btn btn-ghost btn-sm" id="start-avatar-btn">🎥 Connect AI video avatar</button>
+        </div>` : ''}
+        <div class="script-text" style="white-space:pre-wrap;">${esc(section.boardText)}</div>
+        <div class="controls">
+          <button class="btn btn-primary" id="play-btn">▶ Hear the teacher</button>
+          ${session.status !== 'COMPLETED' ? `<button class="btn btn-accent" id="next-btn">${isLast ? 'Finish lesson' : 'Next section →'}</button>` : ''}
+        </div>
+
+        ${section.checkQuestion && session.status !== 'COMPLETED' ? `
+          <div class="hr"></div>
+          <div style="font-weight:600; margin-bottom:8px;">Quick check: ${esc(section.checkQuestion)}</div>
+          <div class="field"><textarea id="check-answer-input" placeholder="Type your answer…"></textarea></div>
+          <button class="btn btn-ghost btn-sm" id="check-answer-btn">Submit answer</button>
+          <div id="check-feedback" style="margin-top:10px;"></div>
+        ` : ''}
+
+        <div class="hr"></div>
+        <div style="font-weight:600; margin-bottom:8px;">Ask the AI Teacher a question</div>
+        <div id="interrupt-log" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+          ${session.turns.filter((t) => t.type === 'INTERRUPT_QUESTION' || t.type === 'INTERRUPT_ANSWER').map((t) => `
+            <div class="chat-msg" style="max-width:100%; ${t.role === 'STUDENT' ? 'align-self:flex-end; background:var(--accent-soft);' : ''}">${esc(t.content)}</div>
+          `).join('')}
+        </div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="interrupt-input" placeholder="e.g. Can you explain that differently?" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+          <button class="btn btn-primary btn-sm" id="interrupt-btn">Ask</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: session.courseId }));
+    document.getElementById('play-btn').addEventListener('click', () => speak(section.speechText));
+
+    const nextBtn = document.getElementById('next-btn');
+    if (nextBtn) nextBtn.addEventListener('click', async () => {
+      try {
+        const { done } = await api(`/ai-teacher/sessions/${session.id}/next`, { method: 'POST' });
+        if (done) toast('Lesson complete — nice work!');
+        render();
+      } catch (err) {
+        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        toast(err.message);
+      }
+    });
+
+    const checkBtn = document.getElementById('check-answer-btn');
+    if (checkBtn) checkBtn.addEventListener('click', async () => {
+      const answer = document.getElementById('check-answer-input').value.trim();
+      if (!answer) return;
+      try {
+        const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
+        document.getElementById('check-feedback').innerHTML = `<div class="pill ${result.correct ? 'pill-pass' : 'pill-danger'}">${result.correct ? 'Correct' : 'Not quite'}</div><p class="muted" style="margin-top:6px;">${esc(result.feedback)}</p>`;
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+
+    document.getElementById('interrupt-btn').addEventListener('click', async () => {
+      const input = document.getElementById('interrupt-input');
+      const question = input.value.trim();
+      if (!question) return;
+      input.value = '';
+      try {
+        await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
+        render();
+      } catch (err) {
+        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        toast(err.message);
+      }
+    });
+
+    const avatarBtn = document.getElementById('start-avatar-btn');
+    if (avatarBtn) avatarBtn.addEventListener('click', async () => {
+      try {
+        await api(`/ai-teacher/sessions/${session.id}/avatar`, { method: 'POST' });
+        toast('Avatar session started — video wiring finishes once Simli is fully connected.');
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  }
+
+  // ================= BILLING =================
+
+  async function renderBilling() {
+    const [{ active, subscription }, { paystack, flutterwave }] = await Promise.all([
+      api('/billing/status'),
+      api('/billing/providers'),
+    ]);
+    const noProvider = !paystack && !flutterwave;
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Subscription</h1></div>
+      ${active ? `
+        <div class="card" style="padding:20px; margin-bottom:20px;">
+          <span class="pill pill-pass">Active</span>
+          <p style="margin-top:10px;">Your ${esc(subscription.plan === 'YEARLY' ? 'yearly' : 'monthly')} plan is active until <strong>${new Date(subscription.expiresAt).toLocaleDateString()}</strong>.</p>
+        </div>
+      ` : `
+        <div class="card" style="padding:20px; margin-bottom:20px;">
+          <span class="pill pill-muted">No active plan</span>
+          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Teacher lessons, recorded lectures and live classes. e-Library, study groups and CBT practice stay free either way.</p>
+        </div>
+      `}
+      ${noProvider ? `<div class="hint-box" style="background:var(--danger-soft); color:var(--danger);">Payments aren't configured on this server yet — checkout will be available once a payment provider is connected.</div>` : ''}
+      <div class="pricing" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:640px;">
+        <div class="card" style="padding:22px;">
+          <div class="pill pill-accent">Monthly</div>
+          <div style="font-family:var(--font-display); font-size:1.8rem; margin:10px 0;" class="tabular">₦10,000</div>
+          <button class="btn btn-primary" data-plan="MONTHLY" ${noProvider ? 'disabled' : ''}>Subscribe monthly</button>
+        </div>
+        <div class="card" style="padding:22px;">
+          <div class="pill pill-accent">Yearly</div>
+          <div style="font-family:var(--font-display); font-size:1.8rem; margin:10px 0;" class="tabular">₦105,000</div>
+          <button class="btn btn-primary" data-plan="YEARLY" ${noProvider ? 'disabled' : ''}>Subscribe yearly</button>
+        </div>
+      </div>
+    `;
+
+    view.querySelectorAll('[data-plan]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const provider = paystack ? 'paystack' : 'flutterwave';
+        try {
+          const { checkoutUrl, reference } = await api('/billing/checkout', {
+            method: 'POST',
+            body: { plan: btn.dataset.plan, provider },
+          });
+          localStorage.setItem('vp_pending_payment_ref', reference);
+          window.location.href = checkoutUrl;
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    });
+  }
+
+  async function checkPendingPayment() {
+    const reference = localStorage.getItem('vp_pending_payment_ref');
+    if (!reference || !location.hash.includes('billing-callback')) return;
+    localStorage.removeItem('vp_pending_payment_ref');
+    try {
+      await api(`/billing/verify/${reference}`);
+      toast('Payment confirmed — subscription activated!');
+    } catch {
+      // Webhook may still be catching up; the billing page will reflect status shortly either way.
+    }
   }
 
   async function renderLibrary(isLecturer) {
@@ -835,6 +1066,10 @@
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     buildSidebar();
-    navigate(defaultScreenFor(state.user.role));
+    if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
+      checkPendingPayment().then(() => navigate('billing'));
+    } else {
+      navigate(defaultScreenFor(state.user.role));
+    }
   }
 })();

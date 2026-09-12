@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
+const { getSubscriptionStatus } = require('../subscription');
 
 const router = express.Router();
 
@@ -55,12 +56,24 @@ router.post('/courses/:id/enroll', requireAuth, requireRole('STUDENT'), async (r
 });
 
 // Lessons (AI-teacher narrated or lecturer recorded)
+// AI Teacher narration and lecturer-recorded video are paid features -- students can
+// always see what lessons exist, but the actual content (script/videoUrl) is stripped
+// unless they have an active subscription. Lecturers/admins always see everything.
 router.get('/courses/:id/lessons', requireAuth, async (req, res) => {
   const lessons = await prisma.lesson.findMany({
     where: { courseId: req.params.id },
     orderBy: { order: 'asc' },
   });
-  res.json({ lessons });
+
+  if (req.user.role !== 'STUDENT') return res.json({ lessons });
+
+  const { active } = await getSubscriptionStatus(req.user.id);
+  const shaped = lessons.map((l) => {
+    if (active) return { ...l, locked: false };
+    const { script, videoUrl, ...rest } = l;
+    return { ...rest, locked: true };
+  });
+  res.json({ lessons: shaped });
 });
 
 router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
