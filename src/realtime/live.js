@@ -70,6 +70,7 @@ function attachLiveNamespace(io) {
     });
 
     socket.on('teacher:end', async ({ liveClassId }) => {
+      if (teacherSocketByLiveClass.get(liveClassId) !== socket.id) return; // only the registered host may end it
       await endLiveClass(liveClassId);
     });
 

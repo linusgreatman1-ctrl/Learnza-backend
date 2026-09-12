@@ -561,8 +561,13 @@
     teardownLive();
     live = { isHost, liveClassId, peers: new Map(), localStream: null, socket: null };
 
-    document.getElementById('leave-btn').addEventListener('click', () => {
-      if (isHost) live.socket?.emit('teacher:end', { liveClassId });
+    document.getElementById('leave-btn').addEventListener('click', async () => {
+      // Call the REST endpoint directly rather than emitting a socket event right
+      // before disconnecting -- that emit can race the disconnect and never reach
+      // the server, leaving the class stuck "live" for students.
+      if (isHost) {
+        try { await api(`/live/${liveClassId}/end`, { method: 'POST' }); } catch {}
+      }
       teardownLive();
       navigate('course-detail', { courseId });
     });
