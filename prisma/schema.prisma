@@ -22,14 +22,17 @@ model School {
 
 model User {
   id             String    @id @default(cuid())
-  school         School    @relation(fields: [schoolId], references: [id])
-  schoolId       String
+  school         School?   @relation(fields: [schoolId], references: [id])
+  schoolId       String?   // null for individual (non-school) students
   role           String    // STUDENT | LECTURER | ADMIN
   fullName       String
   email          String    @unique
   passwordHash   String
   matricNumber   String?   // students
   staffId        String?   // lecturers / admin
+  accessCode     String?   @unique // school-issued login code for STUDENT/LECTURER (alongside email+password)
+  isIndividual   Boolean   @default(false) // true = self-registered learner, not affiliated with any school
+  status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
   createdAt      DateTime  @default(now())
@@ -58,6 +61,14 @@ model User {
   clearanceRequests  ClearanceRequest[]
   credentials    Credential[]
   hostelApplications HostelApplication[]
+  individualCourses IndividualCourse[]
+  classAttendance ClassAttendanceRecord[] @relation("ClassAttendanceStudent")
+  classAttendanceMarked ClassAttendanceRecord[] @relation("ClassAttendanceMarker")
+  assignmentsMade Assignment[] @relation("AssignmentAuthor")
+  assignmentSubmissions AssignmentSubmission[]
+  resultsMade    Result[]     @relation("ResultAuthor")
+  resultsReceived Result[]    @relation("ResultStudent")
+  notifications  Notification[]
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -150,6 +161,9 @@ model Course {
   aiTeacherSessions AiTeacherSession[]
   liveClasses  LiveClass[]
   labDemonstrations LabDemonstration[]
+  classAttendance ClassAttendanceRecord[]
+  assignments  Assignment[]
+  results      Result[]
 
   @@unique([departmentId, code])
 }
@@ -279,8 +293,10 @@ model AiTeacherSession {
   id          String            @id @default(cuid())
   student     User              @relation(fields: [studentId], references: [id])
   studentId   String
-  course      Course            @relation(fields: [courseId], references: [id])
-  courseId    String
+  course      Course?           @relation(fields: [courseId], references: [id])
+  courseId    String?
+  individualCourse IndividualCourse? @relation(fields: [individualCourseId], references: [id])
+  individualCourseId String?
   topic       String
   planJson    String            // JSON-encoded lesson plan: { title, sections: [{title, boardText, speechText, checkQuestion}] }
   sectionIdx  Int               @default(0)
@@ -436,4 +452,95 @@ model HostelApplication {
   roomAssigned   String?
   requestedAt    DateTime  @default(now())
   decidedAt      DateTime?
+}
+
+// A self-directed course an individual (non-school) learner creates for themselves --
+// the AI Teacher teaches it, but there is no lecturer, no department, no enrollment
+// catalog. Individual learners never see school/lecturer features at all.
+model IndividualCourse {
+  id          String   @id @default(cuid())
+  student     User     @relation(fields: [studentId], references: [id])
+  studentId   String
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  aiTeacherSessions AiTeacherSession[]
+}
+
+// Per-class daily attendance, marked by the lecturer teaching that course (distinct
+// from StaffAttendanceRecord, which is the lecturer's own self-check-in).
+model ClassAttendanceRecord {
+  id         String   @id @default(cuid())
+  course     Course   @relation(fields: [courseId], references: [id])
+  courseId   String
+  student    User     @relation("ClassAttendanceStudent", fields: [studentId], references: [id])
+  studentId  String
+  date       DateTime // truncated to midnight of the day marked
+  status     String   // PRESENT | ABSENT
+  markedBy   User     @relation("ClassAttendanceMarker", fields: [markedById], references: [id])
+  markedById String
+  createdAt  DateTime @default(now())
+
+  @@unique([courseId, studentId, date])
+}
+
+// Free-response assignment: lecturer posts it, student answers in text, lecturer
+// marks it and the score/feedback goes back to the student -- distinct from the
+// auto-graded multiple-choice Assessment/CBT flow.
+model Assignment {
+  id           String   @id @default(cuid())
+  course       Course   @relation(fields: [courseId], references: [id])
+  courseId     String
+  title        String
+  instructions String
+  dueAt        DateTime?
+  author       User     @relation("AssignmentAuthor", fields: [authorId], references: [id])
+  authorId     String
+  createdAt    DateTime @default(now())
+  submissions  AssignmentSubmission[]
+}
+
+model AssignmentSubmission {
+  id           String     @id @default(cuid())
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  assignmentId String
+  student      User       @relation(fields: [studentId], references: [id])
+  studentId    String
+  answerText   String
+  submittedAt  DateTime   @default(now())
+  status       String     @default("SUBMITTED") // SUBMITTED | MARKED
+  score        Int?
+  feedback     String?
+  markedAt     DateTime?
+
+  @@unique([assignmentId, studentId])
+}
+
+// A lecturer-compiled formal result (distinct from raw CBT/assignment scores) --
+// published to a student for one course/term, visible to the student and to school
+// admin. This is the "send results to students" feature, not the CBT auto-grading.
+model Result {
+  id          String   @id @default(cuid())
+  course      Course   @relation(fields: [courseId], references: [id])
+  courseId    String
+  student     User     @relation("ResultStudent", fields: [studentId], references: [id])
+  studentId   String
+  author      User     @relation("ResultAuthor", fields: [authorId], references: [id])
+  authorId    String
+  term        String   // e.g. "First Semester 2026"
+  score       Int
+  grade       String?
+  remark      String?
+  publishedAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  title     String
+  body      String
+  link      String?  // a frontend screen name to navigate to on click
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }

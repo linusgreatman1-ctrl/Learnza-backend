@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const { notify } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -58,6 +59,7 @@ router.post('/admin/transcript-requests/:id/issue', requireAuth, requireRole('AD
     where: { id: req.params.id },
     data: { status: 'ISSUED', issuedAt: new Date() },
   });
+  await notify(request.studentId, 'Transcript issued', 'Your official transcript is ready to view.', 'digital-id');
   res.json({ request });
 });
 
@@ -94,6 +96,7 @@ router.post('/admin/clearance-requests/:id/decide', requireAuth, requireRole('AD
     where: { id: req.params.id },
     data: { status, note: note || null, decidedAt: new Date() },
   });
+  await notify(request.studentId, 'Clearance update', status === 'CLEARED' ? 'You have been cleared.' : `Clearance denied${note ? `: ${note}` : ''}.`, 'digital-id');
   res.json({ request });
 });
 
@@ -126,10 +129,12 @@ router.get('/admin/hostel-applications', requireAuth, requireRole('ADMIN'), asyn
 });
 
 router.post('/admin/hostel-applications/:id/approve', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const roomAssigned = req.body.roomAssigned || 'To be confirmed';
   const application = await prisma.hostelApplication.update({
     where: { id: req.params.id },
-    data: { status: 'APPROVED', roomAssigned: req.body.roomAssigned || 'To be confirmed', decidedAt: new Date() },
+    data: { status: 'APPROVED', roomAssigned, decidedAt: new Date() },
   });
+  await notify(application.studentId, 'Hostel application approved', `You've been allocated: ${roomAssigned}.`, 'digital-id');
   res.json({ application });
 });
 
@@ -138,6 +143,7 @@ router.post('/admin/hostel-applications/:id/reject', requireAuth, requireRole('A
     where: { id: req.params.id },
     data: { status: 'REJECTED', decidedAt: new Date() },
   });
+  await notify(application.studentId, 'Hostel application update', 'Your hostel application was not approved.', 'digital-id');
   res.json({ application });
 });
 

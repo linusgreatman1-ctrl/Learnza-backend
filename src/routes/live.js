@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
+const { notifyMany } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -19,6 +20,10 @@ router.post('/courses/:id/live/start', requireAuth, requireRole('LECTURER', 'ADM
     data: { courseId: req.params.id, hostId: req.user.id, title: title || 'Live class' },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'START_LIVE_CLASS', liveClass.title);
+
+  const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
+  await notifyMany(students.map((s) => s.studentId), 'Live class started', liveClass.title, 'course-detail');
+
   res.json({ liveClass });
 });
 

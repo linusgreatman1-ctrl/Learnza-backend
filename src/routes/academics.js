@@ -57,6 +57,30 @@ router.post('/courses/:id/enroll', requireAuth, requireRole('STUDENT'), async (r
   res.json({ ok: true });
 });
 
+router.delete('/courses/:id/enroll', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  await prisma.enrollment.deleteMany({ where: { studentId: req.user.id, courseId: req.params.id } });
+  res.json({ ok: true });
+});
+
+router.get('/courses/:id/enrollment-count', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const count = await prisma.enrollment.count({ where: { courseId: req.params.id } });
+  res.json({ count });
+});
+
+// Lecturers can add courses within their own department; admins can add to any.
+router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const { departmentId, code, title, level, semester } = req.body;
+  if (!departmentId || !code || !title) return res.status(400).json({ error: 'Missing required fields' });
+  if (req.user.role === 'LECTURER' && departmentId !== req.user.departmentId) {
+    return res.status(403).json({ error: 'You can only add courses to your own department.' });
+  }
+  const course = await prisma.course.create({
+    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First' },
+  });
+  if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_COURSE', `${code} — ${title}`);
+  res.json({ course });
+});
+
 // Lessons (AI-teacher narrated or lecturer recorded)
 // AI Teacher narration and lecturer-recorded video are paid features -- students can
 // always see what lessons exist, but the actual content (script/videoUrl) is stripped

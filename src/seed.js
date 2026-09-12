@@ -8,6 +8,7 @@ async function main() {
     console.log('Database already seeded, skipping full seed.');
     await backfillDemoSubscription();
     await backfillSchoolLicense();
+    await backfillAccessCodes();
     return;
   }
 
@@ -53,6 +54,7 @@ async function main() {
       staffId: 'STF-014',
       departmentId: csc.id,
       schoolId: school.id,
+      accessCode: 'LECT2026',
     },
   });
 
@@ -66,6 +68,7 @@ async function main() {
       matricNumber: 'ECOE/23/CSC/041',
       departmentId: csc.id,
       schoolId: school.id,
+      accessCode: 'STUD2026',
     },
   });
 
@@ -233,6 +236,19 @@ async function backfillSchoolLicense() {
     data: { licenseStatus: 'ACTIVE', licenseExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
   });
   console.log('Backfilled a school license expiry date');
+}
+
+async function backfillAccessCodes() {
+  const demoLecturer = await prisma.user.findUnique({ where: { email: 'lecturer@edocoe.edu.ng' } });
+  if (demoLecturer && !demoLecturer.accessCode) {
+    await prisma.user.update({ where: { id: demoLecturer.id }, data: { accessCode: 'LECT2026' } });
+    console.log('Backfilled access code for demo lecturer');
+  }
+  const demoStudent = await prisma.user.findUnique({ where: { email: 'student@edocoe.edu.ng' } });
+  if (demoStudent && !demoStudent.accessCode) {
+    await prisma.user.update({ where: { id: demoStudent.id }, data: { accessCode: 'STUD2026' } });
+    console.log('Backfilled access code for demo student');
+  }
 }
 
 if (require.main === module) {

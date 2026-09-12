@@ -14,10 +14,16 @@ router.get('/courses/:id/assessments', requireAuth, async (req, res) => {
   res.json({ assessments });
 });
 
+const MAX_QUESTIONS = { PAST_QUESTION: 20, DEFAULT: 10 };
+
 router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const { title, type, durationMin, questions } = req.body;
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Title and at least one question are required' });
+  }
+  const max = MAX_QUESTIONS[type] || MAX_QUESTIONS.DEFAULT;
+  if (questions.length > max) {
+    return res.status(400).json({ error: `${type === 'PAST_QUESTION' ? 'Past question sets' : 'Tests'} can have at most ${max} questions.` });
   }
   const assessment = await prisma.assessment.create({
     data: {
@@ -99,6 +105,26 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
     assessment.questions.length
   );
   res.json({ submission, pointsEarned, newBadges });
+});
+
+// Past questions are for practice: no single-submission lock, no persisted record, no
+// gamification points -- just instant grading so a student can retry as many times as
+// they want.
+router.post('/assessments/:id/practice-submit', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const { answers } = req.body;
+  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id }, include: { questions: true } });
+  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+  if (assessment.type !== 'PAST_QUESTION') return res.status(400).json({ error: 'Only past-question sets support practice mode.' });
+
+  const answerMap = new Map((answers || []).map((a) => [a.questionId, a.choice]));
+  let score = 0;
+  const corrections = assessment.questions.map((q) => {
+    const chosen = answerMap.get(q.id);
+    const correct = chosen === q.correctIndex;
+    if (correct) score += 1;
+    return { questionId: q.id, correctIndex: q.correctIndex, chosen: chosen ?? null, correct };
+  });
+  res.json({ score, total: assessment.questions.length, corrections });
 });
 
 router.get('/students/me/progress', requireAuth, requireRole('STUDENT'), async (req, res) => {

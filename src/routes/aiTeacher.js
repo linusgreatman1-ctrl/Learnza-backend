@@ -14,45 +14,54 @@ function handleAiError(res, err) {
   return res.status(502).json({ error: err.message || 'The AI Teacher had trouble responding. Please try again.' });
 }
 
+function courseTitleOf(session) {
+  return session.course?.title || session.individualCourse?.title || session.topic;
+}
+
 router.get('/config', requireAuth, (req, res) => {
   res.json({ aiConfigured: aiTeacher.isConfigured(), avatarConfigured: simli.isConfigured() });
 });
 
-router.post(
-  '/courses/:id/ai-teacher/sessions',
-  requireAuth,
-  requireRole('STUDENT'),
-  requireActiveSubscription,
-  async (req, res) => {
-    const { topic } = req.body;
-    if (!topic || !topic.trim()) return res.status(400).json({ error: 'Tell the AI Teacher what topic to cover.' });
-    const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-    if (!course) return res.status(404).json({ error: 'Course not found' });
+async function startSession(req, res, { courseId, individualCourseId, courseTitle }) {
+  const { topic } = req.body;
+  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Tell the AI Teacher what topic to cover.' });
 
-    try {
-      const plan = await aiTeacher.generateLessonPlan({ courseTitle: course.title, topic });
-      const session = await prisma.aiTeacherSession.create({
-        data: {
-          studentId: req.user.id,
-          courseId: course.id,
-          topic,
-          planJson: JSON.stringify(plan),
-          sectionIdx: 0,
-          turns: { create: [{ role: 'TEACHER', type: 'SECTION', content: JSON.stringify(plan.sections[0]), sectionIdx: 0 }] },
-        },
-        include: { turns: true },
-      });
-      res.json({ session: { ...session, plan } });
-    } catch (err) {
-      handleAiError(res, err);
-    }
+  try {
+    const plan = await aiTeacher.generateLessonPlan({ courseTitle, topic });
+    const session = await prisma.aiTeacherSession.create({
+      data: {
+        studentId: req.user.id,
+        courseId: courseId || null,
+        individualCourseId: individualCourseId || null,
+        topic,
+        planJson: JSON.stringify(plan),
+        sectionIdx: 0,
+        turns: { create: [{ role: 'TEACHER', type: 'SECTION', content: JSON.stringify(plan.sections[0]), sectionIdx: 0 }] },
+      },
+      include: { turns: true },
+    });
+    res.json({ session: { ...session, plan } });
+  } catch (err) {
+    handleAiError(res, err);
   }
-);
+}
+
+router.post('/courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  await startSession(req, res, { courseId: course.id, courseTitle: course.title });
+});
+
+router.post('/individual-courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+  const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  await startSession(req, res, { individualCourseId: course.id, courseTitle: course.title });
+});
 
 router.get('/ai-teacher/sessions/:id', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const session = await prisma.aiTeacherSession.findUnique({
     where: { id: req.params.id },
-    include: { turns: { orderBy: { createdAt: 'asc' } }, course: true },
+    include: { turns: { orderBy: { createdAt: 'asc' } }, course: true, individualCourse: true },
   });
   if (!session || session.studentId !== req.user.id) return res.status(404).json({ error: 'Session not found' });
   res.json({ session: { ...session, plan: JSON.parse(session.planJson) } });
@@ -83,14 +92,17 @@ router.post('/ai-teacher/sessions/:id/next', requireAuth, requireRole('STUDENT')
 router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
   const { question } = req.body;
   if (!question || !question.trim()) return res.status(400).json({ error: 'Type a question first.' });
-  const session = await prisma.aiTeacherSession.findUnique({ where: { id: req.params.id }, include: { course: true } });
+  const session = await prisma.aiTeacherSession.findUnique({
+    where: { id: req.params.id },
+    include: { course: true, individualCourse: true },
+  });
   if (!session || session.studentId !== req.user.id) return res.status(404).json({ error: 'Session not found' });
   const plan = JSON.parse(session.planJson);
   const section = plan.sections[session.sectionIdx];
 
   try {
     const { answer } = await aiTeacher.answerInterrupt({
-      courseTitle: session.course.title,
+      courseTitle: courseTitleOf(session),
       topic: session.topic,
       sectionTitle: section.title,
       question,

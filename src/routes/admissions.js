@@ -1,8 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const { generateAccessCode } = require('../utils');
 
 const router = express.Router();
 
@@ -58,8 +58,10 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
   if (existingEmail) return res.status(409).json({ error: 'A user with this email already exists.' });
 
   const matricNumber = await generateMatricNumber(application.school.name, application.departmentId, application.department.code);
-  const tempPassword = crypto.randomBytes(4).toString('hex'); // 8 hex chars, easy to read aloud/relay
+  const tempPassword = generateAccessCode(8); // fallback email+password login, kept working alongside the access code
   const passwordHash = await bcrypt.hash(tempPassword, 10);
+  let accessCode = generateAccessCode();
+  while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
 
   const user = await prisma.user.create({
     data: {
@@ -70,6 +72,7 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
       matricNumber,
       departmentId: application.departmentId,
       schoolId: application.schoolId,
+      accessCode,
     },
   });
   await prisma.application.update({
@@ -77,7 +80,7 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
     data: { status: 'REGISTERED', registeredUserId: user.id },
   });
 
-  res.json({ user: { fullName: user.fullName, email: user.email, matricNumber }, tempPassword });
+  res.json({ user: { fullName: user.fullName, email: user.email, matricNumber }, accessCode, tempPassword });
 });
 
 async function generateMatricNumber(schoolName, departmentId, deptCode) {
