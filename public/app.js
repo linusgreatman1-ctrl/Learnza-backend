@@ -205,10 +205,12 @@
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
       ['admin-activity', 'Lecturer Activity'],
+      ['admin-student-activity', 'Student Activity'],
       ['admin-lab-queue', 'Digital Lab Approvals'],
       ['admin-admissions', 'Admissions'],
       ['admin-staff-records', 'Staff Records'],
       ['admin-student-requests', 'Student Requests'],
+      ['admin-hostel-allocations', 'Hostel Allocations'],
     ],
   };
 
@@ -342,12 +344,20 @@
         case 'digital-id': return renderDigitalId();
         case 'lab': return renderLab();
         case 'transcript': return renderTranscript();
+        case 'assignments': return renderStudentAssignments();
+        case 'attendance-history': return renderStudentAttendanceHistory();
+        case 'past-questions': return renderPastQuestions();
+        case 'practice-take': return renderPracticeTake();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
         case 'lect-assessments': return renderAssessments(true);
         case 'lect-assessment-results': return renderAssessmentResults();
+        case 'lect-attendance': return renderLecturerAttendance();
+        case 'lect-assignments': return renderLecturerAssignments();
+        case 'lect-assignment-submissions': return renderAssignmentSubmissions();
+        case 'lect-results': return renderLecturerResults();
         case 'staff-profile': return renderStaffProfile();
 
         case 'admin-directory': return renderAdminDirectory();
@@ -357,6 +367,8 @@
         case 'admin-admissions': return renderAdminAdmissions();
         case 'admin-staff-records': return renderAdminStaffRecords();
         case 'admin-student-requests': return renderAdminStudentRequests();
+        case 'admin-hostel-allocations': return renderAdminHostelAllocations();
+        case 'admin-student-activity': return renderAdminStudentActivity();
         default: view.innerHTML = '<p>Not found.</p>';
       }
     } catch (err) {
@@ -481,13 +493,25 @@
         navigate('course-detail', { courseId: btn.dataset.enroll });
       });
     });
+    view.querySelectorAll('[data-unenroll]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Unenroll from this course?')) return;
+        await api(`/courses/${btn.dataset.unenroll}/enroll`, { method: 'DELETE' });
+        toast('Unenrolled');
+        renderStudentCourses();
+      });
+    });
   }
 
   function courseCardHtml(c) {
     return `<div class="card course-card" data-open-course="${c.id}">
       <div class="code tabular">${esc(c.code)}</div>
       <div style="margin:4px 0 8px;">${esc(c.title)}</div>
-      <span class="pill pill-pass">${esc(c.level)}</span>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span class="pill pill-pass">${esc(c.level)}</span>
+        <button class="btn btn-ghost btn-sm" data-unenroll="${c.id}">Unenroll</button>
+      </div>
     </div>`;
   }
   function enrollCardHtml(c, enrolled) {
@@ -533,6 +557,11 @@
         </div>
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>
+      <div style="display:flex; gap:12px; margin-bottom:18px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="open-assignments-btn">📋 Assignments</button>
+        <button class="btn btn-ghost" id="open-attendance-btn">🗓️ My attendance</button>
+        <button class="btn btn-ghost" id="open-past-questions-btn">📝 Past questions practice</button>
+      </div>
       <div class="card">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
@@ -555,6 +584,9 @@
       startAiTeacherSession(course.id, topic.trim());
     });
     document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
+    document.getElementById('open-assignments-btn').addEventListener('click', () => navigate('assignments', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
+    document.getElementById('open-attendance-btn').addEventListener('click', () => navigate('attendance-history', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
+    document.getElementById('open-past-questions-btn').addEventListener('click', () => navigate('past-questions', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
     const joinLiveBtn = document.getElementById('join-live-btn');
     if (joinLiveBtn) joinLiveBtn.addEventListener('click', () => {
       navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: false, title: liveClass.title });
@@ -988,9 +1020,10 @@
   }
 
   async function renderDigitalId() {
-    const [{ courses }, { results }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
+    const [{ courses }, { results }, { results: formalResults }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
       api('/students/me/courses'),
       api('/students/me/results'),
+      api('/students/me/formal-results'),
       api('/billing/status'),
       api('/students/me/transcript-request'),
       api('/students/me/clearance-request'),
@@ -1070,6 +1103,25 @@
           </tbody>
         </table>
       </div>
+
+      <h3 style="margin:24px 0 12px; font-size:1rem;">Formal results (published by lecturers)</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Term</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
+          <tbody>
+            ${formalResults.map((r) => `
+              <tr>
+                <td class="tabular">${esc(r.course.code)}</td>
+                <td>${esc(r.term)}</td>
+                <td class="tabular">${r.score}</td>
+                <td class="tabular">${esc(r.grade || '—')}</td>
+                <td>${esc(r.remark || '—')}</td>
+                <td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">No formal results published yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
     `;
 
     const reqTranscriptBtn = document.getElementById('request-transcript-btn');
@@ -1114,6 +1166,153 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('digital-id'));
     document.getElementById('print-btn').addEventListener('click', () => window.print());
+  }
+
+  // ================= STUDENT: ASSIGNMENTS, ATTENDANCE HISTORY, PAST QUESTIONS =================
+
+  async function renderStudentAssignments() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const { assignments } = await api(`/courses/${courseId}/assignments`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Assignments — ${esc(courseTitle || '')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      </div>
+      <div class="card">
+        ${assignments.map((a) => `
+          <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
+              <div><div style="font-weight:600;">${esc(a.title)}</div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
+              ${a.mySubmission
+                ? a.mySubmission.status === 'MARKED'
+                  ? `<span class="pill pill-pass">Marked: ${a.mySubmission.score}</span>`
+                  : '<span class="pill pill-accent">Submitted — awaiting mark</span>'
+                : ''}
+            </div>
+            <p style="white-space:pre-wrap;">${esc(a.instructions)}</p>
+            ${a.mySubmission
+              ? a.mySubmission.status === 'MARKED' && a.mySubmission.feedback
+                ? `<p class="meta">Feedback: ${esc(a.mySubmission.feedback)}</p>`
+                : `<p class="meta">Your answer: ${esc(a.mySubmission.answerText)}</p>`
+              : `<form class="submit-form" data-assignment="${a.id}" style="display:flex; flex-direction:column; gap:8px; width:100%;">
+                  <textarea class="submit-answer" placeholder="Write your answer…" required></textarea>
+                  <button class="btn btn-primary btn-sm" type="submit" style="align-self:flex-start;">Submit answer</button>
+                </form>`}
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId }));
+    view.querySelectorAll('.submit-form').forEach((form) => {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          await api(`/assignments/${form.dataset.assignment}/submit`, { method: 'POST', body: { answerText: form.querySelector('.submit-answer').value } });
+          toast('Answer submitted');
+          navigate('assignments', { courseId, courseTitle, courseCode });
+        } catch (err) { toast(err.message); }
+      });
+    });
+  }
+
+  async function renderStudentAttendanceHistory() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const { records } = await api(`/courses/${courseId}/attendance/me`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>My attendance — ${esc(courseTitle || '')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      </div>
+      <div class="card">
+        ${records.map((r) => `
+          <div class="list-row">
+            <div>${new Date(r.date).toLocaleDateString()}</div>
+            <span class="pill ${r.status === 'PRESENT' ? 'pill-pass' : 'pill-danger'}">${esc(r.status)}</span>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No attendance recorded yet.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId }));
+  }
+
+  async function renderPastQuestions() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const { assessments } = await api(`/courses/${courseId}/assessments`);
+    const pastQuestionSets = assessments.filter((a) => a.type === 'PAST_QUESTION');
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Past questions — ${esc(courseTitle || '')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      </div>
+      <p class="muted" style="margin-bottom:16px;">Practice as many times as you like — these don't affect your CBT scores.</p>
+      <div class="card">
+        ${pastQuestionSets.map((a) => `
+          <div class="list-row">
+            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
+            <button class="btn btn-primary btn-sm" data-practice="${a.id}">Practice</button>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No past questions uploaded for this course yet.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId }));
+    view.querySelectorAll('[data-practice]').forEach((btn) => {
+      const a = pastQuestionSets.find((x) => x.id === btn.dataset.practice);
+      btn.addEventListener('click', () => navigate('practice-take', { assessmentId: a.id, assessmentTitle: a.title, courseId, courseTitle, courseCode }));
+    });
+  }
+
+  async function renderPracticeTake() {
+    const { assessmentId, assessmentTitle, courseId, courseTitle, courseCode } = state.view;
+    const { assessment } = await api(`/assessments/${assessmentId}`);
+    const answers = {};
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(assessmentTitle || assessment.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <p class="muted" style="margin-bottom:16px;">${assessment.questions.length} questions · practice mode — instant feedback, unlimited retries</p>
+      <div id="pq-questions">
+        ${assessment.questions.map((q, qi) => `
+          <div class="card quiz-q" data-question="${q.id}">
+            <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
+            ${q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+            <p class="pq-feedback meta" style="margin-top:8px; display:none;"></p>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-primary" id="pq-submit-btn">Check my answers</button>
+        <button class="btn btn-ghost" id="pq-retry-btn" hidden>Try again</button>
+      </div>
+      <p id="pq-score" class="meta" style="margin-top:12px;"></p>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('past-questions', { courseId, courseTitle, courseCode }));
+    view.querySelectorAll('.quiz-opt').forEach((opt) => {
+      opt.addEventListener('click', () => {
+        const q = opt.dataset.q;
+        view.querySelectorAll(`.quiz-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        answers[q] = Number(opt.dataset.opt);
+      });
+    });
+    document.getElementById('pq-submit-btn').addEventListener('click', async () => {
+      const payload = Object.entries(answers).map(([questionId, choice]) => ({ questionId, choice }));
+      try {
+        const { score, total, corrections } = await api(`/assessments/${assessmentId}/practice-submit`, { method: 'POST', body: { answers: payload } });
+        corrections.forEach((c) => {
+          const block = view.querySelector(`[data-question="${c.questionId}"]`);
+          block.querySelectorAll('.quiz-opt').forEach((opt) => {
+            const oi = Number(opt.dataset.opt);
+            opt.classList.toggle('correct', oi === c.correctIndex);
+            opt.classList.toggle('wrong', oi === c.chosen && !c.correct);
+          });
+          const fb = block.querySelector('.pq-feedback');
+          fb.style.display = 'block';
+          fb.textContent = c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.';
+        });
+        document.getElementById('pq-score').textContent = `Score: ${score} / ${total}`;
+        document.getElementById('pq-submit-btn').hidden = true;
+        document.getElementById('pq-retry-btn').hidden = false;
+      } catch (err) { toast(err.message); }
+    });
+    document.getElementById('pq-retry-btn').addEventListener('click', () => navigate('practice-take', { assessmentId, assessmentTitle, courseId, courseTitle, courseCode }));
   }
 
   // ================= DIGITAL LAB (curated + AI-generated, admin-approved) =================
@@ -1488,7 +1687,9 @@
     view.innerHTML = `
       <div class="page-head"><h1>${isLecturer ? 'Assessments' : 'CBT & Tests'}</h1></div>
       ${isLecturer ? `<button class="btn btn-accent btn-sm" id="new-assessment-btn" style="margin-bottom:18px;">+ New assessment</button>` : ''}
-      ${rows.map(({ course, assessments }) => `
+      ${rows.map(({ course, assessments: allAssessments }) => {
+        const assessments = isLecturer ? allAssessments : allAssessments.filter((a) => a.type !== 'PAST_QUESTION');
+        return `
         <div style="margin-bottom:22px;">
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
           <div class="card">
@@ -1505,7 +1706,8 @@
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>
         </div>
-      `).join('') || '<p class="muted">No courses yet.</p>'}
+      `;
+      }).join('') || '<p class="muted">No courses yet.</p>'}
     `;
     view.querySelectorAll('[data-take]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('take-assessment', { assessmentId: btn.dataset.take }));
@@ -1575,21 +1777,73 @@
 
   async function renderLecturerCourses() {
     const { department, courses } = await ensureLectCourses();
+    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
     view.innerHTML = `
-      <div class="page-head"><h1>My Courses</h1></div>
+      <div class="page-head">
+        <h1>My Courses</h1>
+        <button class="btn btn-primary btn-sm" id="add-course-btn">+ Add course</button>
+      </div>
       <p class="muted" style="margin-bottom:18px;">${department ? esc(department.name) : ''} department</p>
       <div class="grid-cards">
-        ${courses.map((c) => `
+        ${courses.map((c, i) => `
           <div class="card course-card" data-open="${c.id}">
             <div class="code tabular">${esc(c.code)}</div>
             <div style="margin:4px 0 8px;">${esc(c.title)}</div>
-            <span class="pill pill-pass">${esc(c.level)}</span>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <span class="pill pill-pass">${esc(c.level)}</span>
+              <span class="pill">${counts[i].count} enrolled</span>
+            </div>
           </div>
-        `).join('') || '<p class="muted">No courses in your department yet — ask school admin to add one.</p>'}
+        `).join('') || '<p class="muted">No courses in your department yet — add one to get started.</p>'}
       </div>
     `;
     view.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-lessons', { courseId: el.dataset.open }));
+    });
+    view.querySelector('#add-course-btn').addEventListener('click', () => openAddCourseDialog(department));
+  }
+
+  function openAddCourseDialog(department) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:14px;">Add a course</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">Department: ${department ? esc(department.name) : '—'}</p>
+      <div class="field"><label>Course code</label><input type="text" id="ac-code" placeholder="e.g. CSC 201" required></div>
+      <div class="field"><label>Course title</label><input type="text" id="ac-title" placeholder="e.g. Data Structures" required></div>
+      <div class="field"><label>Level</label><select id="ac-level"><option>NCE 1</option><option>NCE 2</option><option>NCE 3</option></select></div>
+      <div class="field"><label>Semester</label><select id="ac-semester"><option>First</option><option>Second</option></select></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="ac-save">Create course</button>
+        <button class="btn btn-ghost" id="ac-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#ac-cancel').addEventListener('click', close);
+    container.querySelector('#ac-save').addEventListener('click', async () => {
+      const code = container.querySelector('#ac-code').value.trim();
+      const title = container.querySelector('#ac-title').value.trim();
+      if (!code || !title) { toast('Course code and title are required'); return; }
+      try {
+        await api('/courses', {
+          method: 'POST',
+          body: {
+            departmentId: department.id,
+            code,
+            title,
+            level: container.querySelector('#ac-level').value,
+            semester: container.querySelector('#ac-semester').value,
+          },
+        });
+        toast('Course created');
+        close();
+        renderLecturerCourses();
+      } catch (err) { toast(err.message); }
     });
   }
 
@@ -1615,6 +1869,11 @@
         </div>
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>
+      <div style="display:flex; gap:12px; margin-bottom:22px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="open-attendance-btn">🗓️ Class attendance</button>
+        <button class="btn btn-ghost" id="open-assignments-btn">📋 Assignments</button>
+        <button class="btn btn-ghost" id="open-results-btn">📊 Student results</button>
+      </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
         <form id="lesson-form">
@@ -1636,6 +1895,9 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
     document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
+    document.getElementById('open-attendance-btn').addEventListener('click', () => navigate('lect-attendance', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
+    document.getElementById('open-assignments-btn').addEventListener('click', () => navigate('lect-assignments', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
+    document.getElementById('open-results-btn').addEventListener('click', () => navigate('lect-results', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
     document.getElementById('go-live-btn').addEventListener('click', async () => {
       const title = prompt('Title your live class:', `${course.code} live session`);
       if (!title || !title.trim()) return;
@@ -1678,6 +1940,193 @@
     });
   }
 
+  // ================= LECTURER: ATTENDANCE, ASSIGNMENTS, RESULTS =================
+
+  async function renderLecturerAttendance() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const dateStr = state.view.date || todayIso;
+    const { roster } = await api(`/courses/${courseId}/attendance?date=${dateStr}`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Class attendance — ${esc(courseTitle || '')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      </div>
+      <div class="card" style="padding:16px 20px; margin-bottom:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:8px;">
+          <span class="meta">Date</span>
+          <input type="date" id="att-date" value="${dateStr}" max="${todayIso}">
+        </label>
+      </div>
+      <div class="card">
+        ${roster.map((r) => `
+          <div class="list-row" data-student="${r.student.id}">
+            <div><div style="font-weight:600;">${esc(r.student.fullName)}</div><div class="meta tabular">${esc(r.student.matricNumber || '—')}</div></div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-sm ${r.status === 'PRESENT' ? 'btn-primary' : 'btn-ghost'}" data-mark="PRESENT">Present</button>
+              <button class="btn btn-sm ${r.status === 'ABSENT' ? 'btn-accent' : 'btn-ghost'}" data-mark="ABSENT">Absent</button>
+            </div>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No students enrolled yet.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
+    document.getElementById('att-date').addEventListener('change', (e) => {
+      navigate('lect-attendance', { courseId, courseTitle, courseCode, date: e.target.value });
+    });
+    view.querySelectorAll('[data-mark]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('[data-student]');
+        try {
+          await api(`/courses/${courseId}/attendance`, {
+            method: 'POST',
+            body: { studentId: row.dataset.student, status: btn.dataset.mark, date: dateStr },
+          });
+          navigate('lect-attendance', { courseId, courseTitle, courseCode, date: dateStr });
+        } catch (err) { toast(err.message); }
+      });
+    });
+  }
+
+  async function renderLecturerAssignments() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const { assignments } = await api(`/courses/${courseId}/assignments`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Assignments — ${esc(courseTitle || '')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      </div>
+      <div class="card" style="padding:20px; margin-bottom:22px;">
+        <h3 style="margin-bottom:12px; font-size:1rem;">Post a new assignment</h3>
+        <form id="assignment-form">
+          <div class="field"><label>Title</label><input type="text" id="asg-title" required></div>
+          <div class="field"><label>Instructions</label><textarea id="asg-instructions" required></textarea></div>
+          <div class="field"><label>Due date (optional)</label><input type="date" id="asg-due"></div>
+          <button class="btn btn-primary" type="submit">Post assignment</button>
+        </form>
+      </div>
+      <div class="card">
+        ${assignments.map((a) => `
+          <div class="list-row" data-open="${a.id}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div></div>
+            <span class="pill pill-accent">View submissions</span>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
+    document.getElementById('assignment-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('asg-title').value.trim();
+      const instructions = document.getElementById('asg-instructions').value.trim();
+      const dueAt = document.getElementById('asg-due').value || null;
+      try {
+        await api(`/courses/${courseId}/assignments`, { method: 'POST', body: { title, instructions, dueAt } });
+        toast('Assignment posted');
+        navigate('lect-assignments', { courseId, courseTitle, courseCode });
+      } catch (err) { toast(err.message); }
+    });
+    view.querySelectorAll('[data-open]').forEach((el) => {
+      const a = assignments.find((x) => x.id === el.dataset.open);
+      el.addEventListener('click', () => navigate('lect-assignment-submissions', { assignmentId: a.id, assignmentTitle: a.title, courseId, courseTitle, courseCode }));
+    });
+  }
+
+  async function renderAssignmentSubmissions() {
+    const { assignmentId, assignmentTitle, courseId, courseTitle, courseCode } = state.view;
+    const { submissions } = await api(`/assignments/${assignmentId}/submissions`);
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>${esc(assignmentTitle || 'Submissions')}</h1>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to assignments</button>
+      </div>
+      <div class="card">
+        ${submissions.map((s) => `
+          <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
+              <div><div style="font-weight:600;">${esc(s.student.fullName)}</div><div class="meta tabular">${esc(s.student.matricNumber || '—')}</div></div>
+              <span class="pill ${s.status === 'MARKED' ? 'pill-pass' : 'pill-accent'}">${s.status === 'MARKED' ? `Marked: ${s.score}` : 'Awaiting mark'}</span>
+            </div>
+            <p style="white-space:pre-wrap;">${esc(s.answerText)}</p>
+            ${s.status !== 'MARKED' ? `
+              <form class="mark-form" data-sub="${s.id}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="number" class="mark-score" placeholder="Score" style="width:90px;" required>
+                <input type="text" class="mark-feedback" placeholder="Feedback (optional)" style="flex:1; min-width:160px;">
+                <button class="btn btn-primary btn-sm" type="submit">Save mark</button>
+              </form>
+            ` : s.feedback ? `<p class="meta">Feedback: ${esc(s.feedback)}</p>` : ''}
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No submissions yet.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-assignments', { courseId, courseTitle, courseCode }));
+    view.querySelectorAll('.mark-form').forEach((form) => {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const score = form.querySelector('.mark-score').value;
+        const feedback = form.querySelector('.mark-feedback').value;
+        try {
+          await api(`/assignment-submissions/${form.dataset.sub}/mark`, { method: 'POST', body: { score, feedback } });
+          toast('Marked');
+          navigate('lect-assignment-submissions', { assignmentId, assignmentTitle, courseId, courseTitle, courseCode });
+        } catch (err) { toast(err.message); }
+      });
+    });
+  }
+
+  async function renderLecturerResults() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const [{ results }, { count }] = await Promise.all([
+      api(`/courses/${courseId}/results`),
+      api(`/courses/${courseId}/enrollment-count`),
+    ]);
+    const { roster } = await api(`/courses/${courseId}/attendance`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Student results — ${esc(courseTitle || '')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      </div>
+      <p class="muted" style="margin-bottom:18px;">${count} student${count === 1 ? '' : 's'} enrolled</p>
+      <div class="card" style="padding:20px; margin-bottom:22px;">
+        <h3 style="margin-bottom:12px; font-size:1rem;">Publish a result</h3>
+        <form id="result-form">
+          <div class="field"><label>Student</label><select id="res-student">${roster.map((r) => `<option value="${r.student.id}">${esc(r.student.fullName)} (${esc(r.student.matricNumber || '—')})</option>`).join('')}</select></div>
+          <div class="field"><label>Term</label><input type="text" id="res-term" placeholder="e.g. First Semester 2025/2026" required></div>
+          <div class="field"><label>Score</label><input type="number" id="res-score" required></div>
+          <div class="field"><label>Grade (optional)</label><input type="text" id="res-grade" placeholder="e.g. A"></div>
+          <div class="field"><label>Remark (optional)</label><input type="text" id="res-remark"></div>
+          <button class="btn btn-primary" type="submit">Publish result</button>
+        </form>
+      </div>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+          <tbody>
+            ${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results published yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
+    document.getElementById('result-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/courses/${courseId}/results`, {
+          method: 'POST',
+          body: {
+            studentId: document.getElementById('res-student').value,
+            term: document.getElementById('res-term').value.trim(),
+            score: document.getElementById('res-score').value,
+            grade: document.getElementById('res-grade').value.trim() || null,
+            remark: document.getElementById('res-remark').value.trim() || null,
+          },
+        });
+        toast('Result published');
+        navigate('lect-results', { courseId, courseTitle, courseCode });
+      } catch (err) { toast(err.message); }
+    });
+  }
+
   function openNewAssessmentDialog(courses) {
     const container = document.createElement('div');
     container.className = 'card';
@@ -1701,7 +2150,12 @@
       <h3 style="margin-bottom:14px;">New assessment</h3>
       <div class="field"><label>Course</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)}</option>`).join('')}</select></div>
       <div class="field"><label>Title</label><input type="text" id="na-title" required></div>
-      <div class="field"><label>Type</label><select id="na-type"><option>CA</option><option>Test</option><option>Mock</option><option>Assignment</option></select></div>
+      <div class="field"><label>Type</label><select id="na-type">
+        <option value="CA">CA</option><option value="Test">Test</option><option value="Mock">Mock</option>
+        <option value="Assignment">Assignment</option><option value="SEMESTER_EXAM">Semester Exam</option>
+        <option value="PAST_QUESTION">Past Question (practice)</option>
+      </select></div>
+      <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
       <div class="field"><label>Duration (minutes)</label><input type="number" id="na-duration" value="20"></div>
       <div id="na-questions">${questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
@@ -1715,10 +2169,23 @@
     document.body.appendChild(backdrop);
     document.body.appendChild(container);
 
+    function maxQuestions() {
+      return container.querySelector('#na-type').value === 'PAST_QUESTION' ? 20 : 10;
+    }
+    function updateCapNote() {
+      const max = maxQuestions();
+      container.querySelector('#na-cap-note').textContent = `Up to ${max} questions for this type.`;
+      container.querySelector('#na-add-q').disabled = container.querySelectorAll('[data-question-block]').length >= max;
+    }
+    container.querySelector('#na-type').addEventListener('change', updateCapNote);
+    updateCapNote();
+
     container.querySelector('#na-add-q').addEventListener('click', () => {
+      if (container.querySelectorAll('[data-question-block]').length >= maxQuestions()) return;
       const div = document.createElement('div');
       div.innerHTML = questionBlock(qCount++);
       container.querySelector('#na-questions').appendChild(div.firstElementChild);
+      updateCapNote();
     });
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#na-cancel').addEventListener('click', close);
@@ -1855,6 +2322,11 @@
 
   // ================= ADMIN =================
 
+  function statusPillHtml(status) {
+    const cls = status === 'ACTIVE' ? 'pill-pass' : status === 'SUSPENDED' ? 'pill-accent' : 'pill-danger';
+    return `<span class="pill ${cls}">${esc(status || 'ACTIVE')}</span>`;
+  }
+
   async function renderAdminDirectory() {
     const [{ students }, { lecturers }] = await Promise.all([api('/admin/students'), api('/admin/lecturers')]);
     view.innerHTML = `
@@ -1862,15 +2334,34 @@
       <h3 style="margin-bottom:10px; font-size:1rem;">Lecturers (${lecturers.length})</h3>
       <div class="card" style="overflow-x:auto; margin-bottom:26px;">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Staff ID</th><th>Department</th><th>Email</th></tr></thead>
-          <tbody>${lecturers.map((l) => `<tr><td>${esc(l.fullName)}</td><td class="tabular">${esc(l.staffId || '—')}</td><td>${esc(l.department ? l.department.name : '—')}</td><td>${esc(l.email)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">None yet.</td></tr>'}</tbody>
+          <thead><tr><th>Name</th><th>Staff ID</th><th>Department</th><th>Email</th><th>Status</th><th></th></tr></thead>
+          <tbody>${lecturers.map((l) => `<tr>
+            <td>${esc(l.fullName)}</td><td class="tabular">${esc(l.staffId || '—')}</td><td>${esc(l.department ? l.department.name : '—')}</td><td>${esc(l.email)}</td>
+            <td>${statusPillHtml(l.status)}</td>
+            <td style="display:flex; gap:6px; flex-wrap:wrap;">
+              ${l.status === 'SUSPENDED'
+                ? `<button class="btn btn-ghost btn-sm" data-lect-action="lift-suspension" data-id="${l.id}">Lift suspension</button>`
+                : l.status === 'DISMISSED' ? '' : `<button class="btn btn-ghost btn-sm" data-lect-action="suspend" data-id="${l.id}">Suspend</button>`}
+              ${l.status !== 'DISMISSED' ? `<button class="btn btn-ghost btn-sm" data-lect-action="dismiss" data-id="${l.id}">Dismiss</button>` : ''}
+            </td>
+          </tr>`).join('') || '<tr><td colspan="6" class="muted">None yet.</td></tr>'}</tbody>
         </table>
       </div>
       <h3 style="margin-bottom:10px; font-size:1rem;">Students (${students.length})</h3>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Matric No.</th><th>Department</th><th>Email</th><th></th></tr></thead>
-          <tbody>${students.map((s) => `<tr><td>${esc(s.fullName)}</td><td class="tabular">${esc(s.matricNumber || '—')}</td><td>${esc(s.department ? s.department.name : '—')}</td><td>${esc(s.email)}</td><td><button class="btn btn-ghost btn-sm" data-issue-credential="${s.id}" data-name="${esc(s.fullName)}">Issue credential</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">None yet.</td></tr>'}</tbody>
+          <thead><tr><th>Name</th><th>Matric No.</th><th>Department</th><th>Email</th><th>Status</th><th></th></tr></thead>
+          <tbody>${students.map((s) => `<tr>
+            <td>${esc(s.fullName)}</td><td class="tabular">${esc(s.matricNumber || '—')}</td><td>${esc(s.department ? s.department.name : '—')}</td><td>${esc(s.email)}</td>
+            <td>${statusPillHtml(s.status)}</td>
+            <td style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm" data-issue-credential="${s.id}" data-name="${esc(s.fullName)}">Issue credential</button>
+              ${s.status === 'SUSPENDED'
+                ? `<button class="btn btn-ghost btn-sm" data-stud-action="lift-suspension" data-id="${s.id}">Lift suspension</button>`
+                : s.status === 'EXPELLED' ? '' : `<button class="btn btn-ghost btn-sm" data-stud-action="suspend" data-id="${s.id}">Suspend</button>`}
+              ${s.status !== 'EXPELLED' ? `<button class="btn btn-ghost btn-sm" data-stud-action="expel" data-id="${s.id}">Expel</button>` : ''}
+            </td>
+          </tr>`).join('') || '<tr><td colspan="6" class="muted">None yet.</td></tr>'}</tbody>
         </table>
       </div>
     `;
@@ -1881,6 +2372,26 @@
         try {
           const { credential } = await api('/admin/credentials', { method: 'POST', body: { studentId: btn.dataset.issueCredential, title: title.trim() } });
           alert(`Credential issued.\n\nVerification link: ${location.origin}/verify.html?code=${credential.verifyCode}`);
+        } catch (err) { toast(err.message); }
+      });
+    });
+    view.querySelectorAll('[data-lect-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`${btn.dataset.lectAction} this lecturer?`)) return;
+        try {
+          await api(`/admin/lecturers/${btn.dataset.id}/${btn.dataset.lectAction}`, { method: 'POST' });
+          toast('Updated');
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
+    view.querySelectorAll('[data-stud-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`${btn.dataset.studAction} this student?`)) return;
+        try {
+          await api(`/admin/students/${btn.dataset.id}/${btn.dataset.studAction}`, { method: 'POST' });
+          toast('Updated');
+          render();
         } catch (err) { toast(err.message); }
       });
     });
@@ -2135,6 +2646,57 @@
     view.querySelectorAll('[data-reject-hostel]').forEach((btn) => {
       btn.addEventListener('click', async () => { await api(`/admin/hostel-applications/${btn.dataset.rejectHostel}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
     });
+  }
+
+  async function renderAdminHostelAllocations() {
+    const { allocations } = await api('/admin/hostel-allocations');
+    view.innerHTML = `
+      <div class="page-head"><h1>Hostel Allocations</h1></div>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Matric No.</th><th>Department</th><th>Room</th><th>Allocated</th></tr></thead>
+          <tbody>
+            ${allocations.map((a) => `
+              <tr>
+                <td>${esc(a.student.fullName)}</td>
+                <td class="tabular">${esc(a.student.matricNumber || '—')}</td>
+                <td>${esc(a.student.department ? a.student.department.name : '—')}</td>
+                <td class="tabular">${esc(a.roomAssigned || '—')}</td>
+                <td class="tabular">${a.decidedAt ? new Date(a.decidedAt).toLocaleDateString() : '—'}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No hostel allocations yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function renderAdminStudentActivity() {
+    const { submissions, assignmentSubmissions, results } = await api('/admin/student-activity');
+    view.innerHTML = `
+      <div class="page-head"><h1>Student Activity</h1></div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; exams</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Course</th><th>Assessment</th><th>Type</th><th>Score</th><th>Date</th></tr></thead>
+          <tbody>${submissions.map((s) => `<tr><td>${esc(s.student.fullName)}</td><td class="tabular">${esc(s.assessment.course.code)}</td><td>${esc(s.assessment.title)}</td><td>${esc(s.assessment.type)}</td><td class="tabular">${s.score}/${s.total}</td><td class="tabular">${new Date(s.submittedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">None yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Course</th><th>Assignment</th><th>Score</th><th>Submitted</th></tr></thead>
+          <tbody>${assignmentSubmissions.map((s) => `<tr><td>${esc(s.student.fullName)}</td><td class="tabular">${esc(s.assignment.course.code)}</td><td>${esc(s.assignment.title)}</td><td class="tabular">${s.score == null ? 'Unmarked' : s.score}</td><td class="tabular">${new Date(s.submittedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">None yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Formal results</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Course</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+          <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td class="tabular">${esc(r.course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">None yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
   }
 
   // ---------- boot ----------
