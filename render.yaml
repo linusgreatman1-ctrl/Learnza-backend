@@ -11,8 +11,11 @@ services:
       - key: NODE_ENV
         value: production
       # Render's free plan allows only one free-tier database per account, already
-      # in use by another project. Paste any Postgres connection string here instead
-      # (e.g. a free instance from neon.tech or supabase.com, or a paid Render database).
+      # in use by another project. Use a free Supabase Postgres project instead, and
+      # paste its SESSION POOLER connection string here (Settings > Database > Connection
+      # string > "Session pooler"). The transaction pooler hangs indefinitely on
+      # `prisma db push`, and the direct connection host isn't reachable from Render's
+      # network -- confirmed the hard way on the sibling Infopedia project.
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
