@@ -33,10 +33,18 @@
   }
 
   function toast(msg) {
+    let stack = document.getElementById('toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'toast-stack';
+      stack.style.cssText = 'position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column-reverse; gap:8px; z-index:100;';
+      document.body.appendChild(stack);
+    }
     const t = document.createElement('div');
     t.className = 'toast';
+    t.style.position = 'static';
     t.textContent = msg;
-    document.body.appendChild(t);
+    stack.appendChild(t);
     setTimeout(() => t.remove(), 3200);
   }
 
@@ -143,6 +151,7 @@
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['assessments', 'CBT & Tests'],
+      ['progress', 'My Progress'],
       ['billing', 'Subscription'],
     ],
     LECTURER: [
@@ -197,6 +206,7 @@
         case 'billing': return renderBilling();
         case 'ai-teacher-session': return renderAiTeacherSession();
         case 'live-class': return renderLiveClass();
+        case 'progress': return renderProgress();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
@@ -672,6 +682,40 @@
     }
   }
 
+  // ================= PROGRESS (points, streak, badges — no leaderboard) =================
+
+  async function renderProgress() {
+    const progress = await api('/students/me/progress');
+    view.innerHTML = `
+      <div class="page-head"><h1>My Progress</h1></div>
+      <p class="muted" style="margin-bottom:20px;">Private to you — Learnza has no leaderboard or ranking.</p>
+      <div class="grid-cards" style="margin-bottom:24px;">
+        <div class="card" style="padding:20px;">
+          <div class="muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.03em;">Points</div>
+          <div style="font-family:var(--font-display); font-size:2rem;" class="tabular">${progress.points}</div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div class="muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.03em;">Current streak</div>
+          <div style="font-family:var(--font-display); font-size:2rem;" class="tabular">${progress.currentStreak} day${progress.currentStreak === 1 ? '' : 's'}</div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div class="muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.03em;">Longest streak</div>
+          <div style="font-family:var(--font-display); font-size:2rem;" class="tabular">${progress.longestStreak} day${progress.longestStreak === 1 ? '' : 's'}</div>
+        </div>
+      </div>
+      <h3 style="margin-bottom:12px; font-size:1rem;">Badges earned</h3>
+      <div class="grid-cards">
+        ${progress.badges.map((b) => `
+          <div class="card" style="padding:18px; text-align:center;">
+            <div style="font-size:2rem;">${b.icon}</div>
+            <div style="font-weight:600; margin-top:8px;">${esc(b.name)}</div>
+            <div class="meta">${esc(b.description)}</div>
+          </div>
+        `).join('') || '<p class="muted">Take a CBT test to start earning badges.</p>'}
+      </div>
+    `;
+  }
+
   // ================= BILLING =================
 
   async function renderBilling() {
@@ -950,8 +994,9 @@
     document.getElementById('submit-btn').addEventListener('click', async () => {
       const payload = Object.entries(answers).map(([questionId, choice]) => ({ questionId, choice }));
       try {
-        const { submission } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
-        toast(`Submitted — score ${submission.score}/${submission.total}`);
+        const { submission, pointsEarned, newBadges } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
+        toast(`Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
+        (newBadges || []).forEach((b) => setTimeout(() => toast(`Badge earned: ${b.icon} ${b.name}`), 400));
         navigate('take-assessment', { assessmentId: assessment.id });
       } catch (err) { toast(err.message); }
     });

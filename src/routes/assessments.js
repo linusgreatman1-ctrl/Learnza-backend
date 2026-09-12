@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
+const gamification = require('../services/gamification.service');
 
 const router = express.Router();
 
@@ -91,7 +92,18 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
       total: assessment.questions.length,
     },
   });
-  res.json({ submission });
+
+  const { pointsEarned, newBadges } = await gamification.recordAssessmentCompletion(
+    req.user.id,
+    score,
+    assessment.questions.length
+  );
+  res.json({ submission, pointsEarned, newBadges });
+});
+
+router.get('/students/me/progress', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const progress = await gamification.getProgress(req.user.id);
+  res.json(progress);
 });
 
 // Lecturer: score sheet for an assessment
