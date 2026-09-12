@@ -1,7 +1,7 @@
 {
-  "name": "varsitypass-backend",
+  "name": "campuspass-backend",
   "version": "0.1.0",
-  "description": "VarsityPass - free learning platform for higher institution students, lecturers and school admins",
+  "description": "CampusPass - free learning platform for higher institution students, lecturers and school admins",
   "main": "src/server.js",
   "scripts": {
     "dev": "node src/server.js",
