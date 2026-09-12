@@ -168,6 +168,7 @@
       ['admin-academics', 'Departments & Courses'],
       ['admin-activity', 'Lecturer Activity'],
       ['admin-lab-queue', 'Digital Lab Approvals'],
+      ['admin-admissions', 'Admissions'],
     ],
   };
 
@@ -227,6 +228,7 @@
         case 'admin-academics': return renderAdminAcademics();
         case 'admin-activity': return renderAdminActivity();
         case 'admin-lab-queue': return renderAdminLabQueue();
+        case 'admin-admissions': return renderAdminAdmissions();
         default: view.innerHTML = '<p>Not found.</p>';
       }
     } catch (err) {
@@ -1563,6 +1565,61 @@
         </table>
       </div>
     `;
+  }
+
+  const APPLICATION_TABS = ['SUBMITTED', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'REGISTERED'];
+
+  async function renderAdminAdmissions() {
+    const statusFilter = state.view.status || 'SUBMITTED';
+    const { applications } = await api(`/admin/admissions?status=${statusFilter}`);
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Admissions</h1></div>
+      <div class="tabs" style="max-width:100%; overflow-x:auto; display:inline-flex;">
+        ${APPLICATION_TABS.map((s) => `<button class="tab-btn ${s === statusFilter ? 'active' : ''}" data-status="${s}">${s.replace('_', ' ')}</button>`).join('')}
+      </div>
+      <div style="margin-top:18px;">
+        ${applications.map((a) => `
+          <div class="card" style="padding:20px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:600;">${esc(a.fullName)}</div>
+              <div class="meta">${esc(a.email)} · ${esc(a.phone)} · ${esc(a.department.name)} · ${esc(a.level)}</div>
+              ${a.statement ? `<p class="muted" style="margin-top:8px; max-width:52ch;">${esc(a.statement)}</p>` : ''}
+              <div class="meta" style="margin-top:6px;">Applied ${new Date(a.createdAt).toLocaleDateString()}</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${a.status === 'SUBMITTED' ? `<button class="btn btn-ghost btn-sm" data-screen="${a.id}">Screen</button>` : ''}
+              ${['SUBMITTED', 'UNDER_REVIEW'].includes(a.status) ? `
+                <button class="btn btn-primary btn-sm" data-accept="${a.id}">Accept</button>
+                <button class="btn btn-ghost btn-sm" data-reject="${a.id}">Reject</button>
+              ` : ''}
+              ${a.status === 'ACCEPTED' ? `<button class="btn btn-accent btn-sm" data-register="${a.id}">Register as student</button>` : ''}
+            </div>
+          </div>
+        `).join('') || '<p class="muted">No applications here yet.</p>'}
+      </div>
+    `;
+    view.querySelectorAll('[data-status]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('admin-admissions', { status: btn.dataset.status }));
+    });
+    view.querySelectorAll('[data-screen]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/admissions/${btn.dataset.screen}/screen`, { method: 'POST' }); toast('Marked under review'); render(); });
+    });
+    view.querySelectorAll('[data-accept]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/admissions/${btn.dataset.accept}/accept`, { method: 'POST' }); toast('Accepted'); render(); });
+    });
+    view.querySelectorAll('[data-reject]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/admissions/${btn.dataset.reject}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
+    });
+    view.querySelectorAll('[data-register]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          const { user, tempPassword } = await api(`/admin/admissions/${btn.dataset.register}/register`, { method: 'POST' });
+          alert(`Student account created.\n\nName: ${user.fullName}\nMatric number: ${user.matricNumber}\nEmail: ${user.email}\nTemporary password: ${tempPassword}\n\nShare these with the student now — this password won't be shown again.`);
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
   }
 
   // ---------- boot ----------

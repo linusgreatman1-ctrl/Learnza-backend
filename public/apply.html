@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apply — Learnza</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .apply-box { width: 100%; max-width: 480px; padding: 32px; }
+  .apply-box .brand { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 4px; }
+  .confirm { text-align: center; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<div class="card apply-box">
+  <div class="brand">Learnza</div>
+  <div class="muted" style="font-size:0.85rem; margin-bottom:18px;">Apply for admission — Edo College of Education</div>
+
+  <div id="apply-error"></div>
+
+  <form id="apply-form">
+    <div class="field"><label>Full name</label><input type="text" id="ap-name" required></div>
+    <div class="field"><label>Email</label><input type="email" id="ap-email" required></div>
+    <div class="field"><label>Phone</label><input type="tel" id="ap-phone" required></div>
+    <div class="field"><label>Department</label><select id="ap-department"></select></div>
+    <div class="field"><label>Level</label>
+      <select id="ap-level"><option>NCE 1</option><option>NCE 2</option><option>NCE 3</option></select>
+    </div>
+    <div class="field"><label>Why this programme? (optional)</label><textarea id="ap-statement"></textarea></div>
+    <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Submit application</button>
+  </form>
+
+  <div id="apply-confirm" class="confirm" style="display:none;">
+    <span class="pill pill-pass" style="margin-bottom:14px;">Application received</span>
+    <p>Thanks — the school admin will review your application. You'll be contacted at the email you provided once a decision is made.</p>
+    <a class="btn btn-ghost" href="index.html" style="margin-top:16px;">Back to Learnza</a>
+  </div>
+</div>
+
+<script>
+  (function () {
+    let schoolId = null;
+    async function loadDepartments() {
+      const schoolsRes = await fetch('/api/schools');
+      const { schools } = await schoolsRes.json();
+      const school = schools[0];
+      if (!school) return;
+      schoolId = school.id;
+      const deptRes = await fetch('/api/departments?schoolId=' + school.id);
+      const { departments } = await deptRes.json();
+      document.getElementById('ap-department').innerHTML = departments
+        .map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
+    }
+    loadDepartments();
+
+    document.getElementById('apply-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorBox = document.getElementById('apply-error');
+      errorBox.innerHTML = '';
+      try {
+        const res = await fetch('/api/admissions/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            schoolId,
+            departmentId: document.getElementById('ap-department').value,
+            fullName: document.getElementById('ap-name').value,
+            email: document.getElementById('ap-email').value,
+            phone: document.getElementById('ap-phone').value,
+            level: document.getElementById('ap-level').value,
+            statement: document.getElementById('ap-statement').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Something went wrong');
+        document.getElementById('apply-form').style.display = 'none';
+        document.getElementById('apply-confirm').style.display = 'block';
+      } catch (err) {
+        errorBox.innerHTML = `<div class="error-box">${err.message}</div>`;
+      }
+    });
+  })();
+</script>
+</body>
+</html>

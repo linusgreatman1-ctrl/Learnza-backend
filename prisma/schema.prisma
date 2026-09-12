@@ -10,11 +10,12 @@ datasource db {
 // SQLite has no native enum support; Role is one of STUDENT | LECTURER | ADMIN, enforced in app code.
 
 model School {
-  id          String       @id @default(cuid())
-  name        String
-  createdAt   DateTime     @default(now())
-  departments Department[]
-  users       User[]
+  id           String        @id @default(cuid())
+  name         String
+  createdAt    DateTime      @default(now())
+  departments  Department[]
+  users        User[]
+  applications Application[]
 }
 
 model User {
@@ -47,6 +48,7 @@ model User {
   stats          UserStats?
   badges         UserBadge[]
   labDemonstrationsMade LabDemonstration[] @relation("LabDemoAuthor")
+  applicationRegistered Application? @relation("ApplicationRegisteredUser")
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -111,13 +113,14 @@ model Payment {
 }
 
 model Department {
-  id        String     @id @default(cuid())
-  school    School     @relation(fields: [schoolId], references: [id])
-  schoolId  String
-  name      String
-  code      String
-  courses   Course[]
-  users     User[]
+  id           String        @id @default(cuid())
+  school       School        @relation(fields: [schoolId], references: [id])
+  schoolId     String
+  name         String
+  code         String
+  courses      Course[]
+  users        User[]
+  applications Application[]
 
   @@unique([schoolId, code])
 }
@@ -321,4 +324,25 @@ model LabDemonstration {
   author      User?    @relation("LabDemoAuthor", fields: [authorId], references: [id])
   authorId    String?
   createdAt   DateTime @default(now())
+}
+
+// Admissions pipeline: application -> screening -> acceptance -> registration.
+// Applying needs no account (a prospective student doesn't have one yet); registering
+// creates the real User row and links back here via registeredUserId.
+model Application {
+  id             String     @id @default(cuid())
+  school         School     @relation(fields: [schoolId], references: [id])
+  schoolId       String
+  department     Department @relation(fields: [departmentId], references: [id])
+  departmentId   String
+  fullName       String
+  email          String
+  phone          String
+  level          String     // e.g. NCE 1
+  statement      String?    // short "why this programme" note
+  status         String     @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | ACCEPTED | REJECTED | REGISTERED
+  registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
+  registeredUserId String?  @unique
+  createdAt      DateTime   @default(now())
+  decidedAt      DateTime?
 }
