@@ -111,6 +111,28 @@ router.get('/leaderboard', requireAuth, async (req, res) => {
   res.json({ leaderboard });
 });
 
+// A student's full result history across every course -- powers the Digital ID /
+// profile page's "Results" section.
+router.get('/students/me/results', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const submissions = await prisma.submission.findMany({
+    where: { studentId: req.user.id },
+    include: { assessment: { include: { course: { select: { code: true, title: true } } } } },
+    orderBy: { submittedAt: 'desc' },
+  });
+  res.json({
+    results: submissions.map((s) => ({
+      id: s.id,
+      assessmentTitle: s.assessment.title,
+      assessmentType: s.assessment.type,
+      courseCode: s.assessment.course.code,
+      courseTitle: s.assessment.course.title,
+      score: s.score,
+      total: s.total,
+      submittedAt: s.submittedAt,
+    })),
+  });
+});
+
 // Lecturer: score sheet for an assessment
 router.get('/assessments/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const submissions = await prisma.submission.findMany({

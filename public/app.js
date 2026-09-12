@@ -154,6 +154,7 @@
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
+      ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
     ],
     LECTURER: [
@@ -212,6 +213,7 @@
         case 'progress': return renderProgress();
         case 'leaderboard': return renderLeaderboard();
         case 'research': return renderResearchAssistant();
+        case 'digital-id': return renderDigitalId();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
@@ -760,6 +762,66 @@
     document.getElementById('leaderboard-dept').addEventListener('change', (e) => {
       navigate('leaderboard', { departmentId: e.target.value });
     });
+  }
+
+  // ================= DIGITAL ID / STUDENT PROFILE =================
+
+  function initials(name) {
+    return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  }
+
+  async function renderDigitalId() {
+    const [{ courses }, { results }, { active, subscription }] = await Promise.all([
+      api('/students/me/courses'),
+      api('/students/me/results'),
+      api('/billing/status'),
+    ]);
+    const u = state.user;
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Digital ID</h1></div>
+      <div class="id-card" style="margin-bottom:28px;">
+        <div class="id-top"><span>Learnza · Edo College of Education</span><span>Student</span></div>
+        <div class="id-row">
+          <div class="id-avatar">${esc(initials(u.fullName))}</div>
+          <div>
+            <div class="id-value">${esc(u.fullName)}</div>
+            <div class="id-field tabular" style="margin-top:4px;">${esc(u.matricNumber || 'Matric number pending')}</div>
+          </div>
+        </div>
+        <div class="id-grid">
+          <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom:12px; font-size:1rem;">Digital credentials</h3>
+      <ul class="credential-list" style="margin-bottom:28px;">
+        <li><span>Course registration</span><span class="pill pill-pass">${courses.length} course${courses.length === 1 ? '' : 's'}</span></li>
+        <li><span>Subscription</span><span class="pill ${active ? 'pill-pass' : 'pill-muted'}">${active ? `Active until ${new Date(subscription.expiresAt).toLocaleDateString()}` : 'No active plan'}</span></li>
+        <li><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
+        <li><span>Hostel / accommodation</span><span class="pill pill-muted">Not yet available</span></li>
+        <li><span>Certificates &amp; graduation records</span><span class="pill pill-muted">Not yet available</span></li>
+      </ul>
+
+      <h3 style="margin-bottom:12px; font-size:1rem;">Results</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Assessment</th><th>Type</th><th>Score</th><th>Date</th></tr></thead>
+          <tbody>
+            ${results.map((r) => `
+              <tr>
+                <td class="tabular">${esc(r.courseCode)}</td>
+                <td>${esc(r.assessmentTitle)}</td>
+                <td>${esc(r.assessmentType)}</td>
+                <td class="tabular">${r.score}/${r.total}</td>
+                <td class="tabular">${new Date(r.submittedAt).toLocaleDateString()}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   // ================= AI RESEARCH ASSISTANT =================

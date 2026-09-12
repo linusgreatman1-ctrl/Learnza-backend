@@ -77,6 +77,17 @@
   .live-chat { display: flex; flex-direction: column; height: 300px; }
   .live-chat .chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 
+  .id-card { background: #142033; color: #faf7f0; border-radius: 18px; padding: 26px; max-width: 420px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+  .id-card::after { content: ""; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #e3ac4c33, transparent 70%); }
+  .id-card .id-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(250,247,240,0.6); }
+  .id-avatar { width: 64px; height: 64px; border-radius: 50%; background: #e3ac4c; color: #2a1c05; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; flex-shrink: 0; }
+  .id-row { display: flex; gap: 16px; align-items: center; margin-bottom: 18px; }
+  .id-field { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(250,247,240,0.55); margin-bottom: 2px; }
+  .id-value { font-family: var(--font-display); font-size: 1.1rem; }
+  .id-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .credential-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .credential-list li { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-radius: 10px; background: var(--paper); border: 1px solid var(--line); }
+
   @media (max-width: 760px) {
     #app-screen.active { grid-template-columns: 1fr; }
     .sidebar { display: flex; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); }
