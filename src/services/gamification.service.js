@@ -69,4 +69,25 @@ async function getProgress(userId) {
   };
 }
 
-module.exports = { recordAssessmentCompletion, getProgress };
+// School-wide leaderboard, optionally narrowed to one department. Students only --
+// lecturers/admins never appear here, and this never touches study-group activity.
+async function getLeaderboard(schoolId, departmentId) {
+  const top = await prisma.userStats.findMany({
+    where: {
+      points: { gt: 0 },
+      user: { schoolId, role: 'STUDENT', ...(departmentId ? { departmentId } : {}) },
+    },
+    orderBy: { points: 'desc' },
+    take: 50,
+    include: { user: { select: { fullName: true, department: { select: { name: true } } } } },
+  });
+  return top.map((row, i) => ({
+    rank: i + 1,
+    fullName: row.user.fullName,
+    department: row.user.department?.name || null,
+    points: row.points,
+    currentStreak: row.currentStreak,
+  }));
+}
+
+module.exports = { recordAssessmentCompletion, getProgress, getLeaderboard };

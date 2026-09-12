@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { getSubscriptionStatus } = require('../subscription');
+const { getSubscriptionStatus, isEnforced } = require('../subscription');
 const { getPlan } = require('../config/plans');
 const paystack = require('../services/paystack.service');
 const flutterwave = require('../services/flutterwave.service');
@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.get('/status', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const status = await getSubscriptionStatus(req.user.id);
-  res.json(status);
+  res.json({ ...status, enforced: isEnforced() });
 });
 
 router.get('/providers', requireAuth, (req, res) => {

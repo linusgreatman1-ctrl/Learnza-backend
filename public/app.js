@@ -153,6 +153,7 @@
       ['assessments', 'CBT & Tests'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
+      ['leaderboard', 'Leaderboard'],
       ['billing', 'Subscription'],
     ],
     LECTURER: [
@@ -209,6 +210,7 @@
         case 'ai-teacher-session': return renderAiTeacherSession();
         case 'live-class': return renderLiveClass();
         case 'progress': return renderProgress();
+        case 'leaderboard': return renderLeaderboard();
         case 'research': return renderResearchAssistant();
 
         case 'lect-courses': return renderLecturerCourses();
@@ -690,8 +692,10 @@
   async function renderProgress() {
     const progress = await api('/students/me/progress');
     view.innerHTML = `
-      <div class="page-head"><h1>My Progress</h1></div>
-      <p class="muted" style="margin-bottom:20px;">Private to you — Learnza has no leaderboard or ranking.</p>
+      <div class="page-head">
+        <h1>My Progress</h1>
+        <button class="btn btn-ghost btn-sm" id="view-leaderboard-btn">See leaderboard →</button>
+      </div>
       <div class="grid-cards" style="margin-bottom:24px;">
         <div class="card" style="padding:20px;">
           <div class="muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.03em;">Points</div>
@@ -717,6 +721,45 @@
         `).join('') || '<p class="muted">Take a CBT test to start earning badges.</p>'}
       </div>
     `;
+    document.getElementById('view-leaderboard-btn').addEventListener('click', () => navigate('leaderboard'));
+  }
+
+  async function renderLeaderboard() {
+    const { departments } = await api('/departments');
+    const deptId = state.view.departmentId || '';
+    const { leaderboard } = await api('/leaderboard' + (deptId ? `?departmentId=${deptId}` : ''));
+    const myEntry = leaderboard.find((row) => row.fullName === state.user.fullName);
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Leaderboard</h1></div>
+      <div class="field" style="max-width:280px; margin-bottom:16px;">
+        <label>Department</label>
+        <select id="leaderboard-dept">
+          <option value="">All departments</option>
+          ${departments.map((d) => `<option value="${d.id}" ${d.id === deptId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+        </select>
+      </div>
+      ${myEntry ? `<div class="card" style="padding:14px 18px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;"><span>Your rank: <strong class="tabular">#${myEntry.rank}</strong></span><span class="pill pill-accent tabular">${myEntry.points} pts</span></div>` : ''}
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>Student</th><th>Department</th><th>Points</th><th>Streak</th></tr></thead>
+          <tbody>
+            ${leaderboard.map((row) => `
+              <tr ${row.fullName === state.user.fullName ? 'style="background:var(--accent-soft);"' : ''}>
+                <td class="tabular">${row.rank}</td>
+                <td>${esc(row.fullName)}</td>
+                <td>${esc(row.department || '—')}</td>
+                <td class="tabular">${row.points}</td>
+                <td class="tabular">${row.currentStreak}🔥</td>
+              </tr>
+            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No points earned yet — be the first!</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+    document.getElementById('leaderboard-dept').addEventListener('change', (e) => {
+      navigate('leaderboard', { departmentId: e.target.value });
+    });
   }
 
   // ================= AI RESEARCH ASSISTANT =================
@@ -752,7 +795,7 @@
   // ================= BILLING =================
 
   async function renderBilling() {
-    const [{ active, subscription }, { paystack, flutterwave }] = await Promise.all([
+    const [{ active, subscription, enforced }, { paystack, flutterwave }] = await Promise.all([
       api('/billing/status'),
       api('/billing/providers'),
     ]);
@@ -760,6 +803,7 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>Subscription</h1></div>
+      ${!enforced ? `<div class="hint-box" style="margin-bottom:18px;">Testing phase: every feature is free for everyone right now, subscribed or not. Pricing below is what it'll cost once testing wraps up.</div>` : ''}
       ${active ? `
         <div class="card" style="padding:20px; margin-bottom:20px;">
           <span class="pill pill-pass">Active</span>

@@ -106,6 +106,11 @@ router.get('/students/me/progress', requireAuth, requireRole('STUDENT'), async (
   res.json(progress);
 });
 
+router.get('/leaderboard', requireAuth, async (req, res) => {
+  const leaderboard = await gamification.getLeaderboard(req.user.schoolId, req.query.departmentId || undefined);
+  res.json({ leaderboard });
+});
+
 // Lecturer: score sheet for an assessment
 router.get('/assessments/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const submissions = await prisma.submission.findMany({

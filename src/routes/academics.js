@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
-const { getSubscriptionStatus } = require('../subscription');
+const { getSubscriptionStatus, isEnforced } = require('../subscription');
 
 const router = express.Router();
 
@@ -65,7 +65,7 @@ router.get('/courses/:id/lessons', requireAuth, async (req, res) => {
     orderBy: { order: 'asc' },
   });
 
-  if (req.user.role !== 'STUDENT') return res.json({ lessons });
+  if (req.user.role !== 'STUDENT' || !isEnforced()) return res.json({ lessons: lessons.map((l) => ({ ...l, locked: false })) });
 
   const { active } = await getSubscriptionStatus(req.user.id);
   const shaped = lessons.map((l) => {

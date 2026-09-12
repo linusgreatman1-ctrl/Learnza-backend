@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../db');
-const { getSubscriptionStatus } = require('../subscription');
+const { getSubscriptionStatus, isEnforced } = require('../subscription');
 
 // Star-topology WebRTC signaling: the lecturer's browser holds one RTCPeerConnection
 // per connected student and relays its own camera/mic to each individually. This
@@ -41,8 +41,10 @@ function attachLiveNamespace(io) {
       if (socket.user.role !== 'STUDENT') {
         return socket.emit('live:error', { message: 'Only students join as viewers.' });
       }
-      const { active } = await getSubscriptionStatus(socket.user.id);
-      if (!active) return socket.emit('live:error', { message: 'Live classes need an active Learnza subscription.', code: 'SUBSCRIPTION_REQUIRED' });
+      if (isEnforced()) {
+        const { active } = await getSubscriptionStatus(socket.user.id);
+        if (!active) return socket.emit('live:error', { message: 'Live classes need an active Learnza subscription.', code: 'SUBSCRIPTION_REQUIRED' });
+      }
 
       const liveClass = await prisma.liveClass.findUnique({ where: { id: liveClassId } });
       if (!liveClass || liveClass.status !== 'ACTIVE') {
