@@ -67,6 +67,16 @@
 
   .toast { position: fixed; bottom: 20px; right: 20px; background: var(--ink); color: var(--paper); padding: 12px 18px; border-radius: 10px; box-shadow: var(--shadow); font-size: 0.88rem; z-index: 100; }
 
+  .live-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); margin-bottom: 18px; }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 8px; animation: live-pulse 1.4s infinite; }
+  @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .video-tile { position: relative; background: #0b1220; border-radius: 10px; overflow: hidden; aspect-ratio: 4/3; }
+  .video-tile video { width: 100%; height: 100%; object-fit: cover; }
+  .video-tile .label { position: absolute; bottom: 6px; left: 8px; font-size: 0.75rem; color: #fff; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 999px; }
+  .live-chat { display: flex; flex-direction: column; height: 300px; }
+  .live-chat .chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+
   @media (max-width: 760px) {
     #app-screen.active { grid-template-columns: 1fr; }
     .sidebar { display: flex; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--line); }
@@ -116,6 +126,7 @@
   <main class="content" id="view"></main>
 </div>
 
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

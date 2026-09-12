@@ -1,7 +1,9 @@
 require('dotenv').config();
 const path = require('path');
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
+const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/auth');
 const academicsRoutes = require('./routes/academics');
@@ -11,6 +13,8 @@ const assessmentsRoutes = require('./routes/assessments');
 const adminRoutes = require('./routes/admin');
 const billingRoutes = require('./routes/billing');
 const aiTeacherRoutes = require('./routes/aiTeacher');
+const liveRoutes = require('./routes/live');
+const { attachLiveNamespace } = require('./realtime/live');
 
 const app = express();
 
@@ -30,10 +34,15 @@ app.use('/api', assessmentsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api', aiTeacherRoutes);
+app.use('/api', liveRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: true } });
+attachLiveNamespace(io);
+
 const PORT = process.env.PORT || 4100;
-app.listen(PORT, () => console.log(`Learnza API listening on port ${PORT}`));
+server.listen(PORT, () => console.log(`Learnza API listening on port ${PORT}`));
 
 require('./seed')().catch((e) => console.error('Seed check failed:', e.message));

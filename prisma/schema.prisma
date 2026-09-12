@@ -43,6 +43,7 @@ model User {
   subscription   Subscription?
   payments       Payment[]
   aiTeacherSessions AiTeacherSession[]
+  liveClassesHosted LiveClass[]  @relation("LiveClassHost")
 }
 
 model Subscription {
@@ -99,6 +100,7 @@ model Course {
   groups       StudyGroup[]
   assessments  Assessment[]
   aiTeacherSessions AiTeacherSession[]
+  liveClasses  LiveClass[]
 
   @@unique([departmentId, code])
 }
@@ -248,4 +250,19 @@ model AiTeacherTurn {
   content      String
   sectionIdx   Int?
   createdAt    DateTime         @default(now())
+}
+
+// A lecturer-hosted live video class. WebRTC signaling (offer/answer/ICE) happens over
+// Socket.IO (src/realtime/live.js); this row just tracks whether one is currently on,
+// so students can see a "Live now" banner without holding a socket connection open.
+model LiveClass {
+  id        String   @id @default(cuid())
+  course    Course   @relation(fields: [courseId], references: [id])
+  courseId  String
+  host      User     @relation("LiveClassHost", fields: [hostId], references: [id])
+  hostId    String
+  title     String
+  status    String   @default("ACTIVE") // ACTIVE | ENDED
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
 }

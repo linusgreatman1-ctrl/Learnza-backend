@@ -176,6 +176,7 @@
 
   function navigate(screen, params = {}) {
     window.speechSynthesis && window.speechSynthesis.cancel();
+    if (state.view.screen === 'live-class' && screen !== 'live-class') teardownLive();
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -195,6 +196,7 @@
         case 'take-assessment': return renderTakeAssessment();
         case 'billing': return renderBilling();
         case 'ai-teacher-session': return renderAiTeacherSession();
+        case 'live-class': return renderLiveClass();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
@@ -287,6 +289,7 @@
   async function renderCourseDetail() {
     const { course } = await api(`/courses/${state.view.courseId}`);
     const { lessons } = await api(`/courses/${state.view.courseId}/lessons`);
+    const { liveClass } = await api(`/courses/${state.view.courseId}/live`);
     view.innerHTML = `
       <div class="page-head">
         <div>
@@ -295,6 +298,12 @@
         </div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to courses</button>
       </div>
+      ${liveClass ? `
+        <div class="live-banner">
+          <div><span class="live-dot"></span><strong>${esc(liveClass.host.fullName)}</strong> is live now — ${esc(liveClass.title)}</div>
+          <button class="btn btn-accent btn-sm" id="join-live-btn">Join live class</button>
+        </div>
+      ` : ''}
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
           <span class="pill pill-accent">Subscription feature</span>
@@ -323,6 +332,10 @@
       const topic = prompt(`What topic in ${course.title} should the AI Teacher cover?`);
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim());
+    });
+    const joinLiveBtn = document.getElementById('join-live-btn');
+    if (joinLiveBtn) joinLiveBtn.addEventListener('click', () => {
+      navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: false, title: liveClass.title });
     });
   }
 
@@ -510,6 +523,148 @@
         toast(err.message);
       }
     });
+  }
+
+  // ================= LIVE CLASSES (WebRTC via Socket.IO) =================
+  // Star topology: the host holds one RTCPeerConnection per viewer and sends its own
+  // camera/mic to each. STUN only (no TURN configured), so some networks may fail to
+  // connect -- a known limitation, not a bug to chase down blind.
+
+  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+  let live = null; // { socket, isHost, localStream, peers: Map(socketId -> RTCPeerConnection), liveClassId }
+
+  function teardownLive() {
+    if (!live) return;
+    live.peers.forEach((pc) => pc.close());
+    if (live.localStream) live.localStream.getTracks().forEach((t) => t.stop());
+    if (live.socket) live.socket.disconnect();
+    live = null;
+  }
+
+  async function renderLiveClass() {
+    const { courseId, liveClassId, isHost, title } = state.view;
+    view.innerHTML = `
+      <div class="page-head">
+        <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+      </div>
+      <div class="video-grid" id="video-grid"></div>
+      <div class="card live-chat">
+        <div class="chat-messages" id="live-chat-messages"></div>
+        <form class="chat-input-row" id="live-chat-form">
+          <input type="text" id="live-chat-input" placeholder="Message the class…">
+          <button class="btn btn-primary btn-sm" type="submit">Send</button>
+        </form>
+      </div>
+    `;
+
+    teardownLive();
+    live = { isHost, liveClassId, peers: new Map(), localStream: null, socket: null };
+
+    document.getElementById('leave-btn').addEventListener('click', () => {
+      if (isHost) live.socket?.emit('teacher:end', { liveClassId });
+      teardownLive();
+      navigate('course-detail', { courseId });
+    });
+    document.getElementById('live-chat-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('live-chat-input');
+      if (!input.value.trim()) return;
+      live.socket.emit('chat:message', { liveClassId, text: input.value.trim() });
+      input.value = '';
+    });
+
+    try {
+      await setupLiveSocket(isHost, liveClassId, courseId);
+    } catch (err) {
+      toast(err.message || 'Could not connect to the live class.');
+    }
+  }
+
+  function addVideoTile(id, label, stream, muted) {
+    const grid = document.getElementById('video-grid');
+    if (!grid) return;
+    let tile = document.getElementById('tile-' + id);
+    if (!tile) {
+      tile = document.createElement('div');
+      tile.className = 'video-tile';
+      tile.id = 'tile-' + id;
+      tile.innerHTML = `<video autoplay playsinline ${muted ? 'muted' : ''}></video><span class="label">${esc(label)}</span>`;
+      grid.appendChild(tile);
+    }
+    tile.querySelector('video').srcObject = stream;
+  }
+
+  function removeVideoTile(id) {
+    document.getElementById('tile-' + id)?.remove();
+  }
+
+  function appendLiveChat(from, role, text) {
+    const box = document.getElementById('live-chat-messages');
+    if (!box) return;
+    const div = document.createElement('div');
+    div.className = 'chat-msg';
+    div.innerHTML = `<div class="sender">${esc(from)}${role !== 'STUDENT' ? ' · Lecturer' : ''}</div>${esc(text)}`;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function setupLiveSocket(isHost, liveClassId, courseId) {
+    const socket = io('/live', { auth: { token: state.token } });
+    live.socket = socket;
+
+    socket.on('live:error', (err) => {
+      toast(err.message);
+      if (err.code === 'SUBSCRIPTION_REQUIRED') { teardownLive(); renderUpgradePrompt(err.message); }
+    });
+    socket.on('chat:message', ({ from, role, text }) => appendLiveChat(from, role, text));
+    socket.on('live:ended', () => {
+      toast('The live class has ended.');
+      teardownLive();
+      navigate('course-detail', { courseId });
+    });
+
+    if (isHost) {
+      live.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      addVideoTile('self', 'You (host)', live.localStream, true);
+      socket.emit('teacher:join', { liveClassId });
+
+      socket.on('student:joined', async ({ studentSocketId, studentName }) => {
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        live.peers.set(studentSocketId, pc);
+        live.localStream.getTracks().forEach((track) => pc.addTrack(track, live.localStream));
+        pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: studentSocketId, candidate: e.candidate }); };
+        pc.onconnectionstatechange = () => { if (['disconnected', 'closed', 'failed'].includes(pc.connectionState)) removeVideoTile(studentSocketId); };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('webrtc:offer', { to: studentSocketId, offer });
+        addVideoTile(studentSocketId, studentName + ' (joining…)', new MediaStream());
+      });
+      socket.on('webrtc:answer', async ({ from, answer }) => {
+        const pc = live.peers.get(from);
+        if (pc) await pc.setRemoteDescription(answer);
+      });
+      socket.on('webrtc:ice-candidate', async ({ from, candidate }) => {
+        const pc = live.peers.get(from);
+        if (pc) { try { await pc.addIceCandidate(candidate); } catch {} }
+      });
+    } else {
+      socket.emit('student:join', { liveClassId });
+      socket.on('webrtc:offer', async ({ from, offer }) => {
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        live.peers.set(from, pc);
+        pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: from, candidate: e.candidate }); };
+        pc.ontrack = (e) => addVideoTile('host', 'Lecturer', e.streams[0], false);
+        await pc.setRemoteDescription(offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc:answer', { to: from, answer });
+      });
+      socket.on('webrtc:ice-candidate', async ({ from, candidate }) => {
+        const pc = live.peers.get(from);
+        if (pc) { try { await pc.addIceCandidate(candidate); } catch {} }
+      });
+    }
   }
 
   // ================= BILLING =================
@@ -835,12 +990,19 @@
         <div><div class="muted tabular">${esc(course.code)}</div><h1>${esc(course.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to courses</button>
       </div>
+      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;">Teach this course live</div>
+          <div class="meta">Students with an active subscription can join and watch in real time.</div>
+        </div>
+        <button class="btn btn-accent" id="go-live-btn">🔴 Go live</button>
+      </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
-        <h3 style="margin-bottom:12px; font-size:1rem;">Add an AI-teacher lesson or recording</h3>
+        <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
         <form id="lesson-form">
           <div class="field"><label>Title</label><input type="text" id="lsn-title" required></div>
           <div class="field"><label>Order</label><input type="number" id="lsn-order" value="${lessons.length + 1}" required></div>
-          <div class="field"><label>Narration script (read aloud by the free AI teacher)</label><textarea id="lsn-script" required></textarea></div>
+          <div class="field"><label>Narration script (read aloud in the lesson player)</label><textarea id="lsn-script" required></textarea></div>
           <div class="field"><label>Recorded video URL (optional)</label><input type="url" id="lsn-video" placeholder="https://"></div>
           <button class="btn btn-primary" type="submit">Publish lesson</button>
         </form>
@@ -855,6 +1017,16 @@
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
+    document.getElementById('go-live-btn').addEventListener('click', async () => {
+      const title = prompt('Title your live class:', `${course.code} live session`);
+      if (!title || !title.trim()) return;
+      try {
+        const { liveClass } = await api(`/courses/${course.id}/live/start`, { method: 'POST', body: { title: title.trim() } });
+        navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: true, title: liveClass.title });
+      } catch (err) {
+        toast(err.message);
+      }
+    });
     document.getElementById('lesson-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
