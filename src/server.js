@@ -27,6 +27,6 @@ app.use('/api/admin', adminRoutes);
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 4100;
-app.listen(PORT, () => console.log(`CampusPass API listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`Learnza API listening on port ${PORT}`));
 
 require('./seed')().catch((e) => console.error('Seed check failed:', e.message));

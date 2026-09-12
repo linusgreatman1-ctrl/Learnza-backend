@@ -1,7 +1,7 @@
 {
-  "name": "campuspass-backend",
+  "name": "learnza-backend",
   "version": "0.1.0",
-  "description": "CampusPass - free learning platform for higher institution students, lecturers and school admins",
+  "description": "Learnza - free learning platform for higher institution students, lecturers and school admins",
   "main": "src/server.js",
   "scripts": {
     "dev": "node src/server.js",

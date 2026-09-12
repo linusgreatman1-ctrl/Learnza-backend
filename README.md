@@ -1,4 +1,4 @@
-# CampusPass
+# Learnza
 
 A free higher-institution learning platform for students, lecturers and school admin — built for the **Edo College of Education** pilot. Separate codebase from PassNow; shares the same architectural pattern (Node/Express + Prisma + a static vanilla-JS frontend) but its own database, auth and deploy.
 
