@@ -1177,9 +1177,8 @@
             <div class="field"><label>Type</label>
               <select id="lib-type"><option>Textbook</option><option>Past Question</option><option>Handout</option><option>Journal</option></select>
             </div>
-            <div class="field"><label>File</label><input type="file" id="lib-file"></div>
-            <div class="field"><label>...or a link instead</label><input type="url" id="lib-url" placeholder="https://"></div>
-            <button class="btn btn-primary" type="submit">Upload</button>
+            <div class="field"><label>File (from your device)</label><input type="file" id="lib-file" required></div>
+            <button class="btn btn-primary" type="submit" id="lib-submit-btn">Upload</button>
           </form>
         </div>` : ''}
       <div class="card">
@@ -1206,17 +1205,24 @@
         fd.append('author', document.getElementById('lib-author').value);
         fd.append('type', document.getElementById('lib-type').value);
         const file = document.getElementById('lib-file').files[0];
-        const url = document.getElementById('lib-url').value.trim();
-        if (file) fd.append('file', file);
-        if (url) fd.append('externalUrl', url);
+        if (!file) return toast('Attach a file from your device.');
+        fd.append('file', file);
+
+        const submitBtn = document.getElementById('lib-submit-btn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Uploading…';
         try {
           const { storage } = await api('/library', { method: 'POST', body: fd });
           toast('Resource uploaded');
-          if (storage === 'local-disk' && document.getElementById('lib-file').files[0]) {
+          if (storage === 'local-disk') {
             toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
           }
           render();
-        } catch (err) { toast(err.message); }
+        } catch (err) {
+          toast(err.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Upload';
+        }
       });
     }
   }
@@ -1437,8 +1443,8 @@
           <div class="field"><label>Title</label><input type="text" id="lsn-title" required></div>
           <div class="field"><label>Order</label><input type="number" id="lsn-order" value="${lessons.length + 1}" required></div>
           <div class="field"><label>Narration script (read aloud in the lesson player)</label><textarea id="lsn-script" required></textarea></div>
-          <div class="field"><label>Recorded video URL (optional)</label><input type="url" id="lsn-video" placeholder="https://"></div>
-          <button class="btn btn-primary" type="submit">Publish lesson</button>
+          <div class="field"><label>Recorded video (optional — upload from your device)</label><input type="file" id="lsn-video" accept="video/*"></div>
+          <button class="btn btn-primary" type="submit" id="lsn-submit-btn">Publish lesson</button>
         </form>
       </div>
       <div class="card">
@@ -1464,19 +1470,26 @@
     });
     document.getElementById('lesson-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const fd = new FormData();
+      fd.append('title', document.getElementById('lsn-title').value);
+      fd.append('order', document.getElementById('lsn-order').value);
+      fd.append('script', document.getElementById('lsn-script').value);
+      const videoFile = document.getElementById('lsn-video').files[0];
+      if (videoFile) fd.append('video', videoFile);
+
+      const submitBtn = document.getElementById('lsn-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = videoFile ? 'Uploading video…' : 'Publishing…';
       try {
-        await api(`/courses/${course.id}/lessons`, {
-          method: 'POST',
-          body: {
-            title: document.getElementById('lsn-title').value,
-            order: Number(document.getElementById('lsn-order').value),
-            script: document.getElementById('lsn-script').value,
-            videoUrl: document.getElementById('lsn-video').value.trim() || null,
-          },
-        });
+        const { storage } = await api(`/courses/${course.id}/lessons`, { method: 'POST', body: fd });
         toast('Lesson published');
+        if (storage === 'local-disk') toast('Note: cloud storage isn\'t configured yet, so this video may not survive the next deploy.');
         render();
-      } catch (err) { toast(err.message); }
+      } catch (err) {
+        toast(err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Publish lesson';
+      }
     });
     view.querySelectorAll('[data-delete]').forEach((btn) => {
       btn.addEventListener('click', async () => {

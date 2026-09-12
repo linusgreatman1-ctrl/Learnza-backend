@@ -2,8 +2,10 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const { getSubscriptionStatus, isEnforced } = require('../subscription');
+const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 
 const router = express.Router();
+const upload = memoryUpload(80); // videos run larger than library documents
 
 router.get('/schools', async (req, res) => {
   const schools = await prisma.school.findMany();
@@ -76,22 +78,35 @@ router.get('/courses/:id/lessons', requireAuth, async (req, res) => {
   res.json({ lessons: shaped });
 });
 
-router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const { title, script, videoUrl, order, isAiTeacher } = req.body;
+// Video, when provided, is always a direct device upload (multipart file) -- never a
+// pasted link -- same policy as the e-library.
+router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'), upload.single('video'), async (req, res) => {
+  const { title, script, order, isAiTeacher } = req.body;
   if (!title || !script) return res.status(400).json({ error: 'Title and script are required' });
+
+  let videoUrl = null;
+  let storage = null;
+  if (req.file) {
+    try {
+      ({ url: videoUrl, storage } = await saveUpload(req.file));
+    } catch {
+      return res.status(502).json({ error: 'Video upload failed. Please try again.' });
+    }
+  }
+
   const lesson = await prisma.lesson.create({
     data: {
       courseId: req.params.id,
       title,
       script,
-      videoUrl: videoUrl || null,
-      order: order || 0,
-      isAiTeacher: isAiTeacher !== false,
+      videoUrl,
+      order: order ? Number(order) : 0,
+      isAiTeacher: isAiTeacher !== 'false',
       authorId: req.user.id,
     },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_LESSON', title);
-  res.json({ lesson });
+  res.json({ lesson, storage });
 });
 
 router.delete('/lessons/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
