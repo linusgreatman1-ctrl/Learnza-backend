@@ -7,11 +7,16 @@ async function main() {
   if (existing) {
     console.log('Database already seeded, skipping full seed.');
     await backfillDemoSubscription();
+    await backfillSchoolLicense();
     return;
   }
 
   const school = await prisma.school.create({
-    data: { name: 'Edo College of Education' },
+    data: {
+      name: 'Edo College of Education',
+      licenseStatus: 'ACTIVE',
+      licenseExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
   });
 
   const departments = await Promise.all(
@@ -218,6 +223,16 @@ async function backfillDemoSubscription() {
     },
   });
   console.log('Backfilled an active demo subscription for student@edocoe.edu.ng');
+}
+
+async function backfillSchoolLicense() {
+  const school = await prisma.school.findFirst();
+  if (!school || school.licenseExpiresAt) return;
+  await prisma.school.update({
+    where: { id: school.id },
+    data: { licenseStatus: 'ACTIVE', licenseExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
+  });
+  console.log('Backfilled a school license expiry date');
 }
 
 if (require.main === module) {

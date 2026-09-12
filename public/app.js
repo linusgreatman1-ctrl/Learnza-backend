@@ -162,6 +162,7 @@
       ['lect-library', 'e-Library'],
       ['lect-assessments', 'Assessments'],
       ['research', 'AI Research Assistant'],
+      ['staff-profile', 'My Staff Profile'],
     ],
     ADMIN: [
       ['admin-directory', 'Staff & Student Directory'],
@@ -169,6 +170,8 @@
       ['admin-activity', 'Lecturer Activity'],
       ['admin-lab-queue', 'Digital Lab Approvals'],
       ['admin-admissions', 'Admissions'],
+      ['admin-staff-records', 'Staff Records'],
+      ['admin-student-requests', 'Student Requests'],
     ],
   };
 
@@ -217,18 +220,22 @@
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
         case 'lab': return renderLab();
+        case 'transcript': return renderTranscript();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
         case 'lect-assessments': return renderAssessments(true);
         case 'lect-assessment-results': return renderAssessmentResults();
+        case 'staff-profile': return renderStaffProfile();
 
         case 'admin-directory': return renderAdminDirectory();
         case 'admin-academics': return renderAdminAcademics();
         case 'admin-activity': return renderAdminActivity();
         case 'admin-lab-queue': return renderAdminLabQueue();
         case 'admin-admissions': return renderAdminAdmissions();
+        case 'admin-staff-records': return renderAdminStaffRecords();
+        case 'admin-student-requests': return renderAdminStudentRequests();
         default: view.innerHTML = '<p>Not found.</p>';
       }
     } catch (err) {
@@ -784,10 +791,14 @@
   }
 
   async function renderDigitalId() {
-    const [{ courses }, { results }, { active, subscription }] = await Promise.all([
+    const [{ courses }, { results }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
       api('/students/me/courses'),
       api('/students/me/results'),
       api('/billing/status'),
+      api('/students/me/transcript-request'),
+      api('/students/me/clearance-request'),
+      api('/students/me/hostel-application'),
+      api('/students/me/credentials'),
     ]);
     const u = state.user;
 
@@ -813,9 +824,37 @@
         <li><span>Course registration</span><span class="pill pill-pass">${courses.length} course${courses.length === 1 ? '' : 's'}</span></li>
         <li><span>Subscription</span><span class="pill ${active ? 'pill-pass' : 'pill-muted'}">${active ? `Active until ${new Date(subscription.expiresAt).toLocaleDateString()}` : 'No active plan'}</span></li>
         <li><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
-        <li><span>Hostel / accommodation</span><span class="pill pill-muted">Not yet available</span></li>
-        <li><span>Certificates &amp; graduation records</span><span class="pill pill-muted">Not yet available</span></li>
+        <li>
+          <span>Transcript</span>
+          ${transcriptReq
+            ? transcriptReq.status === 'ISSUED'
+              ? `<button class="btn btn-primary btn-sm" id="view-transcript-btn">View transcript</button>`
+              : `<span class="pill pill-accent">Pending admin review</span>`
+            : `<button class="btn btn-ghost btn-sm" id="request-transcript-btn">Request transcript</button>`}
+        </li>
+        <li>
+          <span>Clearance</span>
+          ${clearanceReq
+            ? clearanceReq.status === 'CLEARED' ? '<span class="pill pill-pass">Cleared</span>'
+            : clearanceReq.status === 'DENIED' ? `<span class="pill pill-danger">Denied${clearanceReq.note ? `: ${esc(clearanceReq.note)}` : ''}</span>`
+            : '<span class="pill pill-accent">Pending admin review</span>'
+            : `<button class="btn btn-ghost btn-sm" id="request-clearance-btn">Request clearance</button>`}
+        </li>
+        <li>
+          <span>Hostel / accommodation</span>
+          ${hostelApp
+            ? hostelApp.status === 'APPROVED' ? `<span class="pill pill-pass">Room: ${esc(hostelApp.roomAssigned)}</span>`
+            : hostelApp.status === 'REJECTED' ? '<span class="pill pill-danger">Not approved</span>'
+            : '<span class="pill pill-accent">Pending admin review</span>'
+            : `<button class="btn btn-ghost btn-sm" id="request-hostel-btn">Apply for hostel</button>`}
+        </li>
+        <li><span>Certificates &amp; graduation records</span><span class="pill ${credentials.length ? 'pill-pass' : 'pill-muted'}">${credentials.length ? `${credentials.length} issued` : 'None issued yet'}</span></li>
       </ul>
+      ${credentials.length ? `
+        <div class="card" style="margin-bottom:28px;">
+          ${credentials.map((c) => `<div class="list-row"><div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">Issued ${new Date(c.issuedAt).toLocaleDateString()} · verification code <span class="tabular">${esc(c.verifyCode)}</span></div></div><a class="btn btn-ghost btn-sm" href="verify.html?code=${esc(c.verifyCode)}" target="_blank" rel="noopener">Verify link</a></div>`).join('')}
+        </div>
+      ` : ''}
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Results</h3>
       <div class="card" style="overflow-x:auto;">
@@ -835,6 +874,49 @@
         </table>
       </div>
     `;
+
+    const reqTranscriptBtn = document.getElementById('request-transcript-btn');
+    if (reqTranscriptBtn) reqTranscriptBtn.addEventListener('click', async () => { await api('/students/me/transcript-request', { method: 'POST' }); toast('Transcript requested'); render(); });
+    const viewTranscriptBtn = document.getElementById('view-transcript-btn');
+    if (viewTranscriptBtn) viewTranscriptBtn.addEventListener('click', () => navigate('transcript'));
+    const reqClearanceBtn = document.getElementById('request-clearance-btn');
+    if (reqClearanceBtn) reqClearanceBtn.addEventListener('click', async () => { await api('/students/me/clearance-request', { method: 'POST' }); toast('Clearance requested'); render(); });
+    const reqHostelBtn = document.getElementById('request-hostel-btn');
+    if (reqHostelBtn) reqHostelBtn.addEventListener('click', async () => {
+      const roomPreference = prompt('Any room/accommodation preference? (optional)') || '';
+      await api('/students/me/hostel-application', { method: 'POST', body: { roomPreference } });
+      toast('Hostel application submitted');
+      render();
+    });
+  }
+
+  async function renderTranscript() {
+    const data = await api('/students/me/transcript');
+    view.innerHTML = `
+      <div class="page-head no-print"><h1>Official Transcript</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <div class="card" style="padding:32px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:20px;">
+          <div>
+            <div style="font-family:var(--font-display); font-size:1.3rem;">Edo College of Education</div>
+            <div class="muted">Official academic transcript — Learnza</div>
+          </div>
+          <div class="muted tabular">Issued ${new Date(data.issuedAt).toLocaleDateString()}</div>
+        </div>
+        <div class="id-grid" style="margin-bottom:20px;">
+          <div><div class="meta">Student</div><div style="font-weight:600;">${esc(state.user.fullName)}</div></div>
+          <div><div class="meta">Matric number</div><div class="tabular" style="font-weight:600;">${esc(state.user.matricNumber || '—')}</div></div>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Assessment</th><th>Score</th></tr></thead>
+          <tbody>
+            ${data.results.map((r) => `<tr><td class="tabular">${esc(r.courseCode)} — ${esc(r.courseTitle)}</td><td>${esc(r.assessmentTitle)}</td><td class="tabular">${r.score}/${r.total}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No results on record.</td></tr>'}
+          </tbody>
+        </table>
+        <button class="btn btn-primary no-print" style="margin-top:20px;" id="print-btn">Print / Save as PDF</button>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('print-btn').addEventListener('click', () => window.print());
   }
 
   // ================= DIGITAL LAB (curated + AI-generated, admin-approved) =================
@@ -1471,6 +1553,96 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-assessments'));
   }
 
+  // ================= STAFF PROFILE (attendance, CPD, publications) =================
+
+  async function renderStaffProfile() {
+    const [{ records: attendance }, { records: cpd }, { records: publications }] = await Promise.all([
+      api('/staff/attendance/me'),
+      api('/staff/cpd/me'),
+      api('/staff/publications/me'),
+    ]);
+    const checkedInToday = attendance.some((r) => new Date(r.date).toDateString() === new Date().toDateString());
+
+    view.innerHTML = `
+      <div class="page-head"><h1>My Staff Profile</h1></div>
+
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;">Attendance</div>
+          <div class="meta">${checkedInToday ? 'You\'re checked in for today.' : 'Not checked in yet today.'}</div>
+        </div>
+        <button class="btn ${checkedInToday ? 'btn-ghost' : 'btn-primary'}" id="checkin-btn" ${checkedInToday ? 'disabled' : ''}>${checkedInToday ? 'Checked in ✓' : 'Check in today'}</button>
+      </div>
+      <div class="card" style="margin-bottom:22px; overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Status</th></tr></thead>
+          <tbody>${attendance.slice(0, 10).map((r) => `<tr><td class="tabular">${new Date(r.date).toLocaleDateString()}</td><td>${esc(r.status)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No attendance recorded yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <div class="card" style="padding:20px; margin-bottom:22px;">
+        <h3 style="margin-bottom:12px; font-size:1rem;">Log a CPD activity</h3>
+        <form id="cpd-form">
+          <div class="field"><label>Title</label><input type="text" id="cpd-title" required></div>
+          <div class="field"><label>Provider</label><input type="text" id="cpd-provider" required></div>
+          <div class="field"><label>Hours</label><input type="number" id="cpd-hours" min="1" required></div>
+          <div class="field"><label>Date completed</label><input type="date" id="cpd-date" required></div>
+          <button class="btn btn-primary" type="submit">Add CPD record</button>
+        </form>
+      </div>
+      <div class="card" style="margin-bottom:22px;">
+        ${cpd.map((c) => `<div class="list-row"><div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">${esc(c.provider)} · ${c.hours}h · ${new Date(c.completedAt).toLocaleDateString()}</div></div></div>`).join('') || '<p class="muted" style="padding:16px;">No CPD records yet.</p>'}
+      </div>
+
+      <div class="card" style="padding:20px; margin-bottom:22px;">
+        <h3 style="margin-bottom:12px; font-size:1rem;">Log a publication</h3>
+        <form id="pub-form">
+          <div class="field"><label>Title</label><input type="text" id="pub-title" required></div>
+          <div class="field"><label>Outlet / journal</label><input type="text" id="pub-outlet" required></div>
+          <div class="field"><label>Year</label><input type="number" id="pub-year" min="1990" max="2100" required></div>
+          <div class="field"><label>Link (optional)</label><input type="url" id="pub-url" placeholder="https://"></div>
+          <button class="btn btn-primary" type="submit">Add publication</button>
+        </form>
+      </div>
+      <div class="card">
+        ${publications.map((p) => `<div class="list-row"><div><div style="font-weight:600;">${esc(p.title)}</div><div class="meta">${esc(p.outlet)} · ${p.year}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener">Link</a>` : ''}</div></div></div>`).join('') || '<p class="muted" style="padding:16px;">No publications logged yet.</p>'}
+      </div>
+    `;
+
+    const checkinBtn = document.getElementById('checkin-btn');
+    if (!checkedInToday) checkinBtn.addEventListener('click', async () => { await api('/staff/attendance/checkin', { method: 'POST' }); toast('Checked in'); render(); });
+
+    document.getElementById('cpd-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await api('/staff/cpd', {
+        method: 'POST',
+        body: {
+          title: document.getElementById('cpd-title').value,
+          provider: document.getElementById('cpd-provider').value,
+          hours: document.getElementById('cpd-hours').value,
+          completedAt: document.getElementById('cpd-date').value,
+        },
+      });
+      toast('CPD record added');
+      render();
+    });
+
+    document.getElementById('pub-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await api('/staff/publications', {
+        method: 'POST',
+        body: {
+          title: document.getElementById('pub-title').value,
+          outlet: document.getElementById('pub-outlet').value,
+          year: document.getElementById('pub-year').value,
+          url: document.getElementById('pub-url').value.trim() || null,
+        },
+      });
+      toast('Publication added');
+      render();
+    });
+  }
+
   // ================= ADMIN =================
 
   async function renderAdminDirectory() {
@@ -1487,19 +1659,33 @@
       <h3 style="margin-bottom:10px; font-size:1rem;">Students (${students.length})</h3>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Matric No.</th><th>Department</th><th>Email</th></tr></thead>
-          <tbody>${students.map((s) => `<tr><td>${esc(s.fullName)}</td><td class="tabular">${esc(s.matricNumber || '—')}</td><td>${esc(s.department ? s.department.name : '—')}</td><td>${esc(s.email)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">None yet.</td></tr>'}</tbody>
+          <thead><tr><th>Name</th><th>Matric No.</th><th>Department</th><th>Email</th><th></th></tr></thead>
+          <tbody>${students.map((s) => `<tr><td>${esc(s.fullName)}</td><td class="tabular">${esc(s.matricNumber || '—')}</td><td>${esc(s.department ? s.department.name : '—')}</td><td>${esc(s.email)}</td><td><button class="btn btn-ghost btn-sm" data-issue-credential="${s.id}" data-name="${esc(s.fullName)}">Issue credential</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">None yet.</td></tr>'}</tbody>
         </table>
       </div>
     `;
+    view.querySelectorAll('[data-issue-credential]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const title = prompt(`Credential title for ${btn.dataset.name}:`, 'Nigeria Certificate in Education (NCE)');
+        if (!title || !title.trim()) return;
+        try {
+          const { credential } = await api('/admin/credentials', { method: 'POST', body: { studentId: btn.dataset.issueCredential, title: title.trim() } });
+          alert(`Credential issued.\n\nVerification link: ${location.origin}/verify.html?code=${credential.verifyCode}`);
+        } catch (err) { toast(err.message); }
+      });
+    });
   }
 
   async function renderAdminAcademics() {
-    const { departments } = await api('/departments');
+    const [{ departments }, { school }] = await Promise.all([api('/departments'), api('/admin/school')]);
     const deptCourses = {};
     for (const d of departments) deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
     view.innerHTML = `
       <div class="page-head"><h1>Departments & Courses</h1></div>
+      <div class="card" style="padding:16px 20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div><span style="font-weight:600;">School licence</span> <span class="meta">— ${esc(school.name)}</span></div>
+        <span class="pill ${school.licenseStatus === 'ACTIVE' ? 'pill-pass' : 'pill-danger'}">${school.licenseStatus === 'ACTIVE' ? 'Active' : 'Expired'}${school.licenseExpiresAt ? ` until ${new Date(school.licenseExpiresAt).toLocaleDateString()}` : ''}</span>
+      </div>
       <div class="grid-2" style="margin-bottom:26px;">
         <div class="card" style="padding:20px;">
           <h3 style="margin-bottom:12px; font-size:1rem;">Add department</h3>
@@ -1619,6 +1805,125 @@
           render();
         } catch (err) { toast(err.message); }
       });
+    });
+  }
+
+  async function renderAdminStaffRecords() {
+    const [{ workload }, { records: attendance }, { records: cpd }, { records: publications }] = await Promise.all([
+      api('/admin/staff/workload'),
+      api('/admin/staff/attendance'),
+      api('/admin/staff/cpd'),
+      api('/admin/staff/publications'),
+    ]);
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Staff Records</h1></div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Workload (from real activity — courses, lessons, assessments, live classes, practicals)</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Lecturer</th><th>Department</th><th>Lessons</th><th>Assessments</th><th>Live classes</th><th>Practicals</th></tr></thead>
+          <tbody>${workload.map((w) => `<tr><td>${esc(w.fullName)}</td><td>${esc(w.department || '—')}</td><td class="tabular">${w.lessons}</td><td class="tabular">${w.assessments}</td><td class="tabular">${w.liveClasses}</td><td class="tabular">${w.labDemos}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No lecturers yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Recent attendance</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Lecturer</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>${attendance.slice(0, 20).map((r) => `<tr><td>${esc(r.user.fullName)}</td><td class="tabular">${new Date(r.date).toLocaleDateString()}</td><td>${esc(r.status)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No records yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">CPD records</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Lecturer</th><th>Title</th><th>Provider</th><th>Hours</th><th>Date</th></tr></thead>
+          <tbody>${cpd.map((c) => `<tr><td>${esc(c.user.fullName)}</td><td>${esc(c.title)}</td><td>${esc(c.provider)}</td><td class="tabular">${c.hours}</td><td class="tabular">${new Date(c.completedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No CPD logged yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Publications</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Lecturer</th><th>Title</th><th>Outlet</th><th>Year</th></tr></thead>
+          <tbody>${publications.map((p) => `<tr><td>${esc(p.user.fullName)}</td><td>${esc(p.title)}</td><td>${esc(p.outlet)}</td><td class="tabular">${p.year}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No publications logged yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function renderAdminStudentRequests() {
+    const [{ requests: transcripts }, { requests: clearances }, { applications: hostelApps }] = await Promise.all([
+      api('/admin/transcript-requests'),
+      api('/admin/clearance-requests'),
+      api('/admin/hostel-applications'),
+    ]);
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Student Requests</h1></div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Transcript requests</h3>
+      <div class="card" style="margin-bottom:26px;">
+        ${transcripts.map((t) => `
+          <div class="list-row">
+            <div><div style="font-weight:600;">${esc(t.student.fullName)}</div><div class="meta tabular">${esc(t.student.matricNumber || '—')} · requested ${new Date(t.requestedAt).toLocaleDateString()}</div></div>
+            <button class="btn btn-primary btn-sm" data-issue-transcript="${t.id}">Issue</button>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No pending requests.</p>'}
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Clearance requests</h3>
+      <div class="card" style="margin-bottom:26px;">
+        ${clearances.map((c) => `
+          <div class="list-row">
+            <div><div style="font-weight:600;">${esc(c.student.fullName)}</div><div class="meta tabular">${esc(c.student.matricNumber || '—')} · requested ${new Date(c.requestedAt).toLocaleDateString()}</div></div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" data-clear="${c.id}">Clear</button>
+              <button class="btn btn-ghost btn-sm" data-deny="${c.id}">Deny</button>
+            </div>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No pending requests.</p>'}
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Hostel applications</h3>
+      <div class="card">
+        ${hostelApps.map((h) => `
+          <div class="list-row">
+            <div><div style="font-weight:600;">${esc(h.student.fullName)}</div><div class="meta tabular">${esc(h.student.matricNumber || '—')}${h.roomPreference ? ` · prefers: ${esc(h.roomPreference)}` : ''}</div></div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" data-approve-hostel="${h.id}">Approve</button>
+              <button class="btn btn-ghost btn-sm" data-reject-hostel="${h.id}">Reject</button>
+            </div>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No pending applications.</p>'}
+      </div>
+    `;
+
+    view.querySelectorAll('[data-issue-transcript]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/transcript-requests/${btn.dataset.issueTranscript}/issue`, { method: 'POST' }); toast('Transcript issued'); render(); });
+    });
+    view.querySelectorAll('[data-clear]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/clearance-requests/${btn.dataset.clear}/decide`, { method: 'POST', body: { status: 'CLEARED' } }); toast('Cleared'); render(); });
+    });
+    view.querySelectorAll('[data-deny]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const note = prompt('Reason for denial (optional):') || '';
+        await api(`/admin/clearance-requests/${btn.dataset.deny}/decide`, { method: 'POST', body: { status: 'DENIED', note } });
+        toast('Denied');
+        render();
+      });
+    });
+    view.querySelectorAll('[data-approve-hostel]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const roomAssigned = prompt('Room to assign (e.g. Block A, Room 12):') || 'To be confirmed';
+        await api(`/admin/hostel-applications/${btn.dataset.approveHostel}/approve`, { method: 'POST', body: { roomAssigned } });
+        toast('Approved');
+        render();
+      });
+    });
+    view.querySelectorAll('[data-reject-hostel]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/hostel-applications/${btn.dataset.rejectHostel}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
     });
   }
 

@@ -10,12 +10,14 @@ datasource db {
 // SQLite has no native enum support; Role is one of STUDENT | LECTURER | ADMIN, enforced in app code.
 
 model School {
-  id           String        @id @default(cuid())
-  name         String
-  createdAt    DateTime      @default(now())
-  departments  Department[]
-  users        User[]
-  applications Application[]
+  id               String        @id @default(cuid())
+  name             String
+  createdAt        DateTime      @default(now())
+  licenseStatus    String        @default("ACTIVE") // ACTIVE | EXPIRED
+  licenseExpiresAt DateTime?
+  departments      Department[]
+  users            User[]
+  applications     Application[]
 }
 
 model User {
@@ -49,6 +51,13 @@ model User {
   badges         UserBadge[]
   labDemonstrationsMade LabDemonstration[] @relation("LabDemoAuthor")
   applicationRegistered Application? @relation("ApplicationRegisteredUser")
+  attendanceRecords StaffAttendanceRecord[]
+  cpdRecords     CpdRecord[]
+  publications   Publication[]
+  transcriptRequests TranscriptRequest[]
+  clearanceRequests  ClearanceRequest[]
+  credentials    Credential[]
+  hostelApplications HostelApplication[]
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -344,5 +353,87 @@ model Application {
   registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
   registeredUserId String?  @unique
   createdAt      DateTime   @default(now())
+  decidedAt      DateTime?
+}
+
+// Staff records: attendance (lecturer self-check-in), CPD, and publications. Workload
+// is deliberately NOT a stored model -- it's computed on demand from real activity
+// (courses, lessons, assessments, live classes already in the DB) rather than a
+// second, manually-entered number that could drift from reality.
+model StaffAttendanceRecord {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  date      DateTime // truncated to midnight of the day marked
+  status    String   @default("PRESENT") // PRESENT | LATE
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+model CpdRecord {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  title       String
+  provider    String
+  hours       Int
+  completedAt DateTime
+  createdAt   DateTime @default(now())
+}
+
+model Publication {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  title     String
+  outlet    String
+  year      Int
+  url       String?
+  createdAt DateTime @default(now())
+}
+
+// A student requests a transcript; admin "issues" it once ready. The transcript
+// itself is just a formatted view of the student's real Submission history --
+// nothing new to fabricate, just a gate on when it's presented as official.
+model TranscriptRequest {
+  id          String    @id @default(cuid())
+  student     User      @relation(fields: [studentId], references: [id])
+  studentId   String
+  status      String    @default("PENDING") // PENDING | ISSUED
+  requestedAt DateTime  @default(now())
+  issuedAt    DateTime?
+}
+
+model ClearanceRequest {
+  id          String    @id @default(cuid())
+  student     User      @relation(fields: [studentId], references: [id])
+  studentId   String
+  status      String    @default("PENDING") // PENDING | CLEARED | DENIED
+  note        String?
+  requestedAt DateTime  @default(now())
+  decidedAt   DateTime?
+}
+
+// A digital credential (e.g. a graduation certificate) with a public verification
+// code -- matches how a real institution lets anyone verify a certificate is genuine
+// without needing an account.
+model Credential {
+  id         String   @id @default(cuid())
+  student    User     @relation(fields: [studentId], references: [id])
+  studentId  String
+  title      String
+  verifyCode String   @unique
+  issuedAt   DateTime @default(now())
+}
+
+model HostelApplication {
+  id             String    @id @default(cuid())
+  student        User      @relation(fields: [studentId], references: [id])
+  studentId      String
+  roomPreference String?
+  status         String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  roomAssigned   String?
+  requestedAt    DateTime  @default(now())
   decidedAt      DateTime?
 }

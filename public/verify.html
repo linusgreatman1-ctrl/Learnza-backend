@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verify Credential — Learnza</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .verify-box { width: 100%; max-width: 460px; padding: 32px; text-align: center; }
+  .verify-box .brand { font-family: var(--font-display); font-size: 1.3rem; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<div class="card verify-box" id="box">
+  <div class="brand">Learnza · Credential Verification</div>
+  <p class="muted">Checking…</p>
+</div>
+
+<script>
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const code = params.get('code');
+    const box = document.getElementById('box');
+    if (!code) {
+      box.innerHTML = '<div class="brand">Learnza · Credential Verification</div><p class="muted">No verification code provided.</p>';
+      return;
+    }
+    fetch('/api/verify/' + encodeURIComponent(code))
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.valid) {
+          box.innerHTML = `
+            <div class="brand">Learnza · Credential Verification</div>
+            <span class="pill pill-danger">Not found</span>
+            <p class="muted" style="margin-top:14px;">No credential matches this code. It may be invalid or revoked.</p>
+          `;
+          return;
+        }
+        box.innerHTML = `
+          <div class="brand">Learnza · Credential Verification</div>
+          <span class="pill pill-pass">Verified genuine</span>
+          <h2 style="margin:16px 0 4px;">${data.title}</h2>
+          <p style="margin-bottom:18px;">Awarded to <strong>${data.studentName}</strong></p>
+          <div class="id-grid" style="text-align:left;">
+            <div><div class="id-field" style="color:var(--ink-soft);">Matric number</div><div class="tabular">${data.matricNumber || '—'}</div></div>
+            <div><div class="id-field" style="color:var(--ink-soft);">Institution</div><div>${data.school}</div></div>
+          </div>
+          <p class="muted tabular" style="margin-top:16px; font-size:0.82rem;">Issued ${new Date(data.issuedAt).toLocaleDateString()}</p>
+        `;
+      })
+      .catch(() => {
+        box.innerHTML = '<div class="brand">Learnza · Credential Verification</div><p class="muted">Something went wrong. Please try again.</p>';
+      });
+  })();
+</script>
+</body>
+</html>

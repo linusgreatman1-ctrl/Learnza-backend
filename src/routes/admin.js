@@ -6,6 +6,11 @@ const { requireAuth, requireRole } = require('../auth');
 const router = express.Router();
 router.use(requireAuth, requireRole('ADMIN'));
 
+router.get('/school', async (req, res) => {
+  const school = await prisma.school.findUnique({ where: { id: req.user.schoolId } });
+  res.json({ school });
+});
+
 router.get('/students', async (req, res) => {
   const students = await prisma.user.findMany({
     where: { schoolId: req.user.schoolId, role: 'STUDENT' },
