@@ -1,9 +1,3 @@
-databases:
-  - name: learnza-db
-    plan: free
-    databaseName: learnza
-    user: learnza
-
 services:
   - type: web
     name: learnza-backend
@@ -16,9 +10,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Render's free plan allows only one free-tier database per account, already
+      # in use by another project. Paste any Postgres connection string here instead
+      # (e.g. a free instance from neon.tech or supabase.com, or a paid Render database).
       - key: DATABASE_URL
-        fromDatabase:
-          name: learnza-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
