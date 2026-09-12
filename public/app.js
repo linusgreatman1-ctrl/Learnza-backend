@@ -1107,8 +1107,11 @@
         if (file) fd.append('file', file);
         if (url) fd.append('externalUrl', url);
         try {
-          await api('/library', { method: 'POST', body: fd });
+          const { storage } = await api('/library', { method: 'POST', body: fd });
           toast('Resource uploaded');
+          if (storage === 'local-disk' && document.getElementById('lib-file').files[0]) {
+            toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
+          }
           render();
         } catch (err) { toast(err.message); }
       });
