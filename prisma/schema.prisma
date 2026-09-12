@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite has no native enum support; Role is one of STUDENT | LECTURER | ADMIN, enforced in app code.
+
+model School {
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  departments Department[]
+  users       User[]
+}
+
+model User {
+  id             String    @id @default(cuid())
+  school         School    @relation(fields: [schoolId], references: [id])
+  schoolId       String
+  role           String    // STUDENT | LECTURER | ADMIN
+  fullName       String
+  email          String    @unique
+  passwordHash   String
+  matricNumber   String?   // students
+  staffId        String?   // lecturers / admin
+  department     Department? @relation(fields: [departmentId], references: [id])
+  departmentId   String?
+  createdAt      DateTime  @default(now())
+
+  enrollments    Enrollment[]
+  lessonsCreated Lesson[]        @relation("LessonAuthor")
+  libraryUploads LibraryResource[] @relation("LibraryUploader")
+  groupsCreated  StudyGroup[]    @relation("GroupCreator")
+  memberships    GroupMembership[]
+  messages       GroupMessage[]
+  assessmentsMade Assessment[]   @relation("AssessmentAuthor")
+  submissions    Submission[]
+  activityLogs   ActivityLog[]
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  school    School     @relation(fields: [schoolId], references: [id])
+  schoolId  String
+  name      String
+  code      String
+  courses   Course[]
+  users     User[]
+
+  @@unique([schoolId, code])
+}
+
+model Course {
+  id           String       @id @default(cuid())
+  department   Department   @relation(fields: [departmentId], references: [id])
+  departmentId String
+  code         String
+  title        String
+  level        String       // e.g. NCE 1, NCE 2, 100L
+  semester     String       // First / Second
+  lessons      Lesson[]
+  library      LibraryResource[]
+  enrollments  Enrollment[]
+  groups       StudyGroup[]
+  assessments  Assessment[]
+
+  @@unique([departmentId, code])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  student   User     @relation(fields: [studentId], references: [id])
+  studentId String
+  course    Course   @relation(fields: [courseId], references: [id])
+  courseId  String
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, courseId])
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  course      Course   @relation(fields: [courseId], references: [id])
+  courseId    String
+  title       String
+  order       Int      @default(0)
+  script      String   // narration script read aloud by the AI teacher (text-to-speech, free)
+  videoUrl    String?  // optional lecturer-recorded video link
+  author      User?    @relation("LessonAuthor", fields: [authorId], references: [id])
+  authorId    String?
+  isAiTeacher Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model LibraryResource {
+  id           String     @id @default(cuid())
+  course       Course?    @relation(fields: [courseId], references: [id])
+  courseId     String?
+  title        String
+  author       String
+  type         String     // Textbook / Journal / Past Question / Handout
+  fileUrl      String
+  uploader     User?      @relation("LibraryUploader", fields: [uploaderId], references: [id])
+  uploaderId   String?
+  createdAt    DateTime   @default(now())
+}
+
+model StudyGroup {
+  id          String   @id @default(cuid())
+  course      Course   @relation(fields: [courseId], references: [id])
+  courseId    String
+  name        String
+  creator     User     @relation("GroupCreator", fields: [creatorId], references: [id])
+  creatorId   String
+  createdAt   DateTime @default(now())
+  members     GroupMembership[]
+  messages    GroupMessage[]
+}
+
+model GroupMembership {
+  id        String     @id @default(cuid())
+  group     StudyGroup @relation(fields: [groupId], references: [id])
+  groupId   String
+  student   User       @relation(fields: [studentId], references: [id])
+  studentId String
+  joinedAt  DateTime   @default(now())
+
+  @@unique([groupId, studentId])
+}
+
+model GroupMessage {
+  id        String     @id @default(cuid())
+  group     StudyGroup @relation(fields: [groupId], references: [id])
+  groupId   String
+  sender    User       @relation(fields: [senderId], references: [id])
+  senderId  String
+  body      String
+  createdAt DateTime   @default(now())
+}
+
+model Assessment {
+  id          String       @id @default(cuid())
+  course      Course       @relation(fields: [courseId], references: [id])
+  courseId    String
+  title       String
+  type        String       // CA / Mock / Exam / Assignment
+  author      User         @relation("AssessmentAuthor", fields: [authorId], references: [id])
+  authorId    String
+  durationMin Int          @default(20)
+  questions   Question[]
+  submissions Submission[]
+  createdAt   DateTime     @default(now())
+}
+
+model Question {
+  id           String     @id @default(cuid())
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+  assessmentId String
+  text         String
+  options      String     // JSON-encoded string array
+  correctIndex Int
+  order        Int        @default(0)
+}
+
+model Submission {
+  id           String     @id @default(cuid())
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+  assessmentId String
+  student      User       @relation(fields: [studentId], references: [id])
+  studentId    String
+  answers      String     // JSON-encoded array of chosen option indices
+  score        Int
+  total        Int
+  submittedAt  DateTime   @default(now())
+
+  @@unique([assessmentId, studentId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  action    String
+  detail    String?
+  createdAt DateTime @default(now())
+}

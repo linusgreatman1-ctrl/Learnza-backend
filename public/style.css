@@ -1,0 +1,130 @@
+/* VarsityPass design tokens */
+:root {
+  --ink: #142033;
+  --ink-soft: #35455e;
+  --paper: #faf7f0;
+  --paper-raised: #ffffff;
+  --line: #e4dcc9;
+  --accent: #c1861f;
+  --accent-ink: #4a3105;
+  --accent-soft: #f3e2bd;
+  --pass: #2f6f62;
+  --pass-soft: #e1efe9;
+  --danger: #a83a3a;
+  --danger-soft: #f6e4e1;
+  --shadow: 0 1px 2px rgba(20, 32, 51, 0.06), 0 8px 24px -12px rgba(20, 32, 51, 0.18);
+  --radius: 14px;
+  --font-display: 'Fraunces', 'Georgia', serif;
+  --font-body: 'Public Sans', 'Segoe UI', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #ecebe6;
+    --ink-soft: #b7c0cf;
+    --paper: #10161f;
+    --paper-raised: #182131;
+    --line: #2b3448;
+    --accent: #e3ac4c;
+    --accent-ink: #2a1c05;
+    --accent-soft: #3a2c11;
+    --pass: #6bb6a3;
+    --pass-soft: #16302a;
+    --danger: #e08585;
+    --danger-soft: #3a1e1e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #ecebe6;
+  --ink-soft: #b7c0cf;
+  --paper: #10161f;
+  --paper-raised: #182131;
+  --line: #2b3448;
+  --accent: #e3ac4c;
+  --accent-ink: #2a1c05;
+  --accent-soft: #3a2c11;
+  --pass: #6bb6a3;
+  --pass-soft: #16302a;
+  --danger: #e08585;
+  --danger-soft: #3a1e1e;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.55;
+}
+h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: inherit; }
+.tabular { font-variant-numeric: tabular-nums; }
+.container { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+button, input, select, textarea { font-family: inherit; font-size: inherit; }
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.btn-primary { background: var(--ink); color: var(--paper); }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.btn-accent { background: var(--accent); color: var(--accent-ink); }
+.btn-accent:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+.btn-ghost:hover { border-color: var(--ink-soft); }
+.btn-sm { padding: 7px 14px; font-size: 0.85rem; }
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.card {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field label { font-size: 0.82rem; font-weight: 600; color: var(--ink-soft); }
+.field input, .field select, .field textarea {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+.field textarea { resize: vertical; min-height: 90px; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.pill-accent { background: var(--accent-soft); color: var(--accent-ink); }
+.pill-pass { background: var(--pass-soft); color: var(--pass); }
+.pill-danger { background: var(--danger-soft); color: var(--danger); }
+.pill-muted { background: var(--line); color: var(--ink-soft); }
+
+.muted { color: var(--ink-soft); }
+.hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }

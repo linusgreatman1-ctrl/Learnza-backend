@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VarsityPass</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  header.site {
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--paper); z-index: 10;
+  }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 1.3rem; font-weight: 600; }
+  .brand .mark { width: 34px; height: 34px; border-radius: 9px; background: #142033; color: #e3ac4c; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; }
+  .nav-links { display: flex; gap: 26px; font-weight: 600; font-size: 0.92rem; }
+  .nav-links a { text-decoration: none; }
+
+  .hero { padding: 72px 0 56px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
+  .hero .eyebrow { color: var(--pass); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.78rem; }
+  .hero h1 { font-size: clamp(2.1rem, 4vw, 3.1rem); line-height: 1.08; margin: 14px 0 18px; }
+  .hero p.lead { font-size: 1.1rem; color: var(--ink-soft); max-width: 46ch; }
+  .hero-actions { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+  /* Deliberately fixed dark card (an "app preview"), independent of the page's light/dark theme */
+  .hero-art { background: #142033; border-radius: 20px; padding: 26px; color: #faf7f0; box-shadow: var(--shadow); }
+  .hero-art .school { font-family: var(--font-display); font-size: 1.35rem; margin-bottom: 4px; }
+  .hero-art .school-sub { color: rgba(250,247,240,0.6); font-size: 0.85rem; }
+  .hero-art .lesson-line { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(250,247,240,0.14); font-size: 0.92rem; }
+  .hero-art .lesson-line .tag { margin-left: auto; opacity: 0.7; }
+  .hero-art .dot { width: 8px; height: 8px; border-radius: 50%; background: #e3ac4c; flex-shrink: 0; }
+  .hero-art .dot.pass { background: #6bb6a3; }
+
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  .section-head { max-width: 60ch; margin-bottom: 34px; }
+  .section-head .eyebrow { color: var(--accent-ink); background: var(--accent-soft); display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px; }
+  .section-head h2 { font-size: 1.8rem; margin-bottom: 10px; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .feature { padding: 22px; }
+  .feature h3 { font-size: 1.05rem; margin-bottom: 8px; }
+  .feature p { color: var(--ink-soft); font-size: 0.92rem; }
+  .feature .num { font-family: var(--font-display); font-size: 0.85rem; color: var(--pass); font-weight: 600; margin-bottom: 10px; display: block; }
+
+  .dept-list { display: flex; flex-wrap: wrap; gap: 10px; }
+  .dept-chip { border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 0.88rem; background: var(--paper-raised); }
+
+  .flow { display: flex; gap: 0; flex-wrap: wrap; }
+  .flow-step { flex: 1; min-width: 150px; padding: 18px 16px; border-right: 1px dashed var(--line); }
+  .flow-step:last-child { border-right: none; }
+  .flow-step .idx { font-family: var(--font-display); font-size: 1.3rem; color: var(--accent-ink); }
+  .flow-step h4 { font-size: 0.95rem; margin: 6px 0 4px; }
+  .flow-step p { font-size: 0.85rem; color: var(--ink-soft); }
+
+  .pricing { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  .price-card { padding: 26px; }
+  .price-card.highlight { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset, var(--shadow); }
+  .price-card .amount { font-family: var(--font-display); font-size: 2rem; margin: 10px 0 4px; }
+  .price-card ul { margin: 16px 0 0; padding-left: 18px; color: var(--ink-soft); font-size: 0.9rem; line-height: 1.7; }
+
+  /* Deliberately fixed dark band, independent of the page's light/dark theme */
+  .cta-band { background: #142033; color: #faf7f0; border-radius: 20px; padding: 44px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .cta-band h2 { color: #faf7f0; font-size: 1.6rem; }
+  .cta-band p { color: rgba(250,247,240,0.75); margin-top: 6px; }
+
+  footer { padding: 30px 0 50px; color: var(--ink-soft); font-size: 0.85rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; }
+    .grid-3, .grid-2, .pricing { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .flow { flex-direction: column; }
+    .flow-step { border-right: none; border-bottom: 1px dashed var(--line); }
+  }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="container nav">
+    <div class="brand"><span class="mark">V</span> VarsityPass</div>
+    <nav class="nav-links">
+      <a href="#learn">Learn</a>
+      <a href="#departments">Departments</a>
+      <a href="#admin">For Schools</a>
+      <a href="#pricing">Pricing</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="app.html">Open VarsityPass</a>
+  </div>
+</header>
+
+<section class="hero container" style="border-top:none;">
+  <div>
+    <div class="eyebrow">Built for Edo College of Education</div>
+    <h1>Every department, every course, taught free — with an AI teacher who never misses a class.</h1>
+    <p class="lead">VarsityPass gives students a full department-by-department curriculum with pre-recorded AI-narrated lessons, an e-library, study groups, and CBT-style tests — while lecturers teach, grade and set assessments, and the school runs admissions, records and staff oversight from one place.</p>
+    <div class="hero-actions">
+      <a class="btn btn-accent" href="app.html#register">Start learning free</a>
+      <a class="btn btn-ghost" href="app.html">I'm a lecturer / admin</a>
+    </div>
+  </div>
+  <div class="hero-art">
+    <div class="school">CSC 101 · Introduction to Computer Science</div>
+    <div class="school-sub">Edo College of Education</div>
+    <div class="lesson-line"><span class="dot"></span> Lesson 1 — What is a Computer? <span class="tag">AI Teacher</span></div>
+    <div class="lesson-line"><span class="dot"></span> Lesson 2 — Generations of Computers <span class="tag">AI Teacher</span></div>
+    <div class="lesson-line"><span class="dot pass"></span> CA 1 — Introduction to Computers <span class="tag">2 questions</span></div>
+  </div>
+</section>
+
+<section id="learn">
+  <div class="container">
+    <div class="section-head">
+      <div class="eyebrow">For students</div>
+      <h2>A full digital campus, not just a video library</h2>
+    </div>
+    <div class="grid-3">
+      <div class="card feature"><span class="num">01</span><h3>AI Teacher lessons</h3><p>Every topic ships with a lecturer-written script an AI voice narrates lesson by lesson — a free, always-available substitute teacher with zero streaming cost.</p></div>
+      <div class="card feature"><span class="num">02</span><h3>e-Library</h3><p>Textbooks, past questions and handouts organised by department and course, uploaded directly by your lecturers.</p></div>
+      <div class="card feature"><span class="num">03</span><h3>Study groups</h3><p>Course-based groups for peer discussion — no leaderboard, no ranking, just students helping students.</p></div>
+      <div class="card feature"><span class="num">04</span><h3>Live &amp; recorded classes</h3><p>Lecturers can teach live or upload recorded lessons alongside the AI teacher content.</p></div>
+      <div class="card feature"><span class="num">05</span><h3>CBT tests &amp; CA</h3><p>Continuous assessments, mock exams and entrance-style practice, auto-graded the moment you submit.</p></div>
+      <div class="card feature"><span class="num">06</span><h3>Digital records</h3><p>Your course registration, scores and transcript history live in one student profile.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="departments">
+  <div class="container">
+    <div class="section-head">
+      <div class="eyebrow">Departments live at launch</div>
+      <h2>Department by department, the way the college actually teaches</h2>
+    </div>
+    <div class="dept-list">
+      <span class="dept-chip">English</span>
+      <span class="dept-chip">Mathematics</span>
+      <span class="dept-chip">Computer Science</span>
+      <span class="dept-chip">Biology</span>
+      <span class="dept-chip">Early Childhood Care Education</span>
+      <span class="dept-chip">Economics</span>
+      <span class="dept-chip pill-muted" style="border-style:dashed;">More added by the school admin</span>
+    </div>
+  </div>
+</section>
+
+<section id="admin">
+  <div class="container">
+    <div class="section-head">
+      <div class="eyebrow">For lecturers &amp; school admin</div>
+      <h2>The school runs on it — students never see the oversight layer</h2>
+    </div>
+    <div class="grid-2">
+      <div class="card feature">
+        <h3>Lecturers</h3>
+        <p>Upload lessons and recordings, set CA/tests/assignments, record scores, and post library resources. Every action is logged for the school's own records.</p>
+      </div>
+      <div class="card feature">
+        <h3>School admin</h3>
+        <p>Manage departments and courses, keep a staff and student directory, and review lecturer activity — attendance, uploads, assessments set. Student activity is never monitored: study groups and personal progress stay private to the student.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px;">
+      <div class="flow">
+        <div class="flow-step"><div class="idx">1</div><h4>Application</h4><p>Online screening &amp; acceptance</p></div>
+        <div class="flow-step"><div class="idx">2</div><h4>Registration</h4><p>Course registration, digital ID issued</p></div>
+        <div class="flow-step"><div class="idx">3</div><h4>Study</h4><p>Lessons, library, groups, live classes</p></div>
+        <div class="flow-step"><div class="idx">4</div><h4>Assessment</h4><p>CA, mocks, semester exams</p></div>
+        <div class="flow-step"><div class="idx">5</div><h4>Records</h4><p>Results, transcripts, clearance</p></div>
+        <div class="flow-step"><div class="idx">6</div><h4>Graduation</h4><p>Digital certificate &amp; verification</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="container">
+    <div class="section-head">
+      <div class="eyebrow">Pricing</div>
+      <h2>Free for the learning core. Paid tiers fund the platform.</h2>
+    </div>
+    <div class="pricing">
+      <div class="card price-card">
+        <div class="pill pill-pass">Student — always free</div>
+        <div class="amount">₦0</div>
+        <p class="muted">AI-narrated lessons, e-library, study groups, CBT practice</p>
+        <ul><li>All department courses</li><li>Study groups, no ranking</li><li>CA &amp; mock CBT tests</li></ul>
+      </div>
+      <div class="card price-card highlight">
+        <div class="pill pill-accent">Individual subscription</div>
+        <div class="amount tabular">₦10,000<span style="font-size:0.9rem; font-weight:500;">/month</span></div>
+        <p class="muted tabular">or ₦105,000/year</p>
+        <ul><li>Live classes &amp; recorded lectures</li><li>AI research assistant</li><li>Priority CBT mock exams</li></ul>
+      </div>
+      <div class="card price-card">
+        <div class="pill pill-muted">School licence</div>
+        <div class="amount">Contact us</div>
+        <p class="muted">Full admin suite: admissions, staff, finance, digital ID</p>
+        <ul><li>Whole-school rollout</li><li>Staff &amp; student directories</li><li>Attendance, CPD, research records</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="cta-band">
+      <div>
+        <h2>Ready to see your first lesson?</h2>
+        <p>Sign up as a student in under a minute — no card required.</p>
+      </div>
+      <a class="btn btn-accent" href="app.html#register">Start learning free</a>
+    </div>
+  </div>
+</section>
+
+<footer class="container">
+  <div>© 2026 VarsityPass · Edo College of Education pilot</div>
+  <div><a href="app.html">Open the app</a></div>
+</footer>
+
+</body>
+</html>
