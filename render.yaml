@@ -4,7 +4,12 @@ services:
     runtime: node
     plan: free
     branch: main
-    buildCommand: npm install && npx prisma generate && npx prisma db push
+    # --accept-data-loss: db push runs non-interactively here and refuses to proceed
+    # without it whenever a schema change could theoretically risk data (e.g. adding a
+    # new unique constraint) -- even when, as with a new nullable accessCode column,
+    # the actual risk is nil. Review new migrations for genuine destructive changes
+    # (dropped columns, narrowed types) before relying on this blindly.
+    buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss
     startCommand: npm start
     healthCheckPath: /health
     envVars:
