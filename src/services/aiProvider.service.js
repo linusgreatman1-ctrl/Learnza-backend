@@ -13,7 +13,7 @@ function activeProvider() {
   return null;
 }
 
-async function callGemini(systemPrompt, userPrompt) {
+async function callGemini(systemPrompt, userPrompt, { json = true } = {}) {
   const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const res = await fetch(url, {
@@ -22,7 +22,7 @@ async function callGemini(systemPrompt, userPrompt) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
+      ...(json ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
     }),
   });
   const data = await res.json();
@@ -55,16 +55,21 @@ async function callAnthropic(systemPrompt, userPrompt) {
   return text;
 }
 
-// Sends a prompt pair and returns parsed JSON. `systemPrompt` should instruct the
-// model to reply with JSON only.
-async function askForJson(systemPrompt, userPrompt) {
+function requireProvider() {
   const provider = activeProvider();
   if (!provider) {
-    const err = new Error('AI Teacher is not configured yet (no GEMINI_API_KEY or ANTHROPIC_API_KEY set).');
+    const err = new Error('This AI feature is not configured yet (no GEMINI_API_KEY or ANTHROPIC_API_KEY set).');
     err.code = 'AI_NOT_CONFIGURED';
     throw err;
   }
-  const raw = provider === 'gemini' ? await callGemini(systemPrompt, userPrompt) : await callAnthropic(systemPrompt, userPrompt);
+  return provider;
+}
+
+// Sends a prompt pair and returns parsed JSON. `systemPrompt` should instruct the
+// model to reply with JSON only.
+async function askForJson(systemPrompt, userPrompt) {
+  const provider = requireProvider();
+  const raw = provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: true }) : await callAnthropic(systemPrompt, userPrompt);
   const jsonText = extractJson(raw);
   try {
     return JSON.parse(jsonText);
@@ -73,9 +78,16 @@ async function askForJson(systemPrompt, userPrompt) {
   }
 }
 
+// Sends a prompt pair and returns the model's raw text reply -- for open-ended
+// answers (e.g. the research assistant) where forcing a JSON shape would be wrong.
+async function askForText(systemPrompt, userPrompt) {
+  const provider = requireProvider();
+  return provider === 'gemini' ? callGemini(systemPrompt, userPrompt, { json: false }) : callAnthropic(systemPrompt, userPrompt);
+}
+
 function extractJson(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   return (fenced ? fenced[1] : text).trim();
 }
 
-module.exports = { isConfigured, activeProvider, askForJson };
+module.exports = { isConfigured, activeProvider, askForJson, askForText };

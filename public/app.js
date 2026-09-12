@@ -151,6 +151,7 @@
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['assessments', 'CBT & Tests'],
+      ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['billing', 'Subscription'],
     ],
@@ -158,6 +159,7 @@
       ['lect-courses', 'My Courses'],
       ['lect-library', 'e-Library'],
       ['lect-assessments', 'Assessments'],
+      ['research', 'AI Research Assistant'],
     ],
     ADMIN: [
       ['admin-directory', 'Staff & Student Directory'],
@@ -207,6 +209,7 @@
         case 'ai-teacher-session': return renderAiTeacherSession();
         case 'live-class': return renderLiveClass();
         case 'progress': return renderProgress();
+        case 'research': return renderResearchAssistant();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
@@ -714,6 +717,36 @@
         `).join('') || '<p class="muted">Take a CBT test to start earning badges.</p>'}
       </div>
     `;
+  }
+
+  // ================= AI RESEARCH ASSISTANT =================
+
+  async function renderResearchAssistant() {
+    view.innerHTML = `
+      <div class="page-head"><h1>AI Research Assistant</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Ask it to explain a concept, help structure a project or lesson, or suggest what to search for. It can't browse the web, so it won't invent fake citations — always verify sources with your ${state.user.role === 'STUDENT' ? 'lecturer or library' : 'own research'}.</p>
+      <div class="card" style="padding:20px;">
+        <div class="field">
+          <label>Your topic or question</label>
+          <textarea id="research-input" placeholder="e.g. How should I structure a project comparing two teaching methods for primary science?"></textarea>
+        </div>
+        <button class="btn btn-primary" id="research-ask-btn">Ask</button>
+        <div id="research-answer" style="margin-top:18px; white-space:pre-wrap; line-height:1.7;"></div>
+      </div>
+    `;
+    document.getElementById('research-ask-btn').addEventListener('click', async () => {
+      const question = document.getElementById('research-input').value.trim();
+      if (!question) return;
+      const answerBox = document.getElementById('research-answer');
+      answerBox.textContent = 'Thinking…';
+      try {
+        const { answer } = await api('/research-assistant/ask', { method: 'POST', body: { question } });
+        answerBox.textContent = answer;
+      } catch (err) {
+        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        answerBox.innerHTML = `<span style="color:var(--danger);">${esc(err.message)}</span>`;
+      }
+    });
   }
 
   // ================= BILLING =================
