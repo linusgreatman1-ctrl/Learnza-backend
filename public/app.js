@@ -53,9 +53,22 @@
   const appScreen = document.getElementById('app-screen');
   const authError = document.getElementById('auth-error');
 
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
+  // Top-level audience tabs: School (access code) / Individual Student / Admin.
+  document.querySelectorAll('[data-audience]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('[data-audience]').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('school-login-form').style.display = btn.dataset.audience === 'school' ? 'block' : 'none';
+      document.getElementById('individual-panel').style.display = btn.dataset.audience === 'individual' ? 'block' : 'none';
+      document.getElementById('admin-login-form').style.display = btn.dataset.audience === 'admin' ? 'block' : 'none';
+      authError.innerHTML = '';
+    });
+  });
+
+  // Nested login/signup toggle within the Individual Student panel.
+  document.querySelectorAll('#individual-panel [data-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#individual-panel [data-tab]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const isLogin = btn.dataset.tab === 'login';
       document.getElementById('login-form').style.display = isLogin ? 'block' : 'none';
@@ -64,20 +77,40 @@
     });
   });
 
-  async function loadDepartmentsIntoRegisterForm() {
+  document.getElementById('school-login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authError.innerHTML = '';
     try {
-      const { schools } = await api('/schools');
-      const school = schools[0];
-      state.schoolId = school ? school.id : null;
-      if (!school) return;
-      const { departments } = await api('/departments?schoolId=' + school.id);
-      const sel = document.getElementById('reg-department');
-      sel.innerHTML = departments.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
-    } catch (e) {
-      // landing content still works without this
+      const { token, user } = await api('/auth/login-with-code', {
+        method: 'POST',
+        body: {
+          fullName: document.getElementById('school-name').value.trim(),
+          schoolName: document.getElementById('school-school').value.trim(),
+          accessCode: document.getElementById('school-code').value.trim(),
+        },
+      });
+      onAuthed(token, user);
+    } catch (err) {
+      authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
     }
-  }
-  loadDepartmentsIntoRegisterForm();
+  });
+
+  document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authError.innerHTML = '';
+    try {
+      const { token, user } = await api('/auth/login', {
+        method: 'POST',
+        body: {
+          email: document.getElementById('admin-email').value.trim(),
+          password: document.getElementById('admin-password').value,
+        },
+      });
+      onAuthed(token, user);
+    } catch (err) {
+      authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    }
+  });
 
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -100,15 +133,12 @@
     e.preventDefault();
     authError.innerHTML = '';
     try {
-      const { token, user } = await api('/auth/register-student', {
+      const { token, user } = await api('/auth/register-individual', {
         method: 'POST',
         body: {
           fullName: document.getElementById('reg-name').value.trim(),
           email: document.getElementById('reg-email').value.trim(),
           password: document.getElementById('reg-password').value,
-          matricNumber: document.getElementById('reg-matric').value.trim() || null,
-          departmentId: document.getElementById('reg-department').value,
-          schoolId: state.schoolId,
         },
       });
       onAuthed(token, user);
@@ -120,11 +150,8 @@
   document.getElementById('signout-btn').addEventListener('click', () => {
     localStorage.removeItem('vp_token');
     localStorage.removeItem('vp_user');
-    state.token = null;
-    state.user = null;
     window.speechSynthesis && window.speechSynthesis.cancel();
-    appScreen.classList.remove('active');
-    authScreen.style.display = 'flex';
+    window.location.href = 'index.html';
   });
 
   function onAuthed(token, user) {
@@ -135,16 +162,20 @@
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     buildSidebar();
+    initNotifications();
     navigate(defaultScreenFor(user.role));
   }
 
   function defaultScreenFor(role) {
-    if (role === 'STUDENT') return 'courses';
+    if (role === 'STUDENT') return state.user.isIndividual ? 'individual-courses' : 'courses';
     if (role === 'LECTURER') return 'lect-courses';
     return 'admin-directory';
   }
 
   // ---------- Sidebar ----------
+  // Individual (non-school) learners get a deliberately smaller nav -- no
+  // library/groups/CBT/leaderboard/digital-id, since those are all school-institutional
+  // features. They get their own self-directed courses instead of "My Courses".
   const NAV = {
     STUDENT: [
       ['courses', 'My Courses'],
@@ -155,6 +186,12 @@
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['digital-id', 'Digital ID'],
+      ['billing', 'Subscription'],
+    ],
+    STUDENT_INDIVIDUAL: [
+      ['individual-courses', 'My Courses'],
+      ['research', 'AI Research Assistant'],
+      ['progress', 'My Progress'],
       ['billing', 'Subscription'],
     ],
     LECTURER: [
@@ -176,9 +213,11 @@
   };
 
   function buildSidebar() {
-    document.getElementById('who-box').textContent = `${state.user.fullName} · ${state.user.role.charAt(0) + state.user.role.slice(1).toLowerCase()}`;
+    const roleLabel = state.user.isIndividual ? 'Independent learner' : state.user.role.charAt(0) + state.user.role.slice(1).toLowerCase();
+    document.getElementById('who-box').textContent = `${state.user.fullName} · ${roleLabel}`;
     const nav = document.getElementById('nav-items');
-    nav.innerHTML = NAV[state.user.role]
+    const navKey = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
+    nav.innerHTML = NAV[navKey]
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
     nav.querySelectorAll('.nav-item').forEach((btn) => {
@@ -209,6 +248,67 @@
   });
   document.getElementById('sidebar-backdrop').addEventListener('click', closeMobileNav);
 
+  // ---------- Notifications ----------
+
+  function timeAgo(iso) {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  async function refreshNotifications() {
+    try {
+      const { notifications, unreadCount } = await api('/notifications');
+      document.querySelectorAll('.notif-badge').forEach((b) => {
+        b.hidden = unreadCount === 0;
+        b.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+      });
+      const list = document.getElementById('notif-list');
+      list.innerHTML = notifications.map((n) => `
+        <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" data-link="${n.link || ''}">
+          <div class="notif-title">${esc(n.title)}</div>
+          <div class="notif-body">${esc(n.body)}</div>
+          <div class="notif-time">${timeAgo(n.createdAt)}</div>
+        </div>
+      `).join('') || '<div class="notif-item"><span class="muted">No notifications yet.</span></div>';
+      list.querySelectorAll('.notif-item[data-id]').forEach((item) => {
+        item.addEventListener('click', async () => {
+          await api(`/notifications/${item.dataset.id}/read`, { method: 'POST' });
+          toggleNotifPanel(false);
+          if (item.dataset.link) navigate(item.dataset.link);
+          refreshNotifications();
+        });
+      });
+    } catch {
+      // silent -- notifications are a convenience, not critical path
+    }
+  }
+
+  function toggleNotifPanel(force) {
+    const panel = document.getElementById('notif-panel');
+    const open = force !== undefined ? force : panel.hidden;
+    panel.hidden = !open;
+    if (open) refreshNotifications();
+  }
+
+  function initNotifications() {
+    document.getElementById('notif-bell-mobile').addEventListener('click', () => toggleNotifPanel());
+    document.getElementById('notif-bell-desktop').addEventListener('click', () => toggleNotifPanel());
+    document.getElementById('notif-mark-all').addEventListener('click', async () => {
+      await api('/notifications/read-all', { method: 'POST' });
+      refreshNotifications();
+    });
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('notif-panel');
+      if (!panel.hidden && !panel.contains(e.target) && !e.target.closest('.notif-bell')) toggleNotifPanel(false);
+    });
+    refreshNotifications();
+  }
+
   const view = document.getElementById('view');
 
   function navigate(screen, params = {}) {
@@ -224,6 +324,8 @@
     try {
       switch (state.view.screen) {
         case 'courses': return renderStudentCourses();
+        case 'individual-courses': return renderIndividualCourses();
+        case 'individual-course-detail': return renderIndividualCourseDetail();
         case 'course-detail': return renderCourseDetail();
         case 'lesson-player': return renderLessonPlayer();
         case 'library': return renderLibrary(false);
@@ -273,6 +375,70 @@
       </div>
     `;
     document.getElementById('go-upgrade-btn').addEventListener('click', () => navigate('billing'));
+  }
+
+  // ================= INDIVIDUAL (non-school) LEARNER COURSES =================
+
+  async function renderIndividualCourses() {
+    const { courses } = await api('/individual-courses');
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>My Courses</h1>
+        <button class="btn btn-accent" id="new-individual-course-btn">+ New course</button>
+      </div>
+      <p class="muted" style="margin-bottom:20px;">Create a course on anything you want to learn — the AI Teacher covers it.</p>
+      <div class="grid-cards">
+        ${courses.map((c) => `
+          <div class="card course-card" data-open="${c.id}">
+            <div style="font-weight:600;">${esc(c.title)}</div>
+            ${c.description ? `<div class="meta" style="margin-top:6px;">${esc(c.description)}</div>` : ''}
+          </div>
+        `).join('') || '<p class="muted">No courses yet — create your first one.</p>'}
+      </div>
+    `;
+    view.querySelectorAll('[data-open]').forEach((el) => {
+      el.addEventListener('click', () => navigate('individual-course-detail', { courseId: el.dataset.open }));
+    });
+    document.getElementById('new-individual-course-btn').addEventListener('click', async () => {
+      const title = prompt('What do you want to learn?');
+      if (!title || !title.trim()) return;
+      const description = prompt('Add a short description (optional):') || '';
+      try {
+        await api('/individual-courses', { method: 'POST', body: { title: title.trim(), description } });
+        toast('Course created');
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  async function renderIndividualCourseDetail() {
+    const { course } = await api(`/individual-courses/${state.view.courseId}`);
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>${esc(course.title)}</h1>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to courses</button>
+      </div>
+      ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
+      <div class="card" style="padding:24px; text-align:center;">
+        <span class="pill pill-accent">Subscription feature</span>
+        <h3 style="margin:14px 0 8px;">Start an AI Teacher lesson</h3>
+        <p class="muted" style="margin-bottom:18px;">Tell the AI Teacher what to cover in this course.</p>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="delete-course-btn" style="margin-top:18px; color:var(--danger);">Delete this course</button>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('individual-courses'));
+    document.getElementById('start-ai-teacher-btn').addEventListener('click', () => {
+      const topic = prompt(`What topic in ${course.title} should the AI Teacher cover?`);
+      if (!topic || !topic.trim()) return;
+      startAiTeacherSession(course.id, topic.trim(), true);
+    });
+    document.getElementById('delete-course-btn').addEventListener('click', async () => {
+      if (!confirm('Delete this course? This cannot be undone.')) return;
+      await api(`/individual-courses/${course.id}`, { method: 'DELETE' });
+      toast('Course deleted');
+      navigate('individual-courses');
+    });
   }
 
   // ================= STUDENT =================
@@ -395,10 +561,11 @@
     });
   }
 
-  async function startAiTeacherSession(courseId, topic) {
+  async function startAiTeacherSession(courseId, topic, isIndividual) {
+    const path = isIndividual ? `/individual-courses/${courseId}/ai-teacher/sessions` : `/courses/${courseId}/ai-teacher/sessions`;
     try {
-      const { session } = await api(`/courses/${courseId}/ai-teacher/sessions`, { method: 'POST', body: { topic } });
-      navigate('ai-teacher-session', { sessionId: session.id });
+      const { session } = await api(path, { method: 'POST', body: { topic } });
+      navigate('ai-teacher-session', { sessionId: session.id, isIndividual });
     } catch (err) {
       if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
       toast(err.message);
@@ -476,11 +643,16 @@
 
   // ================= AI TEACHER (live interactive session) =================
 
-  function speak(text) {
+  function speak(text, avatarEl) {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 0.98;
+    if (avatarEl) {
+      utter.onstart = () => avatarEl.classList.add('speaking');
+      utter.onend = () => avatarEl.classList.remove('speaking');
+      utter.onerror = () => avatarEl.classList.remove('speaking');
+    }
     window.speechSynthesis.speak(utter);
   }
 
@@ -496,11 +668,14 @@
         <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
       </div>
       <div class="card lesson-player">
+        <div class="ai-avatar-box">
+          <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(session.plan.title || 'AI'))}</div>
+          <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
+          <div class="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
+          ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
+        </div>
         <div class="meta">Section ${session.sectionIdx + 1} of ${session.plan.sections.length}${session.status === 'COMPLETED' ? ' · Completed' : ''}</div>
         <h3 style="margin:8px 0 12px;">${esc(section.title)}</h3>
-        ${avatarConfigured ? `<div id="avatar-box" style="background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px;">
-          <button class="btn btn-ghost btn-sm" id="start-avatar-btn">🎥 Connect AI video avatar</button>
-        </div>` : ''}
         <div class="script-text" style="white-space:pre-wrap;">${esc(section.boardText)}</div>
         <div class="controls">
           <button class="btn btn-primary" id="play-btn">▶ Hear the teacher</button>
@@ -529,8 +704,11 @@
       </div>
     `;
 
-    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: session.courseId }));
-    document.getElementById('play-btn').addEventListener('click', () => speak(section.speechText));
+    document.getElementById('back-btn').addEventListener('click', () => {
+      if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
+      else navigate('course-detail', { courseId: session.courseId });
+    });
+    document.getElementById('play-btn').addEventListener('click', () => speak(section.speechText, document.getElementById('ai-avatar-ring')));
 
     const nextBtn = document.getElementById('next-btn');
     if (nextBtn) nextBtn.addEventListener('click', async () => {
@@ -1964,10 +2142,14 @@
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     buildSidebar();
+    initNotifications();
     if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
       checkPendingPayment().then(() => navigate('billing'));
     } else {
       navigate(defaultScreenFor(state.user.role));
     }
+  } else if (location.hash.includes('register')) {
+    document.querySelector('[data-audience="individual"]').click();
+    document.querySelector('#individual-panel [data-tab="register"]').click();
   }
 })();
