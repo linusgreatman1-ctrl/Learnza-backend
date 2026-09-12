@@ -28,3 +28,5 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 4100;
 app.listen(PORT, () => console.log(`VarsityPass API listening on port ${PORT}`));
+
+require('./seed')().catch((e) => console.error('Seed check failed:', e.message));

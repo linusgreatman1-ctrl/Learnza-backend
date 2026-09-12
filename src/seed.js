@@ -180,9 +180,13 @@ async function main() {
   console.log('Student login:  student@edocoe.edu.ng / Student@123');
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
+
+module.exports = main;
