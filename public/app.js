@@ -182,13 +182,32 @@
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
     nav.querySelectorAll('.nav-item').forEach((btn) => {
-      btn.addEventListener('click', () => navigate(btn.dataset.screen));
+      btn.addEventListener('click', () => { navigate(btn.dataset.screen); closeMobileNav(); });
     });
   }
 
   function markActiveNav(screen) {
     document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen));
   }
+
+  function closeMobileNav() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-backdrop').classList.remove('open');
+    const toggle = document.getElementById('mobile-menu-toggle');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = '☰';
+  }
+
+  document.getElementById('mobile-menu-toggle').addEventListener('click', () => {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const open = sidebar.classList.toggle('open');
+    backdrop.classList.toggle('open', open);
+    const toggle = document.getElementById('mobile-menu-toggle');
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.textContent = open ? '✕' : '☰';
+  });
+  document.getElementById('sidebar-backdrop').addEventListener('click', closeMobileNav);
 
   const view = document.getElementById('view');
 
