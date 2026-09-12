@@ -15,6 +15,7 @@ const billingRoutes = require('./routes/billing');
 const aiTeacherRoutes = require('./routes/aiTeacher');
 const liveRoutes = require('./routes/live');
 const researchAssistantRoutes = require('./routes/researchAssistant');
+const labRoutes = require('./routes/lab');
 const { attachLiveNamespace } = require('./realtime/live');
 
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api', aiTeacherRoutes);
 app.use('/api', liveRoutes);
 app.use('/api', researchAssistantRoutes);
+app.use('/api', labRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

@@ -167,6 +167,7 @@
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
       ['admin-activity', 'Lecturer Activity'],
+      ['admin-lab-queue', 'Digital Lab Approvals'],
     ],
   };
 
@@ -214,6 +215,7 @@
         case 'leaderboard': return renderLeaderboard();
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
+        case 'lab': return renderLab();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
@@ -224,6 +226,7 @@
         case 'admin-directory': return renderAdminDirectory();
         case 'admin-academics': return renderAdminAcademics();
         case 'admin-activity': return renderAdminActivity();
+        case 'admin-lab-queue': return renderAdminLabQueue();
         default: view.innerHTML = '<p>Not found.</p>';
       }
     } catch (err) {
@@ -329,6 +332,13 @@
         </div>
         <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
       </div>
+      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
+          <div class="meta">Step-by-step practicals for this course, curated by your lecturer.</div>
+        </div>
+        <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
+      </div>
       <div class="card">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
@@ -350,6 +360,7 @@
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim());
     });
+    document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
     const joinLiveBtn = document.getElementById('join-live-btn');
     if (joinLiveBtn) joinLiveBtn.addEventListener('click', () => {
       navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: false, title: liveClass.title });
@@ -824,6 +835,127 @@
     `;
   }
 
+  // ================= DIGITAL LAB (curated + AI-generated, admin-approved) =================
+
+  function demoCardHtml(d) {
+    const steps = d.steps;
+    return `<div class="card" style="padding:20px; margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+        <div>
+          <div style="font-weight:600;">${esc(d.title)}</div>
+          <div class="meta">${esc(d.description)}</div>
+        </div>
+        <span class="pill ${d.status === 'PENDING' ? 'pill-muted' : d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.status === 'PENDING' ? 'Pending admin review' : d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
+      </div>
+      <ol style="margin:14px 0 0; padding-left: 20px; display:flex; flex-direction:column; gap:8px;">
+        ${steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
+      </ol>
+    </div>`;
+  }
+
+  async function renderLab() {
+    const { courseId } = state.view;
+    const { course } = await api(`/courses/${courseId}`);
+    const { demonstrations } = await api(`/courses/${courseId}/lab`);
+    const isLecturer = state.user.role !== 'STUDENT';
+
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(course.code)}</div><h1>Digital Lab</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+      </div>
+      ${isLecturer ? `
+        <div class="card" style="padding:20px; margin-bottom:22px;">
+          <h3 style="margin-bottom:12px; font-size:1rem;">Add a curated practical</h3>
+          <form id="demo-form">
+            <div class="field"><label>Title</label><input type="text" id="demo-title" required></div>
+            <div class="field"><label>Description</label><input type="text" id="demo-desc"></div>
+            <div class="field">
+              <label>Steps — one per line, as "Step title | Instruction | Expected result"</label>
+              <textarea id="demo-steps" placeholder="Prepare the slide | Place a thin sample on the glass slide | The sample is flat and centered" required></textarea>
+            </div>
+            <button class="btn btn-primary" type="submit">Publish practical</button>
+          </form>
+        </div>
+      ` : `
+        <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:600;">Don't see the practical you need?</div>
+            <div class="meta">The AI Teacher can draft one — it goes to an admin for review before it's visible to anyone.</div>
+          </div>
+          <button class="btn btn-accent" id="request-demo-btn">Request AI practical</button>
+        </div>
+      `}
+      ${demonstrations.map(demoCardHtml).join('') || '<p class="muted">No practicals published yet.</p>'}
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate(isLecturer ? 'lect-lessons' : 'course-detail', { courseId }));
+
+    const demoForm = document.getElementById('demo-form');
+    if (demoForm) demoForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const steps = document.getElementById('demo-steps').value
+        .split('\n').map((l) => l.trim()).filter(Boolean)
+        .map((line) => {
+          const [title, instruction, expectedResult] = line.split('|').map((s) => (s || '').trim());
+          return { title: title || 'Step', instruction: instruction || '', expectedResult: expectedResult || '' };
+        });
+      try {
+        await api(`/courses/${courseId}/lab`, {
+          method: 'POST',
+          body: { title: document.getElementById('demo-title').value, description: document.getElementById('demo-desc').value, steps },
+        });
+        toast('Practical published');
+        render();
+      } catch (err) { toast(err.message); }
+    });
+
+    const requestBtn = document.getElementById('request-demo-btn');
+    if (requestBtn) requestBtn.addEventListener('click', async () => {
+      const topic = prompt('What practical topic should the AI draft?');
+      if (!topic || !topic.trim()) return;
+      try {
+        await api(`/courses/${courseId}/lab/generate`, { method: 'POST', body: { topic: topic.trim() } });
+        toast('Sent for admin review — it will appear here once approved.');
+        render();
+      } catch (err) {
+        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        toast(err.message);
+      }
+    });
+  }
+
+  async function renderAdminLabQueue() {
+    const { pending } = await api('/admin/lab/pending');
+    view.innerHTML = `
+      <div class="page-head"><h1>Digital Lab Approvals</h1></div>
+      <p class="muted" style="margin-bottom:18px;">AI-drafted practicals stay hidden from students until approved here.</p>
+      ${pending.map((d) => `
+        <div class="card" style="padding:20px; margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+            <div>
+              <div class="muted tabular">${esc(d.course.code)} · requested by ${esc(d.author.fullName)}</div>
+              <div style="font-weight:600; margin-top:4px;">${esc(d.title)}</div>
+              <div class="meta">${esc(d.description)}</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" data-approve="${d.id}">Approve</button>
+              <button class="btn btn-ghost btn-sm" data-reject="${d.id}">Reject</button>
+            </div>
+          </div>
+          <ol style="margin:14px 0 0; padding-left:20px; display:flex; flex-direction:column; gap:6px;">
+            ${d.steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
+          </ol>
+        </div>
+      `).join('') || '<p class="muted">Nothing pending review.</p>'}
+    `;
+    view.querySelectorAll('[data-approve]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/lab/${btn.dataset.approve}/approve`, { method: 'POST' }); toast('Approved'); render(); });
+    });
+    view.querySelectorAll('[data-reject]').forEach((btn) => {
+      btn.addEventListener('click', async () => { await api(`/admin/lab/${btn.dataset.reject}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
+    });
+  }
+
   // ================= AI RESEARCH ASSISTANT =================
 
   async function renderResearchAssistant() {
@@ -1186,6 +1318,13 @@
         </div>
         <button class="btn btn-accent" id="go-live-btn">🔴 Go live</button>
       </div>
+      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
+          <div class="meta">Add curated practicals, or review AI-drafted ones students have requested.</div>
+        </div>
+        <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
+      </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
         <form id="lesson-form">
@@ -1206,6 +1345,7 @@
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
+    document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
     document.getElementById('go-live-btn').addEventListener('click', async () => {
       const title = prompt('Title your live class:', `${course.code} live session`);
       if (!title || !title.trim()) return;

@@ -46,6 +46,7 @@ model User {
   liveClassesHosted LiveClass[]  @relation("LiveClassHost")
   stats          UserStats?
   badges         UserBadge[]
+  labDemonstrationsMade LabDemonstration[] @relation("LabDemoAuthor")
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -136,6 +137,7 @@ model Course {
   assessments  Assessment[]
   aiTeacherSessions AiTeacherSession[]
   liveClasses  LiveClass[]
+  labDemonstrations LabDemonstration[]
 
   @@unique([departmentId, code])
 }
@@ -300,4 +302,23 @@ model LiveClass {
   status    String   @default("ACTIVE") // ACTIVE | ENDED
   startedAt DateTime @default(now())
   endedAt   DateTime?
+}
+
+// Digital lab: a practical/demonstration walkthrough (steps with instructions and
+// expected results). Lecturer-authored ones are trusted and go live immediately.
+// Student-requested ones are AI-generated on demand and held back behind a human
+// admin approval queue before any student can see them -- same safety pattern PassNow
+// uses, since an unreviewed AI-written "practical" could describe an unsafe procedure.
+model LabDemonstration {
+  id          String   @id @default(cuid())
+  course      Course   @relation(fields: [courseId], references: [id])
+  courseId    String
+  title       String
+  description String
+  stepsJson   String   // JSON-encoded [{title, instruction, expectedResult}]
+  source      String   // CURATED | AI_GENERATED
+  status      String   @default("APPROVED") // APPROVED | PENDING | REJECTED
+  author      User?    @relation("LabDemoAuthor", fields: [authorId], references: [id])
+  authorId    String?
+  createdAt   DateTime @default(now())
 }
