@@ -1,29 +1,22 @@
-// Scaffolding for Simli's real-time talking-avatar video (api.simli.ai). Not yet
-// verified end-to-end against a live Simli account -- when SIMLI_API_KEY/SIMLI_FACE_ID
-// are provided, double-check this request shape against Simli's current docs before
-// relying on it, since third-party API contracts can change.
+// Simli real-time talking-avatar video (api.simli.ai). Verified against Simli's own
+// published tutorials (docs.simli.com's own reference page for this returned an
+// inconsistent/renamed endpoint when checked, so this follows the confirmed
+// SimliClient browser-SDK pattern instead): the browser's SimliClient connects
+// directly to Simli using apiKey + faceID, so the backend's only job is to hand those
+// two values to an authenticated, subscribed student -- there's no separate
+// "create session" server-to-Simli call in this flow.
 
 function isConfigured() {
   return !!(process.env.SIMLI_API_KEY && process.env.SIMLI_FACE_ID);
 }
 
-async function startSession() {
+function getClientConfig() {
   if (!isConfigured()) {
     const err = new Error('The AI video avatar is not configured yet (missing SIMLI_API_KEY / SIMLI_FACE_ID).');
     err.code = 'SIMLI_NOT_CONFIGURED';
     throw err;
   }
-  const res = await fetch('https://api.simli.ai/startAudioToVideoSession', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      apiKey: process.env.SIMLI_API_KEY,
-      faceId: process.env.SIMLI_FACE_ID,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'Failed to start the AI avatar session');
-  return data; // expected to include a session token / room details for the client SDK
+  return { apiKey: process.env.SIMLI_API_KEY, faceID: process.env.SIMLI_FACE_ID };
 }
 
-module.exports = { isConfigured, startSession };
+module.exports = { isConfigured, getClientConfig };

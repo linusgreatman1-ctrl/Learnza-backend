@@ -7,6 +7,9 @@
 <title>Learnza — App</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   body { background: var(--paper); }
   #auth-screen {
@@ -110,6 +113,22 @@
   @keyframes avatar-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
   .ai-avatar-label { color: rgba(250,247,240,0.75); font-size: 0.8rem; margin-top: 12px; }
   .ai-avatar-video { width: 100%; max-width: 260px; border-radius: 12px; margin-top: 14px; }
+
+  /* Smart-board panel: a physical-classroom-board look for AI-generated lesson
+     content (text/equations/diagrams/graphs), anchored below the avatar. */
+  .smart-board { background: linear-gradient(180deg, #1d3a2e, #163025); border: 6px solid #6b4a2f; border-radius: 10px; padding: 18px; color: #f4f1e8; min-height: 120px; }
+  .smart-board .board-action { margin-bottom: 14px; }
+  .smart-board .board-action:last-child { margin-bottom: 0; }
+  .smart-board .board-text { white-space: pre-wrap; line-height: 1.6; }
+  .smart-board .board-diagram svg { max-width: 100%; height: auto; background: #fff; border-radius: 6px; padding: 8px; }
+  .smart-board .board-graph canvas { background: #fff; border-radius: 6px; padding: 8px; max-width: 100%; }
+  .smart-board .katex { color: #f4f1e8; font-size: 1.1rem; }
+
+  /* Collapsible "Got a question" panel -- closed by default, matching PassNow's
+     placement below the lesson content rather than an always-visible input. */
+  .got-question-toggle { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, #1A1A2E, #0F3460); color: #fff; cursor: pointer; margin-top: 16px; }
+  .got-question-toggle .gq-sub { font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 2px; }
+  .got-question-panel { margin-top: 10px; }
 
   @media (max-width: 760px) {
     .notif-bell-desktop { display: none; }
@@ -257,6 +276,13 @@
 </div>
 
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script type="module">
+  // jsDelivr's +esm build works as a real browser ES module regardless of how the
+  // package itself is bundled, so this works without adding a build step to an
+  // otherwise-plain-script app.
+  import { SimliClient } from 'https://cdn.jsdelivr.net/npm/simli-client@3.0.2/+esm';
+  window.SimliClient = SimliClient;
+</script>
 <script src="app.js"></script>
 </body>
 </html>

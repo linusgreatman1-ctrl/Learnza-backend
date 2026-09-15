@@ -55,6 +55,35 @@ async function callAnthropic(systemPrompt, userPrompt) {
   return text;
 }
 
+// Gemini-only: Anthropic's API has no TTS endpoint. Returns raw PCM16 audio (24kHz,
+// mono) as a base64 string -- the shape Simli's sendAudioData() expects to stream to
+// the video avatar. Reference: https://ai.google.dev/gemini-api/docs/generate-content/speech-generation
+async function synthesizeSpeech(text) {
+  if (!process.env.GEMINI_API_KEY) {
+    const err = new Error('AI Teacher voice synthesis needs GEMINI_API_KEY (Anthropic has no TTS endpoint).');
+    err.code = 'AI_NOT_CONFIGURED';
+    throw err;
+  }
+  const model = process.env.GEMINI_TTS_MODEL || 'gemini-2.5-flash-preview-tts';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.GEMINI_TTS_VOICE || 'Kore' } } },
+      },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || 'Speech synthesis request failed');
+  const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+  if (!part?.data) throw new Error('Speech synthesis returned no audio');
+  return { data: part.data, mimeType: part.mimeType || 'audio/pcm' };
+}
+
 function requireProvider() {
   const provider = activeProvider();
   if (!provider) {
@@ -90,4 +119,4 @@ function extractJson(text) {
   return (fenced ? fenced[1] : text).trim();
 }
 
-module.exports = { isConfigured, activeProvider, askForJson, askForText };
+module.exports = { isConfigured, activeProvider, askForJson, askForText, synthesizeSpeech };

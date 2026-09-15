@@ -308,7 +308,10 @@ model GroupMessage {
   groupId   String
   sender    User       @relation(fields: [senderId], references: [id])
   senderId  String
-  body      String
+  body      String?    // null for a file-only message
+  fileUrl   String?
+  fileName  String?
+  fileMime  String?
   createdAt DateTime   @default(now())
 }
 

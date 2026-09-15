@@ -101,7 +101,7 @@ router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUD
   const section = plan.sections[session.sectionIdx];
 
   try {
-    const { answer } = await aiTeacher.answerInterrupt({
+    const { answer, boardActions } = await aiTeacher.answerInterrupt({
       courseTitle: courseTitleOf(session),
       topic: session.topic,
       sectionTitle: section.title,
@@ -113,7 +113,7 @@ router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUD
         { sessionId: session.id, role: 'TEACHER', type: 'INTERRUPT_ANSWER', content: answer, sectionIdx: session.sectionIdx },
       ],
     });
-    res.json({ answer });
+    res.json({ answer, boardActions });
   } catch (err) {
     handleAiError(res, err);
   }
@@ -142,10 +142,24 @@ router.post('/ai-teacher/sessions/:id/check-answer', requireAuth, requireRole('S
   }
 });
 
-router.post('/ai-teacher/sessions/:id/avatar', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+// Not session-scoped -- it's the same subscription-gated Simli config regardless of
+// whether the avatar is being connected for a live session or a pre-recorded lesson.
+router.post('/ai-teacher/avatar-config', requireAuth, requireRole('STUDENT'), requireActiveSubscription, (req, res) => {
   try {
-    const data = await simli.startSession();
-    res.json(data);
+    res.json(simli.getClientConfig());
+  } catch (err) {
+    handleAiError(res, err);
+  }
+});
+
+// Text -> speech for the avatar to lip-sync to. Returns base64 PCM16 audio the
+// browser feeds straight into SimliClient.sendAudioData() in chunks.
+router.post('/ai-teacher/tts', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'No text to speak.' });
+  try {
+    const audio = await aiTeacher.synthesizeSpeech(text);
+    res.json(audio);
   } catch (err) {
     handleAiError(res, err);
   }

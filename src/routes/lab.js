@@ -3,6 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const { requireActiveSubscription } = require('../subscription');
 const labDemo = require('../services/labDemo.service');
+const ai = require('../services/aiProvider.service');
 
 const router = express.Router();
 
@@ -67,6 +68,25 @@ router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), re
   } catch (err) {
     if (err.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: err.message, code: err.code });
     res.status(502).json({ error: 'Could not generate that demonstration. Please try again.' });
+  }
+});
+
+// "Got a question" for a practical -- same subscription gate as generating one,
+// answered with the practical's own content as context so it stays on-topic.
+router.post('/lab/:id/ask', requireAuth, requireActiveSubscription, async (req, res) => {
+  const { question } = req.body;
+  if (!question || !question.trim()) return res.status(400).json({ error: 'Type a question first.' });
+  const demo = await prisma.labDemonstration.findUnique({ where: { id: req.params.id } });
+  if (!demo) return res.status(404).json({ error: 'Practical not found' });
+
+  const steps = JSON.parse(demo.stepsJson).map((s, i) => `${i + 1}. ${s.title}: ${s.instruction}`).join('\n');
+  const systemPrompt = `You are the AI teacher guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
+  try {
+    const answer = await ai.askForText(systemPrompt, question.trim());
+    res.json({ answer });
+  } catch (err) {
+    if (err.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: err.message, code: err.code });
+    res.status(502).json({ error: 'Could not answer that right now. Please try again.' });
   }
 });
 

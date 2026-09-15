@@ -417,6 +417,7 @@
     window.speechSynthesis && window.speechSynthesis.cancel();
     if (state.view.screen === 'live-class' && screen !== 'live-class') teardownLive();
     if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
+    if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -772,6 +773,8 @@
       return;
     }
 
+    if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
+    const { avatarConfigured } = await api('/config').catch(() => ({ avatarConfigured: false }));
     const words = lesson.script.split(/(\s+)/);
     const scriptHtml = words.map((w, i) => `<span data-w="${i}">${esc(w)}</span>`).join('');
 
@@ -782,13 +785,21 @@
       </div>
       <div class="card lesson-player">
         <span class="pill pill-accent">AI Teacher — subscriber lesson</span>
-        ${lesson.videoUrl ? `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>` : ''}
+        ${lesson.videoUrl ? `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>` : `
+          <div class="ai-avatar-box" style="margin-top:14px;">
+            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
+            <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
+            <audio id="avatar-audio" autoplay hidden></audio>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
+            ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
+          </div>
+        `}
         <div class="controls">
           <button class="btn btn-primary" id="play-btn">▶ Play AI narration</button>
           <button class="btn btn-ghost" id="pause-btn">Pause</button>
           <button class="btn btn-ghost" id="stop-btn">Stop</button>
         </div>
-        <div class="script-text" id="script-text">${scriptHtml}</div>
+        <div class="smart-board"><div class="board-action board-text" id="script-text">${scriptHtml}</div></div>
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: state.view.courseId }));
@@ -797,6 +808,7 @@
     const scriptEl = document.getElementById('script-text');
 
     document.getElementById('play-btn').addEventListener('click', () => {
+      if (simliAvatarClient) { speakThroughAvatarOrTts(lesson.script, document.getElementById('ai-avatar-ring')); return; }
       if (!synth) { toast('Your browser does not support spoken narration — read the script below.'); return; }
       synth.cancel();
       const utter = new SpeechSynthesisUtterance(lesson.script);
@@ -819,6 +831,25 @@
     });
     document.getElementById('pause-btn').addEventListener('click', () => synth && synth.pause());
     document.getElementById('stop-btn').addEventListener('click', () => synth && synth.cancel());
+
+    const avatarBtn = document.getElementById('start-avatar-btn');
+    if (avatarBtn) avatarBtn.addEventListener('click', async () => {
+      avatarBtn.disabled = true;
+      avatarBtn.textContent = 'Connecting…';
+      const client = await connectAvatar(
+        document.getElementById('avatar-video'),
+        document.getElementById('avatar-audio'),
+        document.getElementById('ai-avatar-ring'),
+        document.getElementById('ai-avatar-label')
+      );
+      if (client) {
+        simliAvatarClient = client;
+        avatarBtn.hidden = true;
+      } else {
+        avatarBtn.disabled = false;
+        avatarBtn.textContent = '🎥 Connect video avatar';
+      }
+    });
   }
 
   // ================= AI TEACHER (live interactive session) =================
@@ -836,7 +867,84 @@
     window.speechSynthesis.speak(utter);
   }
 
+  // A live Simli connection is tied to specific video/audio DOM elements, and this
+  // app fully replaces view.innerHTML on every render (section advance, interrupt
+  // answer, etc.) rather than patching the DOM -- so the connection can't survive a
+  // re-render. Closed and nulled at the top of every renderAiTeacherSession() call;
+  // the student just taps "Connect video avatar" again for the new section.
+  let simliAvatarClient = null;
+
+  function renderBoardActionsHtml(actions) {
+    if (!actions || !actions.length) return '<div class="board-action board-text muted">Nothing on the board yet.</div>';
+    return actions.map((a, i) => {
+      if (a.type === 'DIAGRAM') return `<div class="board-action board-diagram" data-idx="${i}">${a.content}</div>`;
+      if (a.type === 'EQUATION') return `<div class="board-action board-equation" data-idx="${i}"></div>`;
+      if (a.type === 'GRAPH') return `<div class="board-action board-graph" data-idx="${i}"><canvas></canvas></div>`;
+      return `<div class="board-action board-text" data-idx="${i}">${esc(a.content)}</div>`;
+    }).join('');
+  }
+
+  function mountBoardActions(containerEl, actions) {
+    (actions || []).forEach((a, i) => {
+      const el = containerEl.querySelector(`[data-idx="${i}"]`);
+      if (!el) return;
+      if (a.type === 'EQUATION' && window.katex) {
+        try { window.katex.render(a.content, el, { throwOnError: false }); } catch { el.textContent = a.content; }
+      } else if (a.type === 'GRAPH' && window.Chart) {
+        try {
+          const spec = JSON.parse(a.content);
+          new window.Chart(el.querySelector('canvas'), {
+            type: spec.type === 'bar' ? 'bar' : 'line',
+            data: { labels: spec.labels || [], datasets: [{ data: spec.values || [], backgroundColor: '#e3ac4c', borderColor: '#e3ac4c' }] },
+            options: { responsive: true, plugins: { legend: { display: false } } },
+          });
+        } catch { /* malformed graph spec -- leave the empty canvas rather than crash the board */ }
+      }
+    });
+  }
+
+  // Connects the video avatar and returns the SimliClient, or null (with a toast) on
+  // failure -- config comes from the backend so the raw Simli API key only ever
+  // reaches an authenticated, subscribed student, never an anonymous visitor.
+  async function connectAvatar(videoEl, audioEl, ringEl, labelEl) {
+    if (!window.SimliClient) { toast('Video avatar library failed to load.'); return null; }
+    try {
+      const config = await api(`/ai-teacher/avatar-config`, { method: 'POST' });
+      const client = new window.SimliClient();
+      client.Initialize({ apiKey: config.apiKey, faceID: config.faceID, handleSilence: true, videoRef: videoEl, audioRef: audioEl });
+      await client.start();
+      videoEl.hidden = false;
+      ringEl.style.display = 'none';
+      if (labelEl) labelEl.textContent = 'AI Teacher — video avatar connected';
+      return client;
+    } catch (err) {
+      if (err.code === 'SUBSCRIPTION_REQUIRED') { renderUpgradePrompt(err.message); return null; }
+      toast(err.message || 'Could not connect the video avatar.');
+      return null;
+    }
+  }
+
+  // Speaks through the connected avatar (server TTS -> PCM16 -> Simli lip-sync),
+  // falling back to the browser's own speech synthesis when no avatar is connected.
+  async function speakThroughAvatarOrTts(text, ringEl) {
+    if (!simliAvatarClient) return speak(text, ringEl);
+    try {
+      const { data } = await api(`/ai-teacher/tts`, { method: 'POST', body: { text } });
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const chunkSize = 6400; // ~130ms of 24kHz 16-bit mono PCM per chunk
+      let i = 0;
+      const interval = setInterval(() => {
+        if (i >= bytes.length) { clearInterval(interval); return; }
+        simliAvatarClient.sendAudioData(bytes.subarray(i, i + chunkSize));
+        i += chunkSize;
+      }, 130);
+    } catch (err) {
+      toast(err.message || 'The AI Teacher had trouble speaking that.');
+    }
+  }
+
   async function renderAiTeacherSession() {
+    if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
     const { session } = await api(`/ai-teacher/sessions/${state.view.sessionId}`);
     const section = session.plan.sections[session.sectionIdx];
     const isLast = session.sectionIdx >= session.plan.sections.length - 1;
@@ -851,12 +959,13 @@
         <div class="ai-avatar-box">
           <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(session.plan.title || 'AI'))}</div>
           <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
-          <div class="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
+          <audio id="avatar-audio" autoplay hidden></audio>
+          <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
           ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
         </div>
-        <div class="meta">Section ${session.sectionIdx + 1} of ${session.plan.sections.length}${session.status === 'COMPLETED' ? ' · Completed' : ''}</div>
+        <div class="smart-board" id="smart-board">${renderBoardActionsHtml(section.boardActions)}</div>
+        <div class="meta" style="margin-top:12px;">Section ${session.sectionIdx + 1} of ${session.plan.sections.length}${session.status === 'COMPLETED' ? ' · Completed' : ''}</div>
         <h3 style="margin:8px 0 12px;">${esc(section.title)}</h3>
-        <div class="script-text" style="white-space:pre-wrap;">${esc(section.boardText)}</div>
         <div class="controls">
           <button class="btn btn-primary" id="play-btn">▶ Hear the teacher</button>
           ${session.status !== 'COMPLETED' ? `<button class="btn btn-accent" id="next-btn">${isLast ? 'Finish lesson' : 'Next section →'}</button>` : ''}
@@ -870,25 +979,30 @@
           <div id="check-feedback" style="margin-top:10px;"></div>
         ` : ''}
 
-        <div class="hr"></div>
-        <div style="font-weight:600; margin-bottom:8px;">Ask the AI Teacher a question</div>
-        <div id="interrupt-log" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
-          ${session.turns.filter((t) => t.type === 'INTERRUPT_QUESTION' || t.type === 'INTERRUPT_ANSWER').map((t) => `
-            <div class="chat-msg" style="max-width:100%; ${t.role === 'STUDENT' ? 'align-self:flex-end; background:var(--accent-soft);' : ''}">${esc(t.content)}</div>
-          `).join('')}
+        <div class="got-question-toggle" id="got-question-toggle">
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub">Learnza answers visually without leaving the lesson</div></div>
+          <span id="gq-arrow">▼</span>
         </div>
-        <div style="display:flex; gap:8px;">
-          <input type="text" id="interrupt-input" placeholder="e.g. Can you explain that differently?" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
-          <button class="btn btn-primary btn-sm" id="interrupt-btn">Ask</button>
+        <div class="got-question-panel" id="got-question-panel" hidden>
+          <div id="interrupt-log" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+            ${session.turns.filter((t) => t.type === 'INTERRUPT_QUESTION' || t.type === 'INTERRUPT_ANSWER').map((t) => `
+              <div class="chat-msg" style="max-width:100%; ${t.role === 'STUDENT' ? 'align-self:flex-end; background:var(--accent-soft);' : ''}">${esc(t.content)}</div>
+            `).join('')}
+          </div>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="interrupt-input" placeholder="e.g. Can you explain that differently?" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+            <button class="btn btn-primary btn-sm" id="interrupt-btn">Ask</button>
+          </div>
         </div>
       </div>
     `;
+    mountBoardActions(document.getElementById('smart-board'), section.boardActions);
 
     document.getElementById('back-btn').addEventListener('click', () => {
       if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
       else navigate('course-detail', { courseId: session.courseId });
     });
-    document.getElementById('play-btn').addEventListener('click', () => speak(section.speechText, document.getElementById('ai-avatar-ring')));
+    document.getElementById('play-btn').addEventListener('click', () => speakThroughAvatarOrTts(section.speechText, document.getElementById('ai-avatar-ring')));
 
     const nextBtn = document.getElementById('next-btn');
     if (nextBtn) nextBtn.addEventListener('click', async () => {
@@ -914,14 +1028,32 @@
       }
     });
 
+    document.getElementById('got-question-toggle').addEventListener('click', () => {
+      const panel = document.getElementById('got-question-panel');
+      panel.hidden = !panel.hidden;
+      document.getElementById('gq-arrow').textContent = panel.hidden ? '▼' : '▲';
+    });
     document.getElementById('interrupt-btn').addEventListener('click', async () => {
       const input = document.getElementById('interrupt-input');
       const question = input.value.trim();
       if (!question) return;
       input.value = '';
       try {
-        await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
-        render();
+        // Updates the log/board in place (not a full render()) so a live avatar
+        // connection survives the interrupt instead of needing to reconnect.
+        const { answer, boardActions } = await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
+        const log = document.getElementById('interrupt-log');
+        log.insertAdjacentHTML('beforeend', `
+          <div class="chat-msg" style="max-width:100%; align-self:flex-end; background:var(--accent-soft);">${esc(question)}</div>
+          <div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>
+        `);
+        log.scrollTop = log.scrollHeight;
+        if (boardActions && boardActions.length) {
+          const board = document.getElementById('smart-board');
+          board.innerHTML = renderBoardActionsHtml(boardActions);
+          mountBoardActions(board, boardActions);
+        }
+        speakThroughAvatarOrTts(answer, document.getElementById('ai-avatar-ring'));
       } catch (err) {
         if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
         toast(err.message);
@@ -930,11 +1062,21 @@
 
     const avatarBtn = document.getElementById('start-avatar-btn');
     if (avatarBtn) avatarBtn.addEventListener('click', async () => {
-      try {
-        await api(`/ai-teacher/sessions/${session.id}/avatar`, { method: 'POST' });
-        toast('Avatar session started — video wiring finishes once Simli is fully connected.');
-      } catch (err) {
-        toast(err.message);
+      avatarBtn.disabled = true;
+      avatarBtn.textContent = 'Connecting…';
+      const client = await connectAvatar(
+        document.getElementById('avatar-video'),
+        document.getElementById('avatar-audio'),
+        document.getElementById('ai-avatar-ring'),
+        document.getElementById('ai-avatar-label')
+      );
+      if (client) {
+        simliAvatarClient = client;
+        avatarBtn.hidden = true;
+        speakThroughAvatarOrTts(section.speechText, document.getElementById('ai-avatar-ring'));
+      } else {
+        avatarBtn.disabled = false;
+        avatarBtn.textContent = '🎥 Connect video avatar';
       }
     });
   }
@@ -1559,18 +1701,58 @@
 
   function demoCardHtml(d) {
     const steps = d.steps;
-    return `<div class="card" style="padding:20px; margin-bottom:14px;">
+    return `<div class="card" style="padding:20px; margin-bottom:14px;" data-demo-card="${d.id}">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
         <div>
           <div style="font-weight:600;">${esc(d.title)}</div>
           <div class="meta">${esc(d.description)}</div>
         </div>
-        <span class="pill ${d.status === 'PENDING' ? 'pill-muted' : d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.status === 'PENDING' ? 'Pending admin review' : d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
+        <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
       </div>
       <ol style="margin:14px 0 0; padding-left: 20px; display:flex; flex-direction:column; gap:8px;">
         ${steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
       </ol>
+      <div class="got-question-toggle" data-gq-toggle="${d.id}" style="margin-top:14px;">
+        <div style="font-weight:600;">✋ Got a question about this practical?</div>
+        <span data-gq-arrow="${d.id}">▼</span>
+      </div>
+      <div class="got-question-panel" data-gq-panel="${d.id}" hidden>
+        <div data-gq-log="${d.id}" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" data-gq-input="${d.id}" placeholder="e.g. Why does this step matter?" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+          <button class="btn btn-primary btn-sm" data-gq-ask="${d.id}">Ask</button>
+        </div>
+      </div>
     </div>`;
+  }
+
+  function wireLabQuestionPanels(container) {
+    container.querySelectorAll('[data-gq-toggle]').forEach((toggle) => {
+      const id = toggle.dataset.gqToggle;
+      toggle.addEventListener('click', () => {
+        const panel = container.querySelector(`[data-gq-panel="${id}"]`);
+        panel.hidden = !panel.hidden;
+        container.querySelector(`[data-gq-arrow="${id}"]`).textContent = panel.hidden ? '▼' : '▲';
+      });
+    });
+    container.querySelectorAll('[data-gq-ask]').forEach((btn) => {
+      const id = btn.dataset.gqAsk;
+      btn.addEventListener('click', async () => {
+        const input = container.querySelector(`[data-gq-input="${id}"]`);
+        const question = input.value.trim();
+        if (!question) return;
+        input.value = '';
+        const log = container.querySelector(`[data-gq-log="${id}"]`);
+        log.insertAdjacentHTML('beforeend', `<div class="chat-msg" style="max-width:100%; align-self:flex-end; background:var(--accent-soft);">${esc(question)}</div>`);
+        try {
+          const { answer } = await api(`/lab/${id}/ask`, { method: 'POST', body: { question } });
+          log.insertAdjacentHTML('beforeend', `<div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>`);
+        } catch (err) {
+          if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+          toast(err.message);
+        }
+      });
+    });
   }
 
   async function renderLab() {
@@ -1598,17 +1780,19 @@
           </form>
         </div>
       ` : `
-        <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-          <div>
-            <div style="font-weight:600;">Don't see the practical you need?</div>
-            <div class="meta">The AI Teacher can draft one — it goes to an admin for review before it's visible to anyone.</div>
+        <div class="card" style="padding:20px; margin-bottom:22px;">
+          <div style="font-weight:600;">Don't see the practical you need?</div>
+          <div class="meta" style="margin-bottom:12px;">Type a topic and the AI Teacher drafts it instantly — no admin review, included with your subscription.</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <input type="text" id="gen-demo-topic" placeholder="e.g. Titration of acid and base" style="flex:1; min-width:220px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+            <button class="btn btn-accent" id="request-demo-btn">Generate practical</button>
           </div>
-          <button class="btn btn-accent" id="request-demo-btn">Request AI practical</button>
         </div>
       `}
       ${demonstrations.map(demoCardHtml).join('') || '<p class="muted">No practicals published yet.</p>'}
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate(isLecturer ? 'lect-lessons' : 'course-detail', { courseId }));
+    wireLabQuestionPanels(view);
 
     const demoForm = document.getElementById('demo-form');
     if (demoForm) demoForm.addEventListener('submit', async (e) => {
@@ -1631,15 +1815,20 @@
 
     const requestBtn = document.getElementById('request-demo-btn');
     if (requestBtn) requestBtn.addEventListener('click', async () => {
-      const topic = prompt('What practical topic should the AI draft?');
-      if (!topic || !topic.trim()) return;
+      const topicInput = document.getElementById('gen-demo-topic');
+      const topic = topicInput.value.trim();
+      if (!topic) return toast('Type a topic first.');
+      requestBtn.disabled = true;
+      requestBtn.textContent = 'Generating…';
       try {
-        await api(`/courses/${courseId}/lab/generate`, { method: 'POST', body: { topic: topic.trim() } });
-        toast('Sent for admin review — it will appear here once approved.');
+        await api(`/courses/${courseId}/lab/generate`, { method: 'POST', body: { topic } });
+        toast('Practical ready');
         render();
       } catch (err) {
         if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
         toast(err.message);
+        requestBtn.disabled = false;
+        requestBtn.textContent = 'Generate practical';
       }
     });
   }
@@ -1883,16 +2072,31 @@
     });
   }
 
+  function groupMessageBubbleHtml(m) {
+    const sender = `<div class="sender">${esc(m.sender.fullName)}</div>`;
+    if (!m.fileUrl) return `<div class="chat-msg">${sender}${esc(m.body)}</div>`;
+    const isImage = (m.fileMime || '').startsWith('image/');
+    const isVideo = (m.fileMime || '').startsWith('video/');
+    const preview = isImage
+      ? `<img src="${esc(m.fileUrl)}" alt="${esc(m.fileName)}" style="max-width:220px; max-height:220px; border-radius:8px; display:block; margin-top:6px;">`
+      : isVideo
+        ? `<video src="${esc(m.fileUrl)}" controls style="max-width:220px; border-radius:8px; display:block; margin-top:6px;"></video>`
+        : `<div style="margin-top:6px;">📎 ${esc(m.fileName)}</div>`;
+    return `<div class="chat-msg">${sender}${preview}<a href="${esc(m.fileUrl)}" target="_blank" rel="noopener" style="font-size:0.78rem; text-decoration:underline; display:block; margin-top:4px;">⬇ Download</a></div>`;
+  }
+
   async function renderGroupChat() {
     const { messages } = await api(`/groups/${state.view.groupId}/messages`);
     view.innerHTML = `
       <div class="page-head"><h1>Study group</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to groups</button></div>
       <div class="card chat-box">
         <div class="chat-messages" id="chat-messages">
-          ${messages.map((m) => `<div class="chat-msg"><div class="sender">${esc(m.sender.fullName)}</div>${esc(m.body)}</div>`).join('') || '<p class="muted">No messages yet — say hello.</p>'}
+          ${messages.map(groupMessageBubbleHtml).join('') || '<p class="muted">No messages yet — say hello.</p>'}
         </div>
         <form class="chat-input-row" id="chat-form">
-          <input type="text" id="chat-input" placeholder="Message your study group…" required>
+          <input type="file" id="chat-file" hidden>
+          <button type="button" class="btn btn-ghost" id="chat-attach-btn" title="Attach a file">📎</button>
+          <input type="text" id="chat-input" placeholder="Message your study group…">
           <button class="btn btn-primary" type="submit">Send</button>
         </form>
       </div>
@@ -1907,6 +2111,19 @@
       await api(`/groups/${state.view.groupId}/messages`, { method: 'POST', body: { body: input.value } });
       input.value = '';
       renderGroupChat();
+    });
+    document.getElementById('chat-attach-btn').addEventListener('click', () => document.getElementById('chat-file').click());
+    document.getElementById('chat-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        await api(`/groups/${state.view.groupId}/messages/file`, { method: 'POST', body: formData });
+        renderGroupChat();
+      } catch (err) {
+        toast(err.message);
+      }
     });
   }
 

@@ -1,22 +1,64 @@
 const ai = require('./aiProvider.service');
 
+// Very small allowlist-by-removal SVG sanitizer -- strips script tags, event-handler
+// attributes, and javascript: URIs before board content is ever trusted with
+// innerHTML client-side. Matches the same safety posture PassNow uses for AI-drawn
+// diagrams (an unreviewed AI-written SVG could otherwise carry an XSS payload).
+function sanitizeSvg(svg) {
+  if (!svg || typeof svg !== 'string') return '';
+  return svg
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*(["']).*?\1/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/(href|xlink:href)\s*=\s*(["'])\s*javascript:.*?\2/gi, '');
+}
+
+function sanitizeBoardActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions
+    .filter((a) => a && a.type && a.content != null)
+    .map((a) => ({
+      type: ['TEXT', 'EQUATION', 'DIAGRAM', 'GRAPH'].includes(a.type) ? a.type : 'TEXT',
+      content: a.type === 'DIAGRAM' ? sanitizeSvg(String(a.content)) : a.content,
+    }));
+}
+
 const LESSON_PLAN_SYSTEM = `You are an expert lecturer creating an interactive lesson for a Nigerian higher-institution (college of education) student. Reply with JSON only, matching exactly this shape:
 {
   "title": string,
   "sections": [
-    { "title": string, "boardText": string, "speechText": string, "checkQuestion": string | null }
+    {
+      "title": string,
+      "boardText": string,
+      "speechText": string,
+      "checkQuestion": string | null,
+      "boardActions": [
+        { "type": "TEXT" | "EQUATION" | "DIAGRAM" | "GRAPH", "content": string }
+      ]
+    }
   ]
 }
 Rules:
 - 4 to 6 sections, each covering one sub-topic.
-- "boardText" is short bullet-style text a whiteboard would show (plain text, use "\\n" for line breaks, no markdown symbols).
+- "boardText" is short bullet-style text a whiteboard would show (plain text, use "\\n" for line breaks, no markdown symbols) -- kept for backward compatibility, still fill it in.
 - "speechText" is what the teacher says aloud for that section, in a warm, clear, conversational tone -- longer and more explanatory than boardText.
 - "checkQuestion" is a short open-ended comprehension question for about half the sections (null for the rest), checking the student understood that section.
+- "boardActions" is what actually renders on the whiteboard, 1 to 4 items per section, richer than boardText where the topic calls for it:
+  - "TEXT": short plain-text bullet points (like boardText).
+  - "EQUATION": a single LaTeX expression as "content" (no $ delimiters), only when the topic is genuinely mathematical/scientific.
+  - "DIAGRAM": a small, valid, self-contained inline SVG string as "content" (include a viewBox, keep it simple -- boxes, arrows, circles, labels), only when a labeled diagram would clarify the concept (e.g. a process flow, a labeled structure).
+  - "GRAPH": "content" is a JSON string (not an object) of the shape {"type":"bar"|"line","labels":["A","B"],"values":[1,2]}, only when the topic involves comparing or trending numeric data.
+  - Every section should have at least one TEXT action; only add EQUATION/DIAGRAM/GRAPH when they genuinely help (most sections will be TEXT-only, and that's fine).
 Return JSON only, no prose before or after.`;
 
 const INTERRUPT_SYSTEM = `You are an interactive AI lecturer mid-lesson. A student just interrupted with a question. Reply with JSON only:
-{ "answer": string }
-Answer clearly and briefly (2-4 sentences), staying on the lesson's topic, in the same tone as a helpful lecturer. Return JSON only.`;
+{
+  "answer": string,
+  "boardActions": [
+    { "type": "TEXT" | "EQUATION" | "DIAGRAM" | "GRAPH", "content": string }
+  ]
+}
+Answer clearly and briefly (2-4 sentences) in "answer", staying on the lesson's topic, in the same tone as a helpful lecturer. "boardActions" follows the same rules as a lesson section's board content (1-3 items, TEXT by default, EQUATION/DIAGRAM/GRAPH only when it genuinely clarifies the answer). Return JSON only.`;
 
 const GRADE_SYSTEM = `You are grading a student's short spoken/typed answer to a comprehension check question during a lesson. Reply with JSON only:
 { "correct": boolean, "feedback": string }
@@ -24,12 +66,18 @@ const GRADE_SYSTEM = `You are grading a student's short spoken/typed answer to a
 
 async function generateLessonPlan({ courseTitle, topic }) {
   const userPrompt = `Course: ${courseTitle}\nTopic to teach: ${topic}`;
-  return ai.askForJson(LESSON_PLAN_SYSTEM, userPrompt);
+  const plan = await ai.askForJson(LESSON_PLAN_SYSTEM, userPrompt);
+  plan.sections = (plan.sections || []).map((s) => ({
+    ...s,
+    boardActions: sanitizeBoardActions(s.boardActions).length ? sanitizeBoardActions(s.boardActions) : [{ type: 'TEXT', content: s.boardText || '' }],
+  }));
+  return plan;
 }
 
 async function answerInterrupt({ courseTitle, topic, sectionTitle, question }) {
   const userPrompt = `Course: ${courseTitle}\nLesson topic: ${topic}\nCurrent section: ${sectionTitle}\nStudent's question: ${question}`;
-  return ai.askForJson(INTERRUPT_SYSTEM, userPrompt);
+  const result = await ai.askForJson(INTERRUPT_SYSTEM, userPrompt);
+  return { ...result, boardActions: sanitizeBoardActions(result.boardActions) };
 }
 
 async function gradeCheckAnswer({ checkQuestion, studentAnswer }) {
@@ -37,4 +85,4 @@ async function gradeCheckAnswer({ checkQuestion, studentAnswer }) {
   return ai.askForJson(GRADE_SYSTEM, userPrompt);
 }
 
-module.exports = { isConfigured: ai.isConfigured, generateLessonPlan, answerInterrupt, gradeCheckAnswer };
+module.exports = { isConfigured: ai.isConfigured, generateLessonPlan, answerInterrupt, gradeCheckAnswer, synthesizeSpeech: ai.synthesizeSpeech };

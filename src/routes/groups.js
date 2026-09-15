@@ -1,8 +1,10 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 
 const router = express.Router();
+const upload = memoryUpload(20); // group chat attachments -- images/docs, not lecture video
 
 // Study groups: student-only space, deliberately no scores/ranking/leaderboard here.
 router.get('/courses/:id/groups', requireAuth, async (req, res) => {
@@ -50,6 +52,29 @@ router.post('/groups/:id/messages', requireAuth, requireRole('STUDENT'), async (
     include: { sender: { select: { fullName: true } } },
   });
   res.json({ message });
+});
+
+// A file shared in the group chat -- same direct-device-upload convention as lesson
+// videos and library resources (Cloudinary when configured, local disk otherwise).
+router.post('/groups/:id/messages/file', requireAuth, requireRole('STUDENT'), upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose a file to share.' });
+  let fileUrl, storage;
+  try {
+    ({ url: fileUrl, storage } = await saveUpload(req.file));
+  } catch {
+    return res.status(502).json({ error: 'File upload failed. Please try again.' });
+  }
+  const message = await prisma.groupMessage.create({
+    data: {
+      groupId: req.params.id,
+      senderId: req.user.id,
+      fileUrl,
+      fileName: req.file.originalname,
+      fileMime: req.file.mimetype,
+    },
+    include: { sender: { select: { fullName: true } } },
+  });
+  res.json({ message, storage });
 });
 
 module.exports = router;
