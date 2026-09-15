@@ -8,6 +8,7 @@
   --accent: #c1861f;
   --accent-ink: #4a3105;
   --accent-soft: #f3e2bd;
+  --accent-text: #4a3105;
   --pass: #2f6f62;
   --pass-soft: #e1efe9;
   --danger: #a83a3a;
@@ -28,6 +29,7 @@
     --accent: #e3ac4c;
     --accent-ink: #2a1c05;
     --accent-soft: #3a2c11;
+    --accent-text: #e3ac4c;
     --pass: #6bb6a3;
     --pass-soft: #16302a;
     --danger: #e08585;
@@ -44,6 +46,7 @@
   --accent: #e3ac4c;
   --accent-ink: #2a1c05;
   --accent-soft: #3a2c11;
+  --accent-text: #e3ac4c;
   --pass: #6bb6a3;
   --pass-soft: #16302a;
   --danger: #e08585;
@@ -121,7 +124,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
-.pill-accent { background: var(--accent-soft); color: var(--accent-ink); }
+.pill-accent { background: var(--accent-soft); color: var(--accent-text); }
 .pill-pass { background: var(--pass-soft); color: var(--pass); }
 .pill-danger { background: var(--danger-soft); color: var(--danger); }
 .pill-muted { background: var(--line); color: var(--ink-soft); }

@@ -428,6 +428,9 @@
     if (state.view.screen === 'live-class' && screen !== 'live-class') teardownLive();
     if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
+    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    speechCtrl = null;
+    if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopped */ } voiceRecognizer = null; }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -866,16 +869,15 @@
 
   // ================= AI TEACHER (live interactive session) =================
 
-  function speak(text, avatarEl) {
-    if (!window.speechSynthesis) return;
+  function speak(text, avatarEl, onDone) {
+    if (!window.speechSynthesis) { if (onDone) onDone(); return; }
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 0.98;
-    if (avatarEl) {
-      utter.onstart = () => avatarEl.classList.add('speaking');
-      utter.onend = () => avatarEl.classList.remove('speaking');
-      utter.onerror = () => avatarEl.classList.remove('speaking');
-    }
+    if (avatarEl) utter.onstart = () => avatarEl.classList.add('speaking');
+    utter.onend = () => { if (avatarEl) avatarEl.classList.remove('speaking'); speechCtrl = null; if (onDone) onDone(); };
+    utter.onerror = () => { if (avatarEl) avatarEl.classList.remove('speaking'); speechCtrl = null; };
+    speechCtrl = { mode: 'browser', ringEl: avatarEl };
     window.speechSynthesis.speak(utter);
   }
 
@@ -885,6 +887,11 @@
   // re-render. Closed and nulled at the top of every renderAiTeacherSession() call;
   // the student just taps "Connect video avatar" again for the new section.
   let simliAvatarClient = null;
+
+  // The in-progress Web Speech API recognizer for "ask by voice" -- aborted/nulled
+  // on navigation and at the top of renderAiTeacherSession the same way the avatar
+  // connection is, since it's likewise tied to a screen that's about to be torn down.
+  let voiceRecognizer = null;
 
   function renderBoardActionsHtml(actions) {
     if (!actions || !actions.length) return '<div class="board-action board-text muted">Nothing on the board yet.</div>';
@@ -936,22 +943,69 @@
     }
   }
 
+  // Tracks whatever the AI Teacher is currently saying so a question can pause it
+  // mid-sentence and resume from the exact same spot afterwards, instead of the
+  // lesson restarting the section from the top. `mode: 'avatar'` tracks a byte
+  // offset into the PCM stream fed to Simli; `mode: 'browser'` defers to the
+  // SpeechSynthesis API's own native pause/resume.
+  let speechCtrl = null;
+
+  function avatarPlaybackTick() {
+    const ctrl = speechCtrl;
+    ctrl.timer = setInterval(() => {
+      if (ctrl.index >= ctrl.bytes.length) {
+        clearInterval(ctrl.timer);
+        if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
+        const done = ctrl.onDone;
+        speechCtrl = null;
+        if (done) done();
+        return;
+      }
+      simliAvatarClient.sendAudioData(ctrl.bytes.subarray(ctrl.index, ctrl.index + ctrl.chunkSize));
+      ctrl.index += ctrl.chunkSize;
+    }, 130);
+  }
+
   // Speaks through the connected avatar (server TTS -> PCM16 -> Simli lip-sync),
   // falling back to the browser's own speech synthesis when no avatar is connected.
-  async function speakThroughAvatarOrTts(text, ringEl) {
-    if (!simliAvatarClient) return speak(text, ringEl);
+  async function speakThroughAvatarOrTts(text, ringEl, onDone) {
+    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    speechCtrl = null;
+    if (!simliAvatarClient) return speak(text, ringEl, onDone);
     try {
       const { data } = await api(`/ai-teacher/tts`, { method: 'POST', body: { text } });
       const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-      const chunkSize = 6400; // ~130ms of 24kHz 16-bit mono PCM per chunk
-      let i = 0;
-      const interval = setInterval(() => {
-        if (i >= bytes.length) { clearInterval(interval); return; }
-        simliAvatarClient.sendAudioData(bytes.subarray(i, i + chunkSize));
-        i += chunkSize;
-      }, 130);
+      if (ringEl) ringEl.classList.add('speaking');
+      speechCtrl = { mode: 'avatar', bytes, index: 0, chunkSize: 6400, ringEl, onDone };
+      avatarPlaybackTick();
     } catch (err) {
       toast(err.message || 'The AI Teacher had trouble speaking that.');
+    }
+  }
+
+  // Pauses whatever's currently being spoken without losing position, so it can be
+  // resumed afterwards. Returns a resumable snapshot, or null if nothing was playing.
+  function pauseSpeechForQuestion() {
+    const ctrl = speechCtrl;
+    if (!ctrl) return null;
+    if (ctrl.mode === 'avatar' && ctrl.timer) clearInterval(ctrl.timer);
+    else if (ctrl.mode === 'browser' && window.speechSynthesis) window.speechSynthesis.pause();
+    if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
+    speechCtrl = null;
+    return ctrl;
+  }
+
+  function resumePausedSpeech(paused) {
+    if (!paused) return;
+    if (paused.mode === 'avatar' && paused.index < paused.bytes.length && simliAvatarClient) {
+      speechCtrl = paused;
+      if (paused.ringEl) paused.ringEl.classList.add('speaking');
+      avatarPlaybackTick();
+    } else if (paused.mode === 'browser' && window.speechSynthesis) {
+      speechCtrl = paused;
+      if (paused.ringEl) paused.ringEl.classList.add('speaking');
+      window.speechSynthesis.resume();
     }
   }
 
@@ -980,6 +1034,7 @@
         <h3 style="margin:8px 0 12px;">${esc(section.title)}</h3>
         <div class="controls">
           <button class="btn btn-primary" id="play-btn">▶ Hear the teacher</button>
+          <button class="btn btn-ghost" id="ask-voice-btn">🎤 Ask a question</button>
           ${session.status !== 'COMPLETED' ? `<button class="btn btn-accent" id="next-btn">${isLast ? 'Finish lesson' : 'Next section →'}</button>` : ''}
         </div>
 
@@ -1045,14 +1100,16 @@
       panel.hidden = !panel.hidden;
       document.getElementById('gq-arrow').textContent = panel.hidden ? '▼' : '▲';
     });
-    document.getElementById('interrupt-btn').addEventListener('click', async () => {
-      const input = document.getElementById('interrupt-input');
-      const question = input.value.trim();
-      if (!question) return;
-      input.value = '';
+
+    // Shared by both the typed "Ask" button and the voice-question flow below.
+    // `pausedSnapshot` (from pauseSpeechForQuestion()) is whatever the teacher was
+    // saying when the question came in -- once the answer finishes playing, the
+    // lesson picks back up from that exact spot instead of restarting the section.
+    async function askInterruptQuestion(question, pausedSnapshot) {
+      const panel = document.getElementById('got-question-panel');
+      panel.hidden = false;
+      document.getElementById('gq-arrow').textContent = '▲';
       try {
-        // Updates the log/board in place (not a full render()) so a live avatar
-        // connection survives the interrupt instead of needing to reconnect.
         const { answer, boardActions } = await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
         log.insertAdjacentHTML('beforeend', `
@@ -1065,11 +1122,72 @@
           board.innerHTML = renderBoardActionsHtml(boardActions);
           mountBoardActions(board, boardActions);
         }
-        speakThroughAvatarOrTts(answer, document.getElementById('ai-avatar-ring'));
+        speakThroughAvatarOrTts(answer, document.getElementById('ai-avatar-ring'), () => {
+          if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
+        });
       } catch (err) {
+        if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
         toast(err.message);
       }
+    }
+
+    document.getElementById('interrupt-btn').addEventListener('click', () => {
+      const input = document.getElementById('interrupt-input');
+      const question = input.value.trim();
+      if (!question) return;
+      input.value = '';
+      askInterruptQuestion(question, pauseSpeechForQuestion());
+    });
+
+    const voiceBtn = document.getElementById('ask-voice-btn');
+    const avatarRing = document.getElementById('ai-avatar-ring');
+    const avatarLabel = document.getElementById('ai-avatar-label');
+    const originalLabelText = avatarLabel ? avatarLabel.textContent : '';
+    voiceBtn.addEventListener('click', () => {
+      if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopping */ } return; }
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        toast('Voice questions need Chrome or Edge on this device — type your question below instead.');
+        document.getElementById('got-question-panel').hidden = false;
+        document.getElementById('gq-arrow').textContent = '▲';
+        document.getElementById('interrupt-input').focus();
+        return;
+      }
+      const pausedSnapshot = pauseSpeechForQuestion();
+      const recognizer = new SR();
+      voiceRecognizer = recognizer;
+      recognizer.lang = 'en-US';
+      recognizer.interimResults = false;
+      recognizer.maxAlternatives = 1;
+      let heardSomething = false;
+
+      voiceBtn.textContent = '🛑 Listening… tap to cancel';
+      voiceBtn.classList.add('listening');
+      avatarRing.classList.add('listening');
+      if (avatarLabel) { avatarLabel.textContent = 'Listening for your question…'; avatarLabel.classList.add('listening-label'); }
+
+      recognizer.onresult = (e) => {
+        heardSomething = true;
+        const question = (e.results[0][0].transcript || '').trim();
+        if (question) askInterruptQuestion(question, pausedSnapshot);
+        else if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
+      };
+      recognizer.onerror = () => {
+        if (!heardSomething) toast("Didn't catch that — try again, or type your question below.");
+      };
+      recognizer.onend = () => {
+        voiceRecognizer = null;
+        voiceBtn.textContent = '🎤 Ask a question';
+        voiceBtn.classList.remove('listening');
+        avatarRing.classList.remove('listening');
+        if (avatarLabel) {
+          avatarLabel.classList.remove('listening-label');
+          avatarLabel.textContent = simliAvatarClient ? 'AI Teacher — video avatar connected' : originalLabelText;
+        }
+        if (!heardSomething && pausedSnapshot) resumePausedSpeech(pausedSnapshot);
+      };
+      try { recognizer.start(); } catch { toast('Could not start the microphone.'); recognizer.onend(); }
     });
 
     const avatarBtn = document.getElementById('start-avatar-btn');
