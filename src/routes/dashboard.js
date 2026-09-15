@@ -6,9 +6,10 @@ const router = express.Router();
 
 // One aggregated view across every enrolled course -- backs the "My Dashboard" screen
 // (assignments, attendance summary, recent test scores). Notifications are fetched
-// separately by the frontend via the existing /notifications endpoint. Works for both
-// school students (real enrollments) and individual learners (who simply have none yet
-// -- their app-generated activity lands here once that generator exists).
+// separately by the frontend via the existing /notifications endpoint. Assignments and
+// attendance are school-course concepts and stay empty for individual learners (they
+// have no enrollments); their recentResults still populates from app-generated
+// individual-course assessments, since Submission isn't school-scoped.
 router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const enrollments = await prisma.enrollment.findMany({
     where: { studentId: req.user.id },
@@ -34,7 +35,11 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
     }),
     prisma.submission.findMany({
       where: { studentId: req.user.id, submittedAt: { not: null } },
-      include: { assessment: { select: { title: true, type: true, course: { select: { code: true } } } } },
+      include: {
+        assessment: {
+          select: { title: true, type: true, course: { select: { code: true } }, individualCourse: { select: { title: true } } },
+        },
+      },
       orderBy: { submittedAt: 'desc' },
       take: 10,
     }),

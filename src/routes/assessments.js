@@ -216,7 +216,11 @@ router.get('/leaderboard', requireAuth, async (req, res) => {
 router.get('/students/me/results', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const submissions = await prisma.submission.findMany({
     where: { studentId: req.user.id, submittedAt: { not: null } },
-    include: { assessment: { include: { course: { select: { code: true, title: true } } } } },
+    include: {
+      assessment: {
+        include: { course: { select: { code: true, title: true } }, individualCourse: { select: { title: true } } },
+      },
+    },
     orderBy: { submittedAt: 'desc' },
   });
   res.json({
@@ -224,8 +228,8 @@ router.get('/students/me/results', requireAuth, requireRole('STUDENT'), async (r
       id: s.id,
       assessmentTitle: s.assessment.title,
       assessmentType: s.assessment.type,
-      courseCode: s.assessment.course.code,
-      courseTitle: s.assessment.course.title,
+      courseCode: s.assessment.course ? s.assessment.course.code : null,
+      courseTitle: s.assessment.course ? s.assessment.course.title : s.assessment.individualCourse.title,
       score: s.score,
       total: s.total,
       submittedAt: s.submittedAt,

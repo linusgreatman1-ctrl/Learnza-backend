@@ -312,10 +312,16 @@ model GroupMessage {
   createdAt DateTime   @default(now())
 }
 
+// courseId/individualCourseId are mutually exclusive, mirroring AiTeacherSession's
+// course-vs-individualCourse split: a school-course assessment is lecturer-authored,
+// an individual-course one is app-generated (self.authorId) for a self-directed
+// learner's own IndividualCourse and has no lecturer marking step at all.
 model Assessment {
   id          String       @id @default(cuid())
-  course      Course       @relation(fields: [courseId], references: [id])
-  courseId    String
+  course      Course?      @relation(fields: [courseId], references: [id])
+  courseId    String?
+  individualCourse IndividualCourse? @relation(fields: [individualCourseId], references: [id])
+  individualCourseId String?
   title       String
   type        String       // CA / Mock / Exam / Assignment / PAST_QUESTION / SEMESTER_EXAM
   author      User         @relation("AssessmentAuthor", fields: [authorId], references: [id])
@@ -546,6 +552,7 @@ model IndividualCourse {
   description String?
   createdAt   DateTime @default(now())
   aiTeacherSessions AiTeacherSession[]
+  assessments Assessment[]
 }
 
 // Per-class daily attendance, marked by the lecturer teaching that course (distinct

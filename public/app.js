@@ -543,26 +543,63 @@
   }
 
   async function renderIndividualCourseDetail() {
-    const { course } = await api(`/individual-courses/${state.view.courseId}`);
+    const [{ course }, { assessments }] = await Promise.all([
+      api(`/individual-courses/${state.view.courseId}`),
+      api(`/individual-courses/${state.view.courseId}/assessments`),
+    ]);
     view.innerHTML = `
       <div class="page-head">
         <h1>${esc(course.title)}</h1>
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to courses</button>
       </div>
       ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
-      <div class="card" style="padding:24px; text-align:center;">
+      <div class="card" style="padding:24px; text-align:center; margin-bottom:22px;">
         <span class="pill pill-accent">Subscription feature</span>
         <h3 style="margin:14px 0 8px;">Start an AI Teacher lesson</h3>
         <p class="muted" style="margin-bottom:18px;">Tell the AI Teacher what to cover in this course.</p>
         <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
       </div>
-      <button class="btn btn-ghost btn-sm" id="delete-course-btn" style="margin-top:18px; color:var(--danger);">Delete this course</button>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; assignments</h3>
+      <p class="muted" style="margin-bottom:12px;">No lecturer here — the AI Teacher generates these on request, auto-scores them, and always shows you a review of your mistakes.</p>
+      <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" id="gen-test-btn">📝 Generate a test</button>
+        <button class="btn btn-ghost btn-sm" id="gen-assignment-btn">📋 Generate an assignment</button>
+      </div>
+      <div class="card" style="margin-bottom:22px;">
+        ${assessments.map((a) => `
+          <div class="list-row" data-take="${a.id}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
+            <span class="pill pill-accent">Open</span>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">None yet — generate one above.</p>'}
+      </div>
+
+      <button class="btn btn-ghost btn-sm" id="delete-course-btn" style="color:var(--danger);">Delete this course</button>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('individual-courses'));
     document.getElementById('start-ai-teacher-btn').addEventListener('click', () => {
       const topic = prompt(`What topic in ${course.title} should the AI Teacher cover?`);
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim(), true);
+    });
+    async function generate(kind, label) {
+      const topic = prompt(`What topic should the ${label} cover?`);
+      if (!topic || !topic.trim()) return;
+      toast(`Generating your ${label}…`);
+      try {
+        await api(`/individual-courses/${course.id}/assessments/generate`, { method: 'POST', body: { topic: topic.trim(), kind } });
+        toast(`${label.charAt(0).toUpperCase() + label.slice(1)} ready`);
+        render();
+      } catch (err) {
+        if (err.code === 'AI_NOT_CONFIGURED') return renderUpgradePrompt(err.message);
+        toast(err.message);
+      }
+    }
+    document.getElementById('gen-test-btn').addEventListener('click', () => generate('TEST', 'test'));
+    document.getElementById('gen-assignment-btn').addEventListener('click', () => generate('ASSIGNMENT', 'assignment'));
+    view.querySelectorAll('[data-take]').forEach((row) => {
+      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.take, backTo: 'individual-course-detail', backCourseId: course.id }));
     });
     document.getElementById('delete-course-btn').addEventListener('click', async () => {
       if (!confirm('Delete this course? This cannot be undone.')) return;
@@ -1205,7 +1242,7 @@
           <tbody>
             ${results.map((r) => `
               <tr>
-                <td class="tabular">${esc(r.courseCode)}</td>
+                <td class="tabular">${esc(r.courseCode || r.courseTitle)}</td>
                 <td>${esc(r.assessmentTitle)}</td>
                 <td>${esc(r.assessmentType)}</td>
                 <td class="tabular">${r.score}/${r.total}</td>
@@ -1270,7 +1307,7 @@
         <table class="data-table">
           <thead><tr><th>Course</th><th>Assessment</th><th>Score</th></tr></thead>
           <tbody>
-            ${data.results.map((r) => `<tr><td class="tabular">${esc(r.courseCode)} — ${esc(r.courseTitle)}</td><td>${esc(r.assessmentTitle)}</td><td class="tabular">${r.score}/${r.total}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No results on record.</td></tr>'}
+            ${data.results.map((r) => `<tr><td class="tabular">${r.courseCode ? `${esc(r.courseCode)} — ` : ''}${esc(r.courseTitle)}</td><td>${esc(r.assessmentTitle)}</td><td class="tabular">${r.score}/${r.total}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No results on record.</td></tr>'}
           </tbody>
         </table>
         <button class="btn btn-primary no-print" style="margin-top:20px;" id="print-btn">Print / Save as PDF</button>
@@ -1286,6 +1323,7 @@
   // Aggregates every enrolled course's assignments, attendance and recent test scores
   // in one place, so a student never has to hunt through each course individually.
   async function renderMyDashboard() {
+    const isIndividual = state.user.isIndividual;
     const [{ assignments, attendance, recentResults }, { notifications }] = await Promise.all([
       api('/students/me/dashboard'),
       api('/notifications'),
@@ -1300,15 +1338,23 @@
       attendanceByCourse[a.course.code].total += 1;
       if (a.status === 'PRESENT') attendanceByCourse[a.course.code].present += 1;
     }
+    // Individual learners have no lecturer-set assignments/attendance at all (school-
+    // institutional concepts) -- only their own app-generated test/assignment results.
+    const statTiles = isIndividual
+      ? [[avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average'], [recentResults.length, 'Tests & assignments taken']]
+      : [
+          [assignments.filter((a) => !a.mySubmission).length, 'Assignments pending'],
+          [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate'],
+          [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average'],
+        ];
 
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="grid-cards" style="margin-bottom:26px;">
-        <div class="card course-card"><div class="code">${assignments.filter((a) => !a.mySubmission).length}</div><div class="meta">Assignments pending</div></div>
-        <div class="card course-card"><div class="code">${attendancePct == null ? '—' : attendancePct + '%'}</div><div class="meta">Attendance rate</div></div>
-        <div class="card course-card"><div class="code">${avgScorePct == null ? '—' : avgScorePct + '%'}</div><div class="meta">Recent test average</div></div>
+        ${statTiles.map(([value, label]) => `<div class="card course-card"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
       </div>
 
+      ${isIndividual ? '' : `
       <h3 style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
       <div class="card" style="margin-bottom:26px;">
         ${assignments.map((a) => `
@@ -1345,15 +1391,16 @@
           </div>
         `).join('') || '<p class="muted" style="padding:16px;">No attendance recorded yet.</p>'}
       </div>
+      `}
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Recent test results</h3>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
       <div class="card" style="margin-bottom:26px;">
         ${recentResults.map((r) => `
           <div class="list-row">
-            <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course.code)} · ${esc(r.assessment.type)}</div></div>
+            <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course ? r.assessment.course.code : r.assessment.individualCourse.title)} · ${esc(r.assessment.type)}</div></div>
             <span class="tabular">${r.score}/${r.total}</span>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No test results yet.</p>'}
+        `).join('') || `<p class="muted" style="padding:16px;">No ${isIndividual ? 'tests or assignments' : 'test results'} yet.</p>`}
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
@@ -1367,12 +1414,13 @@
       </div>
 
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button>
-        <button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>
+        ${isIndividual ? '' : '<button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button><button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>'}
       </div>
     `;
-    document.getElementById('dash-leaderboard-btn').addEventListener('click', () => navigate('leaderboard'));
-    document.getElementById('dash-profile-btn').addEventListener('click', () => navigate('digital-id'));
+    const leaderboardBtn = document.getElementById('dash-leaderboard-btn');
+    if (leaderboardBtn) leaderboardBtn.addEventListener('click', () => navigate('leaderboard'));
+    const profileBtn = document.getElementById('dash-profile-btn');
+    if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     view.querySelectorAll('[data-view-attendance]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('attendance-history', { courseId: btn.dataset.viewAttendance, courseCode: btn.dataset.code }));
     });
@@ -1930,8 +1978,8 @@
           <button class="btn btn-ghost btn-sm" id="review-btn" style="margin-top:14px;">🔍 Review mistakes</button>
         </div>
       `;
-      document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock'));
-      document.getElementById('review-btn').addEventListener('click', () => navigate('assessment-review', { assessmentId: assessment.id, assessmentTitle: assessment.title, hubBackTo: state.view.backTo }));
+      document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock', { courseId: state.view.backCourseId }));
+      document.getElementById('review-btn').addEventListener('click', () => navigate('assessment-review', { assessmentId: assessment.id, assessmentTitle: assessment.title, hubBackTo: state.view.backTo, hubBackCourseId: state.view.backCourseId }));
       return;
     }
 
@@ -1961,7 +2009,7 @@
       `).join('')}
       <button class="btn btn-primary" id="submit-btn">Submit test</button>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock'));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock', { courseId: state.view.backCourseId }));
     view.querySelectorAll('.quiz-opt').forEach((opt) => {
       opt.addEventListener('click', () => {
         const q = opt.dataset.q;
@@ -1982,7 +2030,7 @@
         const { submission, pointsEarned, newBadges } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
         toast(auto ? `Time's up — submitted automatically. Score ${submission.score}/${submission.total}` : `Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
         (newBadges || []).forEach((b) => setTimeout(() => toast(`Badge earned: ${b.icon} ${b.name}`), 400));
-        navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo });
+        navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo, backCourseId: state.view.backCourseId });
       } catch (err) { toast(err.message); }
     }
     document.getElementById('submit-btn').addEventListener('click', () => doSubmit(false));
@@ -2006,7 +2054,7 @@
   // against the student's own choice for objective questions, model answer shown
   // alongside the student's text for theory questions.
   async function renderAssessmentReview() {
-    const { assessmentTitle, assessmentId, hubBackTo } = state.view;
+    const { assessmentTitle, assessmentId, hubBackTo, hubBackCourseId } = state.view;
     const { review, score, total } = await api(`/assessments/${assessmentId}/my-review`);
     view.innerHTML = `
       <div class="page-head"><h1>Review — ${esc(assessmentTitle || '')}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
@@ -2026,7 +2074,7 @@
         </div>
       `).join('')}
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('take-assessment', { assessmentId, backTo: hubBackTo }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate('take-assessment', { assessmentId, backTo: hubBackTo, backCourseId: hubBackCourseId }));
   }
 
   // ================= LECTURER =================
