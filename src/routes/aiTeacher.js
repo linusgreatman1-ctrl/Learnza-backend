@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { requireActiveSubscription } = require('../subscription');
+const { requireActiveSubscription, isEnforced } = require('../subscription');
 const aiTeacher = require('../services/aiTeacher.service');
 const simli = require('../services/simli.service');
 
@@ -19,7 +19,7 @@ function courseTitleOf(session) {
 }
 
 router.get('/config', requireAuth, (req, res) => {
-  res.json({ aiConfigured: aiTeacher.isConfigured(), avatarConfigured: simli.isConfigured() });
+  res.json({ aiConfigured: aiTeacher.isConfigured(), avatarConfigured: simli.isConfigured(), subscriptionEnforced: isEnforced() });
 });
 
 async function startSession(req, res, { courseId, individualCourseId, courseTitle }) {

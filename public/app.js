@@ -33,6 +33,16 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // Reflects the real backend gate (src/subscription.js's REQUIRE_SUBSCRIPTION toggle)
+  // instead of a hardcoded "Subscription feature" label that would keep implying a
+  // paywall while testing has it switched off -- flips itself back once launched.
+  async function subscriptionBadgeHtml() {
+    const { subscriptionEnforced } = await api('/config').catch(() => ({ subscriptionEnforced: true }));
+    return subscriptionEnforced
+      ? '<span class="pill pill-accent">Subscription feature</span>'
+      : '<span class="pill pill-pass">Free during testing</span>';
+  }
+
   function toast(msg) {
     let stack = document.getElementById('toast-stack');
     if (!stack) {
@@ -544,9 +554,10 @@
   }
 
   async function renderIndividualCourseDetail() {
-    const [{ course }, { assessments }] = await Promise.all([
+    const [{ course }, { assessments }, subBadge] = await Promise.all([
       api(`/individual-courses/${state.view.courseId}`),
       api(`/individual-courses/${state.view.courseId}/assessments`),
+      subscriptionBadgeHtml(),
     ]);
     view.innerHTML = `
       <div class="page-head">
@@ -555,7 +566,7 @@
       </div>
       ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
       <div class="card" style="padding:24px; text-align:center; margin-bottom:22px;">
-        <span class="pill pill-accent">Subscription feature</span>
+        ${subBadge}
         <h3 style="margin:14px 0 8px;">Start an AI Teacher lesson</h3>
         <p class="muted" style="margin-bottom:18px;">Tell the AI Teacher what to cover in this course.</p>
         <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
@@ -685,6 +696,7 @@
     const { course } = await api(`/courses/${state.view.courseId}`);
     const { lessons } = await api(`/courses/${state.view.courseId}/lessons`);
     const { liveClass } = await api(`/courses/${state.view.courseId}/live`);
+    const subBadge = await subscriptionBadgeHtml();
     view.innerHTML = `
       <div class="page-head">
         <div>
@@ -701,7 +713,7 @@
       ` : ''}
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
-          <span class="pill pill-accent">Subscription feature</span>
+          ${subBadge}
           <div style="font-weight:600; margin-top:8px;">AI Teacher — ask about any topic in this course</div>
           <div class="meta">A real AI lecturer builds a live lesson on the spot, section by section, and answers your questions.</div>
         </div>
@@ -774,7 +786,7 @@
     }
 
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
-    const { avatarConfigured } = await api('/config').catch(() => ({ avatarConfigured: false }));
+    const { avatarConfigured, subscriptionEnforced } = await api('/config').catch(() => ({ avatarConfigured: false, subscriptionEnforced: true }));
     const words = lesson.script.split(/(\s+)/);
     const scriptHtml = words.map((w, i) => `<span data-w="${i}">${esc(w)}</span>`).join('');
 
@@ -784,7 +796,7 @@
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
       </div>
       <div class="card lesson-player">
-        <span class="pill pill-accent">AI Teacher — subscriber lesson</span>
+        <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Teacher — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
         ${lesson.videoUrl ? `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>` : `
           <div class="ai-avatar-box" style="margin-top:14px;">
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
