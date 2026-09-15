@@ -12,26 +12,97 @@ datasource db {
 model School {
   id               String        @id @default(cuid())
   name             String
+  location         String?       // branch/campus, e.g. "Igueben", "Afuze", "Abudu"
   createdAt        DateTime      @default(now())
   licenseStatus    String        @default("ACTIVE") // ACTIVE | EXPIRED
   licenseExpiresAt DateTime?
   departments      Department[]
   users            User[]
   applications     Application[]
+  semesters        Semester[]
+  hostels          Hostel[]
+  attitudeTests    AttitudeTest[]
+}
+
+// A school's own term/semester calendar. isCurrent marks the one new activity
+// (courses, assessments, assignments, attendance, results) gets stamped with.
+model Semester {
+  id        String   @id @default(cuid())
+  school    School   @relation(fields: [schoolId], references: [id])
+  schoolId  String
+  name      String   // e.g. "First Semester 2025/2026"
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+  courses     Course[]
+  assessments Assessment[]
+  assignments Assignment[]
+  attendance  ClassAttendanceRecord[]
+  results     Result[]
+}
+
+// A named hostel building, e.g. "Daws Hostel", "Mammy Hostel" -- lets admin
+// group hostel allocations by hostel rather than one flat student list.
+model Hostel {
+  id           String              @id @default(cuid())
+  school       School              @relation(fields: [schoolId], references: [id])
+  schoolId     String
+  name         String
+  applications HostelApplication[]
+}
+
+// A school-owned bank of admission attitude-test questions, taken by an
+// applicant during admissions (kept separate from Assessment since that
+// model requires a courseId, which an applicant doesn't have yet).
+model AttitudeTest {
+  id        String                 @id @default(cuid())
+  school    School                 @relation(fields: [schoolId], references: [id])
+  schoolId  String
+  title     String
+  createdAt DateTime               @default(now())
+  questions AttitudeTestQuestion[]
+  submissions AttitudeTestSubmission[]
+}
+
+model AttitudeTestQuestion {
+  id             String       @id @default(cuid())
+  test           AttitudeTest @relation(fields: [testId], references: [id])
+  testId         String
+  text           String
+  options        String       // JSON-encoded string array
+  correctIndex   Int
+  order          Int          @default(0)
+}
+
+model AttitudeTestSubmission {
+  id            String       @id @default(cuid())
+  test          AttitudeTest @relation(fields: [testId], references: [id])
+  testId        String
+  application   Application  @relation(fields: [applicationId], references: [id])
+  applicationId String       @unique
+  answers       String       // JSON-encoded array of chosen option indices
+  score         Int
+  total         Int
+  submittedAt   DateTime     @default(now())
 }
 
 model User {
   id             String    @id @default(cuid())
   school         School?   @relation(fields: [schoolId], references: [id])
   schoolId       String?   // null for individual (non-school) students
-  role           String    // STUDENT | LECTURER | ADMIN
+  role           String    // STUDENT | LECTURER | STAFF (non-academic) | ADMIN
   fullName       String
   email          String    @unique
   passwordHash   String
+  phone          String?
   matricNumber   String?   // students
-  staffId        String?   // lecturers / admin
-  accessCode     String?   @unique // school-issued login code for STUDENT/LECTURER (alongside email+password)
+  staffId        String?   // lecturers / staff / admin
+  staffType      String?   // ACADEMIC | NON_ACADEMIC -- meaningful when role is LECTURER/STAFF
+  position       String?   // job title for non-academic staff, e.g. "Librarian"
+  accessCode     String?   @unique // school-issued login code for STUDENT/LECTURER/STAFF (alongside email+password)
   isIndividual   Boolean   @default(false) // true = self-registered learner, not affiliated with any school
+  attendedSchoolName String? // individual learners only: their real institution (not a Learnza School row)
+  attendedDepartment String? // individual learners only
+  courseOfStudy      String? // individual learners only: their real degree programme
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
@@ -153,6 +224,8 @@ model Course {
   title        String
   level        String       // e.g. NCE 1, NCE 2, 100L
   semester     String       // First / Second
+  semesterRef   Semester?    @relation(fields: [semesterId], references: [id])
+  semesterId    String?
   lessons      Lesson[]
   library      LibraryResource[]
   enrollments  Enrollment[]
@@ -244,12 +317,14 @@ model Assessment {
   course      Course       @relation(fields: [courseId], references: [id])
   courseId    String
   title       String
-  type        String       // CA / Mock / Exam / Assignment
+  type        String       // CA / Mock / Exam / Assignment / PAST_QUESTION / SEMESTER_EXAM
   author      User         @relation("AssessmentAuthor", fields: [authorId], references: [id])
   authorId    String
   durationMin Int          @default(20)
   questions   Question[]
   submissions Submission[]
+  semester    Semester?    @relation(fields: [semesterId], references: [id])
+  semesterId  String?
   createdAt   DateTime     @default(now())
 }
 
@@ -257,9 +332,11 @@ model Question {
   id           String     @id @default(cuid())
   assessment   Assessment @relation(fields: [assessmentId], references: [id])
   assessmentId String
+  questionType String     @default("OBJECTIVE") // OBJECTIVE | THEORY
   text         String
-  options      String     // JSON-encoded string array
-  correctIndex Int
+  options      String?    // JSON-encoded string array, OBJECTIVE only
+  correctIndex Int?       // OBJECTIVE only
+  modelAnswer  String?    // THEORY only -- shown back to the student for self-review, never auto-graded
   order        Int        @default(0)
 }
 
@@ -269,7 +346,8 @@ model Submission {
   assessmentId String
   student      User       @relation(fields: [studentId], references: [id])
   studentId    String
-  answers      String     // JSON-encoded array of chosen option indices
+  startedAt    DateTime?  // server-stamped when the student opens a timed attempt, for deadline enforcement
+  answers      String     // JSON-encoded array of chosen option indices (objective) / free text (theory)
   score        Int
   total        Int
   submittedAt  DateTime   @default(now())
@@ -368,6 +446,7 @@ model Application {
   status         String     @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | ACCEPTED | REJECTED | REGISTERED
   registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
   registeredUserId String?  @unique
+  attitudeTestSubmission AttitudeTestSubmission?
   createdAt      DateTime   @default(now())
   decidedAt      DateTime?
 }
@@ -449,6 +528,8 @@ model HostelApplication {
   studentId      String
   roomPreference String?
   status         String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  hostel         Hostel?   @relation(fields: [hostelId], references: [id])
+  hostelId       String?
   roomAssigned   String?
   requestedAt    DateTime  @default(now())
   decidedAt      DateTime?
@@ -479,6 +560,8 @@ model ClassAttendanceRecord {
   status     String   // PRESENT | ABSENT
   markedBy   User     @relation("ClassAttendanceMarker", fields: [markedById], references: [id])
   markedById String
+  semester   Semester? @relation(fields: [semesterId], references: [id])
+  semesterId String?
   createdAt  DateTime @default(now())
 
   @@unique([courseId, studentId, date])
@@ -496,6 +579,9 @@ model Assignment {
   dueAt        DateTime?
   author       User     @relation("AssignmentAuthor", fields: [authorId], references: [id])
   authorId     String
+  kind         String   @default("ASSIGNMENT") // ASSIGNMENT | PROJECT
+  semester     Semester? @relation(fields: [semesterId], references: [id])
+  semesterId   String?
   createdAt    DateTime @default(now())
   submissions  AssignmentSubmission[]
 }
@@ -528,6 +614,8 @@ model Result {
   author      User     @relation("ResultAuthor", fields: [authorId], references: [id])
   authorId    String
   term        String   // e.g. "First Semester 2026"
+  semester    Semester? @relation(fields: [semesterId], references: [id])
+  semesterId  String?
   score       Int
   grade       String?
   remark      String?

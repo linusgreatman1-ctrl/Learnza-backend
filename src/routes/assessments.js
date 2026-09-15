@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const gamification = require('../services/gamification.service');
+const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
 
@@ -25,6 +26,7 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
   if (questions.length > max) {
     return res.status(400).json({ error: `${type === 'PAST_QUESTION' ? 'Past question sets' : 'Tests'} can have at most ${max} questions.` });
   }
+  const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const assessment = await prisma.assessment.create({
     data: {
       courseId: req.params.id,
@@ -32,6 +34,7 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
       type: type || 'CA',
       durationMin: durationMin || 20,
       authorId: req.user.id,
+      semesterId,
       questions: {
         create: questions.map((q, i) => ({
           text: q.text,

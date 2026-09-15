@@ -60,22 +60,26 @@
       btn.classList.add('active');
       document.getElementById('school-login-form').style.display = btn.dataset.audience === 'school' ? 'block' : 'none';
       document.getElementById('individual-panel').style.display = btn.dataset.audience === 'individual' ? 'block' : 'none';
-      document.getElementById('admin-login-form').style.display = btn.dataset.audience === 'admin' ? 'block' : 'none';
+      document.getElementById('admin-panel').style.display = btn.dataset.audience === 'admin' ? 'block' : 'none';
       authError.innerHTML = '';
     });
   });
 
-  // Nested login/signup toggle within the Individual Student panel.
-  document.querySelectorAll('#individual-panel [data-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#individual-panel [data-tab]').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      const isLogin = btn.dataset.tab === 'login';
-      document.getElementById('login-form').style.display = isLogin ? 'block' : 'none';
-      document.getElementById('register-form').style.display = isLogin ? 'none' : 'block';
-      authError.innerHTML = '';
+  // Nested login/signup toggle, reused by both the Individual Student and Admin panels.
+  function wireLoginRegisterToggle(panelId, loginFormId, registerFormId) {
+    document.querySelectorAll(`#${panelId} [data-tab]`).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll(`#${panelId} [data-tab]`).forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const isLogin = btn.dataset.tab === 'login';
+        document.getElementById(loginFormId).style.display = isLogin ? 'block' : 'none';
+        document.getElementById(registerFormId).style.display = isLogin ? 'none' : 'block';
+        authError.innerHTML = '';
+      });
     });
-  });
+  }
+  wireLoginRegisterToggle('individual-panel', 'login-form', 'register-form');
+  wireLoginRegisterToggle('admin-panel', 'admin-login-form', 'admin-register-form');
 
   document.getElementById('school-login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -137,8 +141,33 @@
         method: 'POST',
         body: {
           fullName: document.getElementById('reg-name').value.trim(),
+          attendedSchoolName: document.getElementById('reg-school').value.trim(),
+          attendedDepartment: document.getElementById('reg-department').value.trim(),
+          courseOfStudy: document.getElementById('reg-course').value.trim(),
           email: document.getElementById('reg-email').value.trim(),
+          phone: document.getElementById('reg-phone').value.trim(),
           password: document.getElementById('reg-password').value,
+        },
+      });
+      onAuthed(token, user);
+    } catch (err) {
+      authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    }
+  });
+
+  document.getElementById('admin-register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authError.innerHTML = '';
+    try {
+      const { token, user } = await api('/auth/register-school', {
+        method: 'POST',
+        body: {
+          schoolName: document.getElementById('admin-reg-school').value.trim(),
+          location: document.getElementById('admin-reg-location').value || '',
+          fullName: document.getElementById('admin-reg-name').value.trim(),
+          email: document.getElementById('admin-reg-email').value.trim(),
+          phone: document.getElementById('admin-reg-phone').value.trim(),
+          password: document.getElementById('admin-reg-password').value,
         },
       });
       onAuthed(token, user);
@@ -154,16 +183,33 @@
     window.location.href = 'index.html';
   });
 
-  function onAuthed(token, user) {
+  async function onAuthed(token, user) {
     state.token = token;
     state.user = user;
     localStorage.setItem('vp_token', token);
     localStorage.setItem('vp_user', JSON.stringify(user));
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
+    await loadHeaderContext();
     buildSidebar();
     initNotifications();
     navigate(defaultScreenFor(user.role));
+  }
+
+  // Resolved school/department names + the school's semester list, for the sidebar
+  // header strip and semester switcher. Best-effort: a stale/expired token shouldn't
+  // block the rest of boot, since navigate() will surface the real auth error anyway.
+  async function loadHeaderContext() {
+    try {
+      const { school, department } = await api('/auth/me');
+      state.school = school;
+      state.department = department;
+    } catch { state.school = null; state.department = null; }
+    if (state.school) {
+      try { state.semesters = (await api('/semesters')).semesters; } catch { state.semesters = []; }
+    } else {
+      state.semesters = [];
+    }
   }
 
   function defaultScreenFor(role) {
@@ -215,8 +261,51 @@
   };
 
   function buildSidebar() {
-    const roleLabel = state.user.isIndividual ? 'Independent learner' : state.user.role.charAt(0) + state.user.role.slice(1).toLowerCase();
-    document.getElementById('who-box').textContent = `${state.user.fullName} · ${roleLabel}`;
+    const u = state.user;
+    const roleLabel = u.isIndividual ? 'Independent learner' : u.role.charAt(0) + u.role.slice(1).toLowerCase();
+    const lines = [`${esc(u.fullName)} · ${esc(roleLabel)}`];
+    if (u.isIndividual) {
+      const bits = [u.attendedSchoolName, u.courseOfStudy].filter(Boolean).map(esc);
+      if (bits.length) lines.push(bits.join(' · '));
+    } else if (state.school) {
+      const schoolLine = [state.school.name, state.school.location].filter(Boolean).map(esc).join(', ');
+      lines.push(schoolLine);
+      if (state.department) lines.push(esc(state.department.name));
+    }
+    document.getElementById('who-box').innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+
+    const semesterBox = document.getElementById('semester-box');
+    if (state.school && state.semesters && state.semesters.length) {
+      const current = state.semesters.find((s) => s.isCurrent);
+      if (u.role === 'ADMIN') {
+        semesterBox.innerHTML = `
+          <select id="semester-select" class="nav-item" style="font-weight:600;">
+            ${state.semesters.map((s) => `<option value="${s.id}" ${s.isCurrent ? 'selected' : ''}>${esc(s.name)}${s.isCurrent ? ' (current)' : ''}</option>`).join('')}
+          </select>
+          <button class="nav-item" id="new-semester-btn" style="font-weight:500; font-size:0.82rem;">+ New semester</button>
+        `;
+        document.getElementById('semester-select').addEventListener('change', async (e) => {
+          await api(`/admin/semesters/${e.target.value}/activate`, { method: 'POST' });
+          await loadHeaderContext();
+          buildSidebar();
+          toast('Current semester updated');
+        });
+        document.getElementById('new-semester-btn').addEventListener('click', async () => {
+          const name = prompt('Semester name, e.g. "Second Semester 2025/2026"');
+          if (!name) return;
+          const { semester } = await api('/admin/semesters', { method: 'POST', body: { name } });
+          await api(`/admin/semesters/${semester.id}/activate`, { method: 'POST' });
+          await loadHeaderContext();
+          buildSidebar();
+          toast('Semester created and set as current');
+        });
+      } else {
+        semesterBox.innerHTML = current ? `<div class="who" style="padding-bottom:8px;">📅 ${esc(current.name)}</div>` : '';
+      }
+    } else {
+      semesterBox.innerHTML = '';
+    }
+
     const nav = document.getElementById('nav-items');
     const navKey = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
     nav.innerHTML = NAV[navKey]
@@ -2703,13 +2792,15 @@
   if (state.token && state.user) {
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
-    buildSidebar();
+    loadHeaderContext().then(() => {
+      buildSidebar();
+      if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
+        checkPendingPayment().then(() => navigate('billing'));
+      } else {
+        navigate(defaultScreenFor(state.user.role));
+      }
+    });
     initNotifications();
-    if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
-      checkPendingPayment().then(() => navigate('billing'));
-    } else {
-      navigate(defaultScreenFor(state.user.role));
-    }
   } else if (location.hash.includes('register')) {
     document.querySelector('[data-audience="individual"]').click();
     document.querySelector('#individual-panel [data-tab="register"]').click();

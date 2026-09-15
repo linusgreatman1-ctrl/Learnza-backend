@@ -25,12 +25,13 @@ function checkStatus(res, user) {
   return true;
 }
 
-// Individual (non-school) learners self-register with just email + password -- no
-// school or department, since they aren't affiliated with one. They get their own
-// self-directed courses (see /individual-courses) taught by the AI Teacher, and never
-// see school/lecturer-only features.
+// Individual (non-school) learners self-register -- no Learnza school or department,
+// since they aren't affiliated with one. attendedSchoolName/attendedDepartment/
+// courseOfStudy describe their real institution for display purposes only. They get
+// their own self-directed courses (see /individual-courses) taught by the AI Teacher,
+// and never see school/lecturer-only features.
 router.post('/register-individual', async (req, res) => {
-  const { fullName, email, password } = req.body;
+  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email and password are required.' });
   }
@@ -39,7 +40,38 @@ router.post('/register-individual', async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
-    data: { fullName, email, passwordHash, role: 'STUDENT', isIndividual: true, schoolId: null },
+    data: {
+      fullName, email, passwordHash, phone: phone || null,
+      role: 'STUDENT', isIndividual: true, schoolId: null,
+      attendedSchoolName: attendedSchoolName || null,
+      attendedDepartment: attendedDepartment || null,
+      courseOfStudy: courseOfStudy || null,
+    },
+  });
+  res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+// A school self-registers here: creates the School row plus its first ADMIN account
+// in one step. Every other school-affiliated user (lecturer, staff, student) is then
+// created by that admin from the school directory, not by self-registration.
+router.post('/register-school', async (req, res) => {
+  const { schoolName, location, fullName, email, password, phone } = req.body;
+  if (!schoolName || !fullName || !email || !password) {
+    return res.status(400).json({ error: 'School name, your full name, email and password are required.' });
+  }
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const school = await prisma.school.create({
+    data: {
+      name: schoolName,
+      location: location || null,
+      licenseExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
+  });
+  const user = await prisma.user.create({
+    data: { fullName, email, passwordHash, phone: phone || null, role: 'ADMIN', schoolId: school.id },
   });
   res.json({ token: signToken(user), user: publicUser(user) });
 });
@@ -73,7 +105,7 @@ router.post('/login-with-code', async (req, res) => {
     where: {
       schoolId: school.id,
       accessCode: accessCode.trim().toUpperCase(),
-      role: { in: ['STUDENT', 'LECTURER'] },
+      role: { in: ['STUDENT', 'LECTURER', 'STAFF'] },
     },
   });
   if (!user || user.fullName.trim().toLowerCase() !== fullName.trim().toLowerCase()) {
@@ -85,8 +117,15 @@ router.post('/login-with-code', async (req, res) => {
   res.json({ token: signToken(user), user: publicUser(user) });
 });
 
+// Resolved school/department names for the header strip -- the JWT-derived req.user
+// only carries IDs, and the login response is deliberately lean, so this is a small
+// separate fetch made once after auth rather than joining it onto every login.
 router.get('/me', requireAuth, async (req, res) => {
-  res.json({ user: publicUser(req.user) });
+  let school = null;
+  let department = null;
+  if (req.user.schoolId) school = await prisma.school.findUnique({ where: { id: req.user.schoolId } });
+  if (req.user.departmentId) department = await prisma.department.findUnique({ where: { id: req.user.departmentId } });
+  res.json({ user: publicUser(req.user), school, department });
 });
 
 module.exports = router;

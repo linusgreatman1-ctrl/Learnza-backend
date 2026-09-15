@@ -152,7 +152,6 @@
 <div id="auth-screen">
   <div class="card auth-box">
     <div class="brand">Learnza</div>
-    <div class="muted" style="font-size:0.85rem;">Edo College of Education</div>
     <div class="tabs">
       <button class="tab-btn active" data-audience="school">School</button>
       <button class="tab-btn" data-audience="individual">Individual Student</button>
@@ -163,7 +162,7 @@
     <form id="school-login-form" class="audience-panel">
       <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">For students and lecturers registered by their school. Log in with the access code issued to you — no password needed.</p>
       <div class="field"><label>Full name</label><input type="text" id="school-name" required></div>
-      <div class="field"><label>School name</label><input type="text" id="school-school" required placeholder="Edo College of Education"></div>
+      <div class="field"><label>School name</label><input type="text" id="school-school" required placeholder="e.g. Edo College of Education"></div>
       <div class="field"><label>Access code</label><input type="text" id="school-code" required style="text-transform:uppercase;"></div>
       <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
       <p class="muted" style="font-size:0.8rem; margin-top:14px;">Not registered yet? <a href="apply.html" style="text-decoration:underline;">Apply for admission</a>.</p>
@@ -180,19 +179,48 @@
         <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
       </form>
       <form id="register-form" style="display:none;">
-        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Learn independently, outside any school — you create your own courses and the AI Teacher covers them.</p>
+        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Learn independently, for university, polytechnic or any higher-institution student — you create your own courses and the AI Teacher covers them.</p>
         <div class="field"><label>Full name</label><input type="text" id="reg-name" required></div>
+        <div class="field"><label>School name</label><input type="text" id="reg-school" required placeholder="e.g. University of Lagos"></div>
+        <div class="field"><label>Department</label><input type="text" id="reg-department" required placeholder="e.g. Computer Science"></div>
+        <div class="field"><label>Course of study</label><input type="text" id="reg-course" required placeholder="e.g. B.Sc Computer Science"></div>
         <div class="field"><label>Email</label><input type="email" id="reg-email" required></div>
+        <div class="field"><label>Phone number</label><input type="tel" id="reg-phone" required></div>
         <div class="field"><label>Password</label><input type="password" id="reg-password" required minlength="6"></div>
         <button class="btn btn-accent" style="width:100%; justify-content:center;" type="submit">Create free account</button>
       </form>
     </div>
 
-    <form id="admin-login-form" class="audience-panel" style="display:none;">
-      <div class="field"><label>Email</label><input type="email" id="admin-email" required></div>
-      <div class="field"><label>Password</label><input type="password" id="admin-password" required></div>
-      <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
-    </form>
+    <div id="admin-panel" class="audience-panel" style="display:none;">
+      <div class="tabs" style="margin-bottom:16px;">
+        <button class="tab-btn active" data-tab="login">Log in</button>
+        <button class="tab-btn" data-tab="register">Register</button>
+      </div>
+      <form id="admin-login-form">
+        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Already have an account? Log in.</p>
+        <div class="field"><label>Email</label><input type="email" id="admin-email" required></div>
+        <div class="field"><label>Password</label><input type="password" id="admin-password" required></div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
+      </form>
+      <form id="admin-register-form" style="display:none;">
+        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Don't have an account? Register your school — this creates the school and your admin account together.</p>
+        <div class="field"><label>School name</label><input type="text" id="admin-reg-school" required placeholder="e.g. Edo College of Education"></div>
+        <div class="field"><label>Location / campus</label>
+          <select id="admin-reg-location">
+            <option value="">Select…</option>
+            <option>Igueben</option>
+            <option>Afuze</option>
+            <option>Abudu</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Your full name</label><input type="text" id="admin-reg-name" required></div>
+        <div class="field"><label>Email</label><input type="email" id="admin-reg-email" required></div>
+        <div class="field"><label>Phone number</label><input type="tel" id="admin-reg-phone" required></div>
+        <div class="field"><label>Password</label><input type="password" id="admin-reg-password" required minlength="6"></div>
+        <button class="btn btn-accent" style="width:100%; justify-content:center;" type="submit">Register school</button>
+      </form>
+    </div>
 
     <div class="hint-box">
       Demo — School: Dr. Osaretin Igbinedion / Edo College of Education / LECT2026 (lecturer) or Blessing Aigbogun / Edo College of Education / STUD2026 (student) · Admin: admin@edocoe.edu.ng / Admin@123
@@ -220,6 +248,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand">Learnza</div>
     <div class="who" id="who-box"></div>
+    <div id="semester-box" style="margin-bottom:8px;"></div>
     <div id="nav-items"></div>
     <div class="spacer"></div>
     <button class="nav-item signout" id="signout-btn">Sign out</button>

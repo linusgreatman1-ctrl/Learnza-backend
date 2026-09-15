@@ -4,6 +4,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { generateAccessCode } = require('../utils');
 const { notify } = require('../services/notification.service');
+const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('ADMIN'));
@@ -99,8 +100,9 @@ router.post('/departments', async (req, res) => {
 router.post('/courses', async (req, res) => {
   const { departmentId, code, title, level, semester } = req.body;
   if (!departmentId || !code || !title) return res.status(400).json({ error: 'Missing required fields' });
+  const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const course = await prisma.course.create({
-    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First' },
+    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First', semesterId },
   });
   res.json({ course });
 });
@@ -132,6 +134,25 @@ router.post('/lecturers/:id/:action', (req, res) =>
 router.post('/students/:id/:action', (req, res) =>
   setUserStatus(req, res, { role: 'STUDENT', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', expel: 'EXPELLED' } })
 );
+
+// ---- Semesters: the school's own term calendar. New activity (courses, assessments,
+// assignments, attendance, results) is stamped with whichever one is current. ----
+router.post('/semesters', async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  const semester = await prisma.semester.create({ data: { name, schoolId: req.user.schoolId } });
+  res.json({ semester });
+});
+
+router.post('/semesters/:id/activate', async (req, res) => {
+  const semester = await prisma.semester.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
+  if (!semester) return res.status(404).json({ error: 'Semester not found' });
+  await prisma.$transaction([
+    prisma.semester.updateMany({ where: { schoolId: req.user.schoolId, isCurrent: true }, data: { isCurrent: false } }),
+    prisma.semester.update({ where: { id: semester.id }, data: { isCurrent: true } }),
+  ]);
+  res.json({ ok: true });
+});
 
 // ---- Hostel allocations (approved, with room + student details) ----
 router.get('/hostel-allocations', async (req, res) => {

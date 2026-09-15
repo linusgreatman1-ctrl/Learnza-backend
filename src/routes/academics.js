@@ -3,6 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const { getSubscriptionStatus, isEnforced } = require('../subscription');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
+const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
 const upload = memoryUpload(80); // videos run larger than library documents
@@ -10,6 +11,17 @@ const upload = memoryUpload(80); // videos run larger than library documents
 router.get('/schools', async (req, res) => {
   const schools = await prisma.school.findMany();
   res.json({ schools });
+});
+
+// Any logged-in school member (admin/lecturer/student) can read the school's semester
+// list -- used to drive the semester switcher in every dashboard header.
+router.get('/semesters', requireAuth, async (req, res) => {
+  if (!req.user.schoolId) return res.json({ semesters: [] });
+  const semesters = await prisma.semester.findMany({
+    where: { schoolId: req.user.schoolId },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ semesters });
 });
 
 router.get('/departments', async (req, res) => {
@@ -74,8 +86,9 @@ router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (re
   if (req.user.role === 'LECTURER' && departmentId !== req.user.departmentId) {
     return res.status(403).json({ error: 'You can only add courses to your own department.' });
   }
+  const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const course = await prisma.course.create({
-    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First' },
+    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First', semesterId },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_COURSE', `${code} — ${title}`);
   res.json({ course });

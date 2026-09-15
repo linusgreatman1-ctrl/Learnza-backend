@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { notify } = require('../services/notification.service');
+const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
 
@@ -12,8 +13,9 @@ router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'
   if (!studentId || !term || score === undefined || score === null) {
     return res.status(400).json({ error: 'Student, term and score are required.' });
   }
+  const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const result = await prisma.result.create({
-    data: { courseId: req.params.id, studentId, authorId: req.user.id, term, score: Number(score), grade: grade || null, remark: remark || null },
+    data: { courseId: req.params.id, studentId, authorId: req.user.id, term, semesterId, score: Number(score), grade: grade || null, remark: remark || null },
   });
   await notify(studentId, 'Result published', `Your result for ${term} is ready.`, 'digital-id');
   res.json({ result });

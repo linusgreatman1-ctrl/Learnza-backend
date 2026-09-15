@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const { notifyMany, notify } = require('../services/notification.service');
+const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
 
@@ -22,10 +23,14 @@ router.get('/courses/:id/assignments', requireAuth, async (req, res) => {
 });
 
 router.post('/courses/:id/assignments', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const { title, instructions, dueAt } = req.body;
+  const { title, instructions, dueAt, kind } = req.body;
   if (!title || !instructions) return res.status(400).json({ error: 'Title and instructions are required.' });
+  const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const assignment = await prisma.assignment.create({
-    data: { courseId: req.params.id, title, instructions, dueAt: dueAt ? new Date(dueAt) : null, authorId: req.user.id },
+    data: {
+      courseId: req.params.id, title, instructions, dueAt: dueAt ? new Date(dueAt) : null,
+      authorId: req.user.id, kind: kind === 'PROJECT' ? 'PROJECT' : 'ASSIGNMENT', semesterId,
+    },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_ASSIGNMENT', title);
 

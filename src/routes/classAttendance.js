@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
 
@@ -32,9 +33,10 @@ router.post('/courses/:id/attendance', requireAuth, requireRole('LECTURER', 'ADM
     return res.status(400).json({ error: 'studentId and a valid status (PRESENT/ABSENT) are required.' });
   }
   const markDate = startOfDay(date);
+  const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const record = await prisma.classAttendanceRecord.upsert({
     where: { courseId_studentId_date: { courseId: req.params.id, studentId, date: markDate } },
-    create: { courseId: req.params.id, studentId, date: markDate, status, markedById: req.user.id },
+    create: { courseId: req.params.id, studentId, date: markDate, status, markedById: req.user.id, semesterId },
     update: { status, markedById: req.user.id },
   });
   res.json({ record });
