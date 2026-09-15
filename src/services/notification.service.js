@@ -11,4 +11,12 @@ async function notifyMany(userIds, title, body, link) {
   });
 }
 
-module.exports = { notify, notifyMany };
+// Every score a lecturer releases (assignment mark, published formal result) also
+// reaches the school admin -- "the school admin receives the scores for each student".
+async function notifySchoolAdmins(schoolId, title, body, link) {
+  if (!schoolId) return;
+  const admins = await prisma.user.findMany({ where: { schoolId, role: 'ADMIN' }, select: { id: true } });
+  await notifyMany(admins.map((a) => a.id), title, body, link);
+}
+
+module.exports = { notify, notifyMany, notifySchoolAdmins };

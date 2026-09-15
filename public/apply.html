@@ -12,17 +12,21 @@
   .apply-box { width: 100%; max-width: 480px; padding: 32px; }
   .apply-box .brand { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 4px; }
   .confirm { text-align: center; padding: 20px 0; }
+  .at-q { padding: 16px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; }
+  .at-opt { padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; cursor: pointer; }
+  .at-opt.selected { border-color: var(--accent); background: var(--accent-soft); }
 </style>
 </head>
 <body>
 
 <div class="card apply-box">
   <div class="brand">Learnza</div>
-  <div class="muted" style="font-size:0.85rem; margin-bottom:18px;">Apply for admission — Edo College of Education</div>
+  <div class="muted" style="font-size:0.85rem; margin-bottom:18px;">Apply for admission</div>
 
   <div id="apply-error"></div>
 
   <form id="apply-form">
+    <div class="field"><label>School</label><select id="ap-school"></select></div>
     <div class="field"><label>Full name</label><input type="text" id="ap-name" required></div>
     <div class="field"><label>Email</label><input type="email" id="ap-email" required></div>
     <div class="field"><label>Phone</label><input type="tel" id="ap-phone" required></div>
@@ -39,23 +43,47 @@
     <p>Thanks — the school admin will review your application. You'll be contacted at the email you provided once a decision is made.</p>
     <a class="btn btn-ghost" href="index.html" style="margin-top:16px;">Back to Learnza</a>
   </div>
+
+  <div id="attitude-test-box" style="display:none;">
+    <span class="pill pill-pass" style="margin-bottom:14px;">Application received</span>
+    <p class="muted" style="margin-bottom:16px;">This school asks applicants to take a short attitude test. Answer below to see your score instantly — the school keeps a record of it alongside your application.</p>
+    <div id="at-questions"></div>
+    <button class="btn btn-primary" id="at-submit-btn" style="width:100%; justify-content:center;">Submit test</button>
+  </div>
+
+  <div id="attitude-test-result" class="confirm" style="display:none;">
+    <span class="pill pill-pass" style="margin-bottom:14px;">Test submitted</span>
+    <p id="at-score-text" style="font-size:1.3rem;"></p>
+    <a class="btn btn-ghost" href="index.html" style="margin-top:16px;">Back to Learnza</a>
+  </div>
 </div>
 
 <script>
   (function () {
-    let schoolId = null;
-    async function loadDepartments() {
-      const schoolsRes = await fetch('/api/schools');
-      const { schools } = await schoolsRes.json();
-      const school = schools[0];
-      if (!school) return;
-      schoolId = school.id;
-      const deptRes = await fetch('/api/departments?schoolId=' + school.id);
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function loadDepartments(schoolId) {
+      const deptRes = await fetch('/api/departments?schoolId=' + schoolId);
       const { departments } = await deptRes.json();
       document.getElementById('ap-department').innerHTML = departments
-        .map((d) => `<option value="${d.id}">${d.name}</option>`).join('');
+        .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
     }
-    loadDepartments();
+
+    async function init() {
+      const schoolsRes = await fetch('/api/schools');
+      const { schools } = await schoolsRes.json();
+      const schoolSelect = document.getElementById('ap-school');
+      schoolSelect.innerHTML = schools.map((s) => `<option value="${s.id}">${esc(s.name)}${s.location ? ` (${esc(s.location)})` : ''}</option>`).join('');
+      if (!schools.length) return;
+      await loadDepartments(schoolSelect.value);
+      schoolSelect.addEventListener('change', () => loadDepartments(schoolSelect.value));
+    }
+    init();
+
+    let applicationId = null;
+    const atAnswers = {};
 
     document.getElementById('apply-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -66,7 +94,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            schoolId,
+            schoolId: document.getElementById('ap-school').value,
             departmentId: document.getElementById('ap-department').value,
             fullName: document.getElementById('ap-name').value,
             email: document.getElementById('ap-email').value,
@@ -77,12 +105,56 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Something went wrong');
+        applicationId = data.application.id;
         document.getElementById('apply-form').style.display = 'none';
-        document.getElementById('apply-confirm').style.display = 'block';
+
+        const testRes = await fetch(`/api/admissions/${applicationId}/attitude-test`);
+        const testData = await testRes.json();
+        if (testData.test) {
+          showAttitudeTest(testData.test);
+        } else {
+          document.getElementById('apply-confirm').style.display = 'block';
+        }
       } catch (err) {
-        errorBox.innerHTML = `<div class="error-box">${err.message}</div>`;
+        errorBox.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
       }
     });
+
+    function showAttitudeTest(test) {
+      const box = document.getElementById('attitude-test-box');
+      box.style.display = 'block';
+      document.getElementById('at-questions').innerHTML = test.questions.map((q, qi) => `
+        <div class="at-q" data-question="${q.id}">
+          <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
+          ${q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+        </div>
+      `).join('');
+      box.querySelectorAll('.at-opt').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          const q = opt.dataset.q;
+          box.querySelectorAll(`.at-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
+          opt.classList.add('selected');
+          atAnswers[q] = Number(opt.dataset.opt);
+        });
+      });
+      document.getElementById('at-submit-btn').addEventListener('click', async () => {
+        const payload = Object.entries(atAnswers).map(([questionId, choice]) => ({ questionId, choice }));
+        try {
+          const res = await fetch(`/api/admissions/${applicationId}/attitude-test/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ answers: payload }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Something went wrong');
+          box.style.display = 'none';
+          document.getElementById('at-score-text').textContent = `Your score: ${data.submission.score} / ${data.submission.total}`;
+          document.getElementById('attitude-test-result').style.display = 'block';
+        } catch (err) {
+          document.getElementById('apply-error').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+        }
+      });
+    }
   })();
 </script>
 </body>

@@ -33,7 +33,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
       take: 30,
     }),
     prisma.submission.findMany({
-      where: { studentId: req.user.id },
+      where: { studentId: req.user.id, submittedAt: { not: null } },
       include: { assessment: { select: { title: true, type: true, course: { select: { code: true } } } } },
       orderBy: { submittedAt: 'desc' },
       take: 10,

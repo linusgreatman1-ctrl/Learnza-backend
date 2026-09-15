@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
-const { notifyMany, notify } = require('../services/notification.service');
+const { notifyMany, notify, notifySchoolAdmins } = require('../services/notification.service');
 const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
@@ -35,7 +35,8 @@ router.post('/courses/:id/assignments', requireAuth, requireRole('LECTURER', 'AD
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_ASSIGNMENT', title);
 
   const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
-  await notifyMany(students.map((s) => s.studentId), 'New assignment posted', title, 'assignments');
+  const label = kind === 'PROJECT' ? 'New project posted' : 'New assignment posted';
+  await notifyMany(students.map((s) => s.studentId), label, title, 'my-dashboard');
 
   res.json({ assignment });
 });
@@ -72,9 +73,18 @@ router.post('/assignment-submissions/:id/mark', requireAuth, requireRole('LECTUR
   const submission = await prisma.assignmentSubmission.update({
     where: { id: req.params.id },
     data: { score: Number(score), feedback: feedback || null, status: 'MARKED', markedAt: new Date() },
-    include: { assignment: { select: { title: true } } },
+    include: {
+      assignment: { select: { title: true } },
+      student: { select: { fullName: true, schoolId: true } },
+    },
   });
-  await notify(submission.studentId, 'Assignment marked', `${submission.assignment.title}: ${score} — check your assignments for feedback.`, 'assignments');
+  await notify(submission.studentId, 'Assignment marked', `${submission.assignment.title}: ${score} — check your assignments for feedback.`, 'my-dashboard');
+  await notifySchoolAdmins(
+    submission.student.schoolId,
+    'Score released',
+    `${submission.student.fullName} scored ${score} on "${submission.assignment.title}".`,
+    'admin-student-activity'
+  );
   res.json({ submission });
 });
 

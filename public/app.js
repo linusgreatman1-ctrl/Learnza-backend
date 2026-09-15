@@ -7,6 +7,7 @@
     schoolId: null,
     view: { screen: 'home', courseId: null, groupId: null, assessmentId: null },
   };
+  let examTimerHandle = null; // the countdown interval from renderTakeAssessment, if any
 
   // ---------- API helper ----------
   async function api(path, opts = {}) {
@@ -415,6 +416,7 @@
   function navigate(screen, params = {}) {
     window.speechSynthesis && window.speechSynthesis.cancel();
     if (state.view.screen === 'live-class' && screen !== 'live-class') teardownLive();
+    if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -447,6 +449,7 @@
         case 'my-dashboard': return renderMyDashboard();
         case 'cbt-mock': return renderAssessments(false);
         case 'take-assessment': return renderTakeAssessment();
+        case 'assessment-review': return renderAssessmentReview();
         case 'billing': return renderBilling();
         case 'ai-teacher-session': return renderAiTeacherSession();
         case 'live-class': return renderLiveClass();
@@ -1311,7 +1314,7 @@
         ${assignments.map((a) => `
           <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
             <div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
-              <div><div style="font-weight:600;">${esc(a.title)} <span class="meta">(${esc(a.course.code)})</span></div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
+              <div><div style="font-weight:600;">${esc(a.title)} <span class="meta">(${esc(a.course.code)})</span>${a.kind === 'PROJECT' ? ' <span class="pill pill-muted">Project</span>' : ''}</div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
               ${a.mySubmission
                 ? a.mySubmission.status === 'MARKED'
                   ? `<span class="pill pill-pass">Marked: ${a.mySubmission.score}</span>`
@@ -1452,7 +1455,9 @@
         ${assessment.questions.map((q, qi) => `
           <div class="card quiz-q" data-question="${q.id}">
             <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
-            ${q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+            ${q.questionType === 'THEORY'
+              ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="4" style="width:100%;"></textarea>`
+              : q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
             <p class="pq-feedback meta" style="margin-top:8px; display:none;"></p>
           </div>
         `).join('')}
@@ -1469,25 +1474,32 @@
         const q = opt.dataset.q;
         view.querySelectorAll(`.quiz-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
         opt.classList.add('selected');
-        answers[q] = Number(opt.dataset.opt);
+        answers[q] = { questionId: q, choice: Number(opt.dataset.opt) };
       });
     });
+    view.querySelectorAll('.theory-answer').forEach((ta) => {
+      ta.addEventListener('input', () => { answers[ta.dataset.q] = { questionId: ta.dataset.q, text: ta.value }; });
+    });
     document.getElementById('pq-submit-btn').addEventListener('click', async () => {
-      const payload = Object.entries(answers).map(([questionId, choice]) => ({ questionId, choice }));
+      const payload = Object.values(answers);
       try {
         const { score, total, corrections } = await api(`/assessments/${assessmentId}/practice-submit`, { method: 'POST', body: { answers: payload } });
         corrections.forEach((c) => {
           const block = view.querySelector(`[data-question="${c.questionId}"]`);
+          const fb = block.querySelector('.pq-feedback');
+          fb.style.display = 'block';
+          if (c.questionType === 'THEORY') {
+            fb.textContent = `Model answer: ${c.modelAnswer || '(none provided)'}`;
+            return;
+          }
           block.querySelectorAll('.quiz-opt').forEach((opt) => {
             const oi = Number(opt.dataset.opt);
             opt.classList.toggle('correct', oi === c.correctIndex);
             opt.classList.toggle('wrong', oi === c.chosen && !c.correct);
           });
-          const fb = block.querySelector('.pq-feedback');
-          fb.style.display = 'block';
           fb.textContent = c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.';
         });
-        document.getElementById('pq-score').textContent = `Score: ${score} / ${total}`;
+        document.getElementById('pq-score').textContent = `Score: ${score} / ${total} (objective questions only)`;
         document.getElementById('pq-submit-btn').hidden = true;
         document.getElementById('pq-retry-btn').hidden = false;
       } catch (err) { toast(err.message); }
@@ -1909,25 +1921,42 @@
 
   async function renderTakeAssessment() {
     const { assessment, mySubmission } = await api(`/assessments/${state.view.assessmentId}`);
-    if (mySubmission) {
+    if (mySubmission && mySubmission.submittedAt) {
       view.innerHTML = `
         <div class="page-head"><h1>${esc(assessment.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
         <div class="card" style="padding:24px;">
           <span class="pill pill-pass">Already submitted</span>
           <p style="margin-top:12px; font-size:1.3rem;" class="tabular">${mySubmission.score} / ${mySubmission.total}</p>
+          <button class="btn btn-ghost btn-sm" id="review-btn" style="margin-top:14px;">🔍 Review mistakes</button>
         </div>
       `;
       document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock'));
+      document.getElementById('review-btn').addEventListener('click', () => navigate('assessment-review', { assessmentId: assessment.id, assessmentTitle: assessment.title, hubBackTo: state.view.backTo }));
       return;
     }
+
+    // Starting (or resuming) stamps/reads the server-side deadline -- the countdown is
+    // purely a display of that, not the source of truth (server rejects a late submit
+    // regardless of what the client's clock says).
+    const { startedAt } = await api(`/assessments/${assessment.id}/start`, { method: 'POST' });
+    const deadline = new Date(startedAt).getTime() + assessment.durationMin * 60000;
+
     const answers = {};
     view.innerHTML = `
-      <div class="page-head"><h1>${esc(assessment.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <div class="page-head">
+        <h1>${esc(assessment.title)}</h1>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span class="pill pill-accent tabular" id="exam-timer">--:--</span>
+          <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+        </div>
+      </div>
       <p class="muted" style="margin-bottom:16px;">${assessment.durationMin} minutes · ${assessment.questions.length} questions · auto-graded on submit</p>
       ${assessment.questions.map((q, qi) => `
         <div class="card quiz-q">
           <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
-          ${q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+          ${q.questionType === 'THEORY'
+            ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="4" style="width:100%;"></textarea>`
+            : q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
         </div>
       `).join('')}
       <button class="btn btn-primary" id="submit-btn">Submit test</button>
@@ -1938,18 +1967,66 @@
         const q = opt.dataset.q;
         view.querySelectorAll(`.quiz-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
         opt.classList.add('selected');
-        answers[q] = Number(opt.dataset.opt);
+        answers[q] = { questionId: q, choice: Number(opt.dataset.opt) };
       });
     });
-    document.getElementById('submit-btn').addEventListener('click', async () => {
-      const payload = Object.entries(answers).map(([questionId, choice]) => ({ questionId, choice }));
+    view.querySelectorAll('.theory-answer').forEach((ta) => {
+      ta.addEventListener('input', () => { answers[ta.dataset.q] = { questionId: ta.dataset.q, text: ta.value }; });
+    });
+
+    async function doSubmit(auto) {
+      clearInterval(examTimerHandle);
+      examTimerHandle = null;
+      const payload = Object.values(answers);
       try {
         const { submission, pointsEarned, newBadges } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
-        toast(`Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
+        toast(auto ? `Time's up — submitted automatically. Score ${submission.score}/${submission.total}` : `Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
         (newBadges || []).forEach((b) => setTimeout(() => toast(`Badge earned: ${b.icon} ${b.name}`), 400));
         navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo });
       } catch (err) { toast(err.message); }
-    });
+    }
+    document.getElementById('submit-btn').addEventListener('click', () => doSubmit(false));
+
+    const timerEl = document.getElementById('exam-timer');
+    function tick() {
+      const msLeft = deadline - Date.now();
+      if (msLeft <= 0) {
+        timerEl.textContent = '0:00';
+        doSubmit(true);
+        return;
+      }
+      const totalSec = Math.floor(msLeft / 1000);
+      timerEl.textContent = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+    }
+    tick();
+    examTimerHandle = setInterval(tick, 1000);
+  }
+
+  // Review-mistakes for a graded (non-practice) assessment: correct answer highlighted
+  // against the student's own choice for objective questions, model answer shown
+  // alongside the student's text for theory questions.
+  async function renderAssessmentReview() {
+    const { assessmentTitle, assessmentId, hubBackTo } = state.view;
+    const { review, score, total } = await api(`/assessments/${assessmentId}/my-review`);
+    view.innerHTML = `
+      <div class="page-head"><h1>Review — ${esc(assessmentTitle || '')}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <p class="muted" style="margin-bottom:16px;">Score: <span class="tabular">${score}/${total}</span></p>
+      ${review.map((q, qi) => q.questionType === 'THEORY' ? `
+        <div class="card quiz-q">
+          <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
+          <div class="meta">Your answer</div>
+          <p style="margin-bottom:10px;">${esc(q.myAnswer || '(no answer)')}</p>
+          <div class="meta">Model answer</div>
+          <p>${esc(q.modelAnswer || '(none provided)')}</p>
+        </div>
+      ` : `
+        <div class="card quiz-q">
+          <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
+          ${q.options.map((opt, oi) => `<div class="quiz-opt ${oi === q.correctIndex ? 'correct' : ''} ${oi === q.chosen && oi !== q.correctIndex ? 'wrong' : ''}">${esc(opt)}${oi === q.chosen ? ' — your answer' : ''}</div>`).join('')}
+        </div>
+      `).join('')}
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('take-assessment', { assessmentId, backTo: hubBackTo }));
   }
 
   // ================= LECTURER =================
@@ -2186,6 +2263,7 @@
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:12px; font-size:1rem;">Post a new assignment</h3>
         <form id="assignment-form">
+          <div class="field"><label>Kind</label><select id="asg-kind"><option value="ASSIGNMENT">Assignment</option><option value="PROJECT">Project</option></select></div>
           <div class="field"><label>Title</label><input type="text" id="asg-title" required></div>
           <div class="field"><label>Instructions</label><textarea id="asg-instructions" required></textarea></div>
           <div class="field"><label>Due date (optional)</label><input type="date" id="asg-due"></div>
@@ -2195,7 +2273,7 @@
       <div class="card">
         ${assignments.map((a) => `
           <div class="list-row" data-open="${a.id}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div></div>
+            <div><div style="font-weight:600;">${esc(a.title)} ${a.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-left:6px;">Project</span>' : ''}</div><div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div></div>
             <span class="pill pill-accent">View submissions</span>
           </div>
         `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
@@ -2207,9 +2285,10 @@
       const title = document.getElementById('asg-title').value.trim();
       const instructions = document.getElementById('asg-instructions').value.trim();
       const dueAt = document.getElementById('asg-due').value || null;
+      const kind = document.getElementById('asg-kind').value;
       try {
-        await api(`/courses/${courseId}/assignments`, { method: 'POST', body: { title, instructions, dueAt } });
-        toast('Assignment posted');
+        await api(`/courses/${courseId}/assignments`, { method: 'POST', body: { title, instructions, dueAt, kind } });
+        toast(kind === 'PROJECT' ? 'Project posted' : 'Assignment posted');
         navigate('lect-assignments', { courseId, courseTitle, courseCode });
       } catch (err) { toast(err.message); }
     });
@@ -2322,16 +2401,33 @@
     function questionBlock(i) {
       return `<div class="field" data-question-block="${i}">
         <label>Question ${i + 1}</label>
-        <input type="text" class="q-text" placeholder="Question text" required>
-        <input type="text" class="q-opt" placeholder="Option A" required style="margin-top:6px;">
-        <input type="text" class="q-opt" placeholder="Option B" required style="margin-top:6px;">
-        <input type="text" class="q-opt" placeholder="Option C" style="margin-top:6px;">
-        <input type="text" class="q-opt" placeholder="Option D" style="margin-top:6px;">
-        <select class="q-correct" style="margin-top:6px;">
-          <option value="0">Correct: Option A</option><option value="1">Correct: Option B</option>
-          <option value="2">Correct: Option C</option><option value="3">Correct: Option D</option>
+        <select class="q-type" style="margin-bottom:6px;">
+          <option value="OBJECTIVE">Objective (multiple choice)</option>
+          <option value="THEORY">Theory (free response)</option>
         </select>
+        <input type="text" class="q-text" placeholder="Question text" required>
+        <div class="q-objective-fields">
+          <input type="text" class="q-opt" placeholder="Option A" style="margin-top:6px;">
+          <input type="text" class="q-opt" placeholder="Option B" style="margin-top:6px;">
+          <input type="text" class="q-opt" placeholder="Option C" style="margin-top:6px;">
+          <input type="text" class="q-opt" placeholder="Option D" style="margin-top:6px;">
+          <select class="q-correct" style="margin-top:6px;">
+            <option value="0">Correct: Option A</option><option value="1">Correct: Option B</option>
+            <option value="2">Correct: Option C</option><option value="3">Correct: Option D</option>
+          </select>
+        </div>
+        <textarea class="q-model-answer" placeholder="Model answer (shown to the student to self-review against)" style="margin-top:6px; width:100%;" hidden rows="2"></textarea>
       </div>`;
+    }
+    function wireQuestionTypeToggle(block) {
+      const typeSelect = block.querySelector('.q-type');
+      const objectiveFields = block.querySelector('.q-objective-fields');
+      const modelAnswer = block.querySelector('.q-model-answer');
+      typeSelect.addEventListener('change', () => {
+        const isTheory = typeSelect.value === 'THEORY';
+        objectiveFields.hidden = isTheory;
+        modelAnswer.hidden = !isTheory;
+      });
     }
     container.innerHTML = `
       <h3 style="margin-bottom:14px;">New assessment</h3>
@@ -2369,23 +2465,34 @@
     }
     container.querySelector('#na-type').addEventListener('change', updateCapNote);
     updateCapNote();
+    wireQuestionTypeToggle(container.querySelector('[data-question-block="0"]'));
 
     container.querySelector('#na-add-q').addEventListener('click', () => {
       if (container.querySelectorAll('[data-question-block]').length >= maxQuestions()) return;
       const div = document.createElement('div');
       div.innerHTML = questionBlock(qCount++);
-      container.querySelector('#na-questions').appendChild(div.firstElementChild);
+      const block = div.firstElementChild;
+      container.querySelector('#na-questions').appendChild(block);
+      wireQuestionTypeToggle(block);
       updateCapNote();
     });
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#na-cancel').addEventListener('click', close);
     container.querySelector('#na-save').addEventListener('click', async () => {
       const blocks = container.querySelectorAll('[data-question-block]');
-      const questions = Array.from(blocks).map((b) => ({
-        text: b.querySelector('.q-text').value,
-        options: Array.from(b.querySelectorAll('.q-opt')).map((i) => i.value).filter(Boolean),
-        correctIndex: Number(b.querySelector('.q-correct').value),
-      })).filter((q) => q.text && q.options.length >= 2);
+      const questions = Array.from(blocks).map((b) => {
+        const questionType = b.querySelector('.q-type').value;
+        const text = b.querySelector('.q-text').value;
+        if (questionType === 'THEORY') {
+          return { questionType, text, modelAnswer: b.querySelector('.q-model-answer').value };
+        }
+        return {
+          questionType,
+          text,
+          options: Array.from(b.querySelectorAll('.q-opt')).map((i) => i.value).filter(Boolean),
+          correctIndex: Number(b.querySelector('.q-correct').value),
+        };
+      }).filter((q) => q.text && (q.questionType === 'THEORY' || q.options.length >= 2));
       if (!questions.length) { toast('Add at least one complete question'); return; }
       try {
         await api(`/courses/${container.querySelector('#na-course').value}/assessments`, {

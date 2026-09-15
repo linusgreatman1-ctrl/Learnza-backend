@@ -29,7 +29,7 @@ router.get('/students/me/transcript', requireAuth, requireRole('STUDENT'), async
   const issued = await prisma.transcriptRequest.findFirst({ where: { studentId: req.user.id, status: 'ISSUED' } });
   if (!issued) return res.status(403).json({ error: 'No issued transcript yet. Request one first.' });
   const submissions = await prisma.submission.findMany({
-    where: { studentId: req.user.id },
+    where: { studentId: req.user.id, submittedAt: { not: null } },
     include: { assessment: { include: { course: { select: { code: true, title: true } } } } },
     orderBy: { submittedAt: 'asc' },
   });

@@ -347,10 +347,10 @@ model Submission {
   student      User       @relation(fields: [studentId], references: [id])
   studentId    String
   startedAt    DateTime?  // server-stamped when the student opens a timed attempt, for deadline enforcement
-  answers      String     // JSON-encoded array of chosen option indices (objective) / free text (theory)
-  score        Int
-  total        Int
-  submittedAt  DateTime   @default(now())
+  answers      String?    // JSON-encoded array of {questionId, choice|text} -- null until actually submitted
+  score        Int?       // null until submitted (a started-but-not-submitted row has startedAt set, score null)
+  total        Int?
+  submittedAt  DateTime?
 
   @@unique([assessmentId, studentId])
 }

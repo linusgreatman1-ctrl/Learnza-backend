@@ -119,7 +119,7 @@ router.get('/lecturer-activity', async (req, res) => {
 router.get('/student-activity', async (req, res) => {
   const [submissions, assignmentSubs, results, attendance] = await Promise.all([
     prisma.submission.findMany({
-      where: { student: { schoolId: req.user.schoolId } },
+      where: { student: { schoolId: req.user.schoolId }, submittedAt: { not: null } },
       include: { student: { select: { fullName: true, matricNumber: true } }, assessment: { select: { title: true, type: true, course: { select: { code: true } } } } },
       orderBy: { submittedAt: 'desc' },
       take: 100,

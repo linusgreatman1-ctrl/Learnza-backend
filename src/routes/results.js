@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { notify } = require('../services/notification.service');
+const { notify, notifySchoolAdmins } = require('../services/notification.service');
 const { getCurrentSemesterId } = require('../semester');
 
 const router = express.Router();
@@ -16,8 +16,15 @@ router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const result = await prisma.result.create({
     data: { courseId: req.params.id, studentId, authorId: req.user.id, term, semesterId, score: Number(score), grade: grade || null, remark: remark || null },
+    include: { student: { select: { fullName: true, schoolId: true } } },
   });
   await notify(studentId, 'Result published', `Your result for ${term} is ready.`, 'digital-id');
+  await notifySchoolAdmins(
+    result.student.schoolId,
+    'Score released',
+    `${result.student.fullName} scored ${score} for ${term}.`,
+    'admin-student-activity'
+  );
   res.json({ result });
 });
 

@@ -32,7 +32,7 @@ async function recordAssessmentCompletion(userId, score, total) {
   });
 
   const newBadges = [];
-  const examCount = await prisma.submission.count({ where: { studentId: userId } });
+  const examCount = await prisma.submission.count({ where: { studentId: userId, submittedAt: { not: null } } });
   const percent = total > 0 ? score / total : 0;
 
   if (examCount === 1) newBadges.push(await awardBadge(userId, 'FIRST_EXAM', 'First Exam', 'Completed your first assessment on Learnza', '🎯'));
