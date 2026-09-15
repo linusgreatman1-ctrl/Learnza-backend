@@ -30,12 +30,15 @@ Demo logins (seeded):
 - Lecturer: `lecturer@edocoe.edu.ng` / `Lecturer@123`
 - Student: `student@edocoe.edu.ng` / `Student@123`
 
-## Deploying for a real public link
+## Deploying
 
-This environment has no GitHub CLI or Render/Railway CLI configured, so it hasn't been deployed yet. To get a public URL:
-1. Push this folder to a new GitHub repo.
-2. Create a Render (or Railway) web service from that repo — build command `npm install && npx prisma generate`, start command `npm start`.
-3. Add a persistent Postgres database for production (SQLite's local file won't survive Render's ephemeral filesystem) and set `DATABASE_URL` + `JWT_SECRET` env vars.
-4. Run `npx prisma db push` and `node src/seed.js` once against the production database.
+Live at **https://learnza-backend-production.up.railway.app** — a Railway project (`learnza-backend`), auto-deploying from `main`, with its own managed Postgres database (migrated from an earlier Render + Supabase setup; same data).
 
-Ask the coding assistant to drive this once you're ready — it can use your logged-in browser session to set up Render/GitHub, or you can hand it a Render API key.
+- Build: `npm install && npx prisma generate`
+- Pre-deploy: `npx prisma db push --accept-data-loss` (must run as a pre-deploy step, not part of the build — the build container has no access to Railway's private network, so `db push` can't reach the database at build time)
+- Start: `npm start`, health check `/health`
+- Env vars: `NODE_ENV=production`, `DATABASE_URL` (references the Postgres service), `JWT_SECRET`
+
+To redeploy: push to `main`. `src/seed.js` runs automatically on every boot and is a no-op once a `School` row exists, so it's safe on a populated database.
+
+An earlier deployment lived on Render (`render.yaml`, still in this repo) with the database on Supabase — check whether that's still running before assuming it's retired.
