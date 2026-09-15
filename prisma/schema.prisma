@@ -272,6 +272,7 @@ model LibraryResource {
   courseId     String?
   title        String
   author       String
+  publisher    String?
   type         String     // Textbook / Journal / Past Question / Handout
   fileUrl      String
   uploader     User?      @relation("LibraryUploader", fields: [uploaderId], references: [id])

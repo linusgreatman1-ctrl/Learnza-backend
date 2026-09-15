@@ -13,6 +13,7 @@ async function main() {
     await backfillSemester();
     await backfillDemoContactDetails();
     await backfillHostels();
+    await backfillLibraryTextbooks();
     return;
   }
 
@@ -102,19 +103,19 @@ async function main() {
   const csc102 = await prisma.course.create({
     data: { departmentId: csc.id, code: 'CSC 102', title: 'Introduction to Programming', level: 'NCE 1', semester: 'Second', semesterId: semester.id },
   });
-  await prisma.course.create({
+  const mth101 = await prisma.course.create({
     data: { departmentId: mth.id, code: 'MTH 101', title: 'Algebra and Trigonometry', level: 'NCE 1', semester: 'First', semesterId: semester.id },
   });
-  await prisma.course.create({
+  const eng101 = await prisma.course.create({
     data: { departmentId: eng.id, code: 'ENG 101', title: 'Use of English I', level: 'NCE 1', semester: 'First', semesterId: semester.id },
   });
-  await prisma.course.create({
+  const bio101 = await prisma.course.create({
     data: { departmentId: bio.id, code: 'BIO 101', title: 'General Biology I', level: 'NCE 1', semester: 'First', semesterId: semester.id },
   });
-  await prisma.course.create({
+  const ece101 = await prisma.course.create({
     data: { departmentId: ece.id, code: 'ECE 101', title: 'Foundations of Early Childhood Education', level: 'NCE 1', semester: 'First', semesterId: semester.id },
   });
-  await prisma.course.create({
+  const eco101 = await prisma.course.create({
     data: { departmentId: eco.id, code: 'ECO 101', title: 'Principles of Economics I', level: 'NCE 1', semester: 'First', semesterId: semester.id },
   });
 
@@ -152,25 +153,80 @@ async function main() {
     },
   });
 
-  await prisma.libraryResource.create({
-    data: {
-      courseId: csc101.id,
-      title: 'Computer Studies for Colleges of Education',
-      author: 'A. O. Fagbola',
-      type: 'Textbook',
-      fileUrl: 'https://example.org/library/computer-studies-coe.pdf',
-      uploaderId: lecturer.id,
-    },
-  });
-  await prisma.libraryResource.create({
-    data: {
-      courseId: csc102.id,
-      title: 'Introduction to Programming Logic - Past Questions 2020-2024',
-      author: 'Edo COE Examinations Unit',
-      type: 'Past Question',
-      fileUrl: 'https://example.org/library/csc102-past-questions.pdf',
-      uploaderId: lecturer.id,
-    },
+  await prisma.libraryResource.createMany({
+    data: [
+      {
+        courseId: csc101.id,
+        title: 'Computer Studies for Colleges of Education',
+        author: 'A. O. Fagbola',
+        publisher: 'Spectrum Books',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/computer-studies-coe.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: csc102.id,
+        title: 'Fundamentals of Computer Programming',
+        author: 'C. E. Onyekwelu',
+        publisher: 'Ababa Press',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/fundamentals-programming.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: csc102.id,
+        title: 'Introduction to Programming Logic - Past Questions 2020-2024',
+        author: 'Edo COE Examinations Unit',
+        type: 'Past Question',
+        fileUrl: 'https://example.org/library/csc102-past-questions.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: mth101.id,
+        title: 'Further Mathematics Project',
+        author: 'M. F. Macrae, A. O. Kalejaiye',
+        publisher: 'Pearson Education',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/further-mathematics-project.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: eng101.id,
+        title: 'Effective English for Colleges of Education',
+        author: 'F. E. Ojiebun, E. Ehigie',
+        publisher: 'University Press PLC',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/effective-english-coe.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: bio101.id,
+        title: 'Modern Biology for Senior Colleges',
+        author: 'S. T. Ramalingam',
+        publisher: 'Africana FIRST Publishers',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/modern-biology.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: ece101.id,
+        title: 'Foundations of Early Childhood Education in Nigeria',
+        author: 'P. K. Osokoya',
+        publisher: 'NERDC Press',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/foundations-ece-nigeria.pdf',
+        uploaderId: lecturer.id,
+      },
+      {
+        courseId: eco101.id,
+        title: 'Principles of Economics for Colleges of Education',
+        author: 'R. A. Anyanwu',
+        publisher: 'Onitsha Academy Press',
+        type: 'Textbook',
+        fileUrl: 'https://example.org/library/principles-of-economics-coe.pdf',
+        uploaderId: lecturer.id,
+      },
+    ],
   });
 
   const group = await prisma.studyGroup.create({
@@ -323,6 +379,42 @@ async function backfillHostels() {
     await prisma.hostelApplication.update({ where: { id: app.id }, data: { hostelId: daws.id } });
   }
   if (orphanedApproved.length) console.log(`Backfilled hostelId onto ${orphanedApproved.length} pre-existing approved application(s)`);
+}
+
+// The e-Library used to default to generic "Handout" uploads with no publisher; a
+// school seeded before this existed only has the original two CSC entries. This adds
+// a real textbook (with author and publisher) to every other department's course so
+// the department/course browse view isn't empty, and backfills the publisher onto the
+// pre-existing CSC101 entry that predates the field.
+async function backfillLibraryTextbooks() {
+  const lecturer = await prisma.user.findUnique({ where: { email: 'lecturer@edocoe.edu.ng' } });
+  if (!lecturer) return;
+
+  await prisma.libraryResource.updateMany({
+    where: { title: 'Computer Studies for Colleges of Education', publisher: null },
+    data: { publisher: 'Spectrum Books' },
+  });
+
+  const targets = [
+    { code: 'CSC 102', title: 'Fundamentals of Computer Programming', author: 'C. E. Onyekwelu', publisher: 'Ababa Press', fileUrl: 'https://example.org/library/fundamentals-programming.pdf' },
+    { code: 'MTH 101', title: 'Further Mathematics Project', author: 'M. F. Macrae, A. O. Kalejaiye', publisher: 'Pearson Education', fileUrl: 'https://example.org/library/further-mathematics-project.pdf' },
+    { code: 'ENG 101', title: 'Effective English for Colleges of Education', author: 'F. E. Ojiebun, E. Ehigie', publisher: 'University Press PLC', fileUrl: 'https://example.org/library/effective-english-coe.pdf' },
+    { code: 'BIO 101', title: 'Modern Biology for Senior Colleges', author: 'S. T. Ramalingam', publisher: 'Africana FIRST Publishers', fileUrl: 'https://example.org/library/modern-biology.pdf' },
+    { code: 'ECE 101', title: 'Foundations of Early Childhood Education in Nigeria', author: 'P. K. Osokoya', publisher: 'NERDC Press', fileUrl: 'https://example.org/library/foundations-ece-nigeria.pdf' },
+    { code: 'ECO 101', title: 'Principles of Economics for Colleges of Education', author: 'R. A. Anyanwu', publisher: 'Onitsha Academy Press', fileUrl: 'https://example.org/library/principles-of-economics-coe.pdf' },
+  ];
+  let added = 0;
+  for (const t of targets) {
+    const course = await prisma.course.findFirst({ where: { code: t.code } });
+    if (!course) continue;
+    const already = await prisma.libraryResource.findFirst({ where: { courseId: course.id, title: t.title } });
+    if (already) continue;
+    await prisma.libraryResource.create({
+      data: { courseId: course.id, title: t.title, author: t.author, publisher: t.publisher, type: 'Textbook', fileUrl: t.fileUrl, uploaderId: lecturer.id },
+    });
+    added++;
+  }
+  if (added) console.log(`Backfilled ${added} textbook(s) into the e-Library`);
 }
 
 if (require.main === module) {

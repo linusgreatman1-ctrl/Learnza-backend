@@ -2085,45 +2085,79 @@
     }
   }
 
+  function libraryTypeIcon(type) {
+    if (type === 'Past Question') return '📝';
+    if (type === 'Journal') return '📰';
+    if (type === 'Handout') return '📄';
+    return '📗'; // Textbook, and the default for anything else
+  }
+
+  function libraryItemCardHtml(it) {
+    return `
+      <div class="list-row">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="lib-cover">${libraryTypeIcon(it.type)}</div>
+          <div>
+            <div style="font-weight:600;">${esc(it.title)}</div>
+            <div class="meta">by ${esc(it.author)}${it.publisher ? ` · ${esc(it.publisher)}` : ''}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="pill pill-muted">${esc(it.type)}</span>
+          <a class="btn btn-ghost btn-sm" href="${esc(it.fileUrl)}" target="_blank" rel="noopener">Open</a>
+        </div>
+      </div>
+    `;
+  }
+
+  // A shared campus catalog -- browsable by department and course like the "Browse &
+  // enroll" screen, not limited to the courses the viewer happens to be enrolled in
+  // or teaching. Textbooks (with real authors/publishers) are the primary resource
+  // type; past questions, journals and handouts are still supported as secondary types.
   async function renderLibrary(isLecturer) {
-    const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
-    const items = [];
-    for (const c of courses) {
-      const { items: courseItems } = await api(`/library?courseId=${c.id}`);
-      items.push(...courseItems.map((it) => ({ ...it, courseCode: c.code })));
-    }
+    const [{ departments }, { items: allItems }, lecturerCourses] = await Promise.all([
+      api(`/departments?schoolId=${state.user.schoolId}`),
+      api(`/library?schoolId=${state.user.schoolId}`),
+      isLecturer ? ensureLectCourses().then((r) => r.courses) : Promise.resolve([]),
+    ]);
+    const deptCourses = {};
+    for (const d of departments) deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
+    const itemsByCourse = {};
+    for (const it of allItems) (itemsByCourse[it.courseId] = itemsByCourse[it.courseId] || []).push(it);
+
     view.innerHTML = `
       <div class="page-head"><h1>e-Library</h1></div>
+      <p class="muted" style="margin-bottom:20px;">Textbooks for every department and course, browsable by subject — not just what you're enrolled in.</p>
       ${isLecturer ? `
         <div class="card" style="padding:20px; margin-bottom:22px;">
-          <h3 style="margin-bottom:12px; font-size:1rem;">Upload a resource</h3>
+          <h3 style="margin-bottom:12px; font-size:1rem;">Add a textbook</h3>
           <form id="upload-form">
             <div class="field"><label>Course</label>
-              <select id="lib-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select>
+              <select id="lib-course">${lecturerCourses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select>
             </div>
-            <div class="field"><label>Title</label><input type="text" id="lib-title" required></div>
-            <div class="field"><label>Author</label><input type="text" id="lib-author" required></div>
+            <div class="field"><label>Title</label><input type="text" id="lib-title" required placeholder="e.g. Introduction to Organic Chemistry"></div>
+            <div class="field"><label>Author(s)</label><input type="text" id="lib-author" required placeholder="e.g. J. O. Adeyemi, T. K. Bello"></div>
+            <div class="field"><label>Publisher <span class="muted">(optional)</span></label><input type="text" id="lib-publisher" placeholder="e.g. Spectrum Books"></div>
             <div class="field"><label>Type</label>
-              <select id="lib-type"><option>Textbook</option><option>Past Question</option><option>Handout</option><option>Journal</option></select>
+              <select id="lib-type"><option>Textbook</option><option>Journal</option><option>Past Question</option><option>Handout</option></select>
             </div>
             <div class="field"><label>File (from your device)</label><input type="file" id="lib-file" required></div>
             <button class="btn btn-primary" type="submit" id="lib-submit-btn">Upload</button>
           </form>
         </div>` : ''}
-      <div class="card">
-        ${items.map((it) => `
-          <div class="list-row">
-            <div>
-              <div style="font-weight:600;">${esc(it.title)}</div>
-              <div class="meta">${esc(it.author)} · ${esc(it.courseCode)}</div>
+      ${departments.map((d) => `
+        <div style="margin-bottom:26px;">
+          <div class="muted" style="font-weight:700; margin-bottom:10px;">${esc(d.name)}</div>
+          ${(deptCourses[d.id] || []).map((c) => `
+            <div style="margin-bottom:14px;">
+              <div style="font-size:0.85rem; font-weight:600; margin-bottom:6px;">${esc(c.code)} — ${esc(c.title)}</div>
+              <div class="card">
+                ${(itemsByCourse[c.id] || []).map(libraryItemCardHtml).join('') || '<p class="muted" style="padding:14px 16px;">No textbooks yet.</p>'}
+              </div>
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span class="pill pill-muted">${esc(it.type)}</span>
-              <a class="btn btn-ghost btn-sm" href="${esc(it.fileUrl)}" target="_blank" rel="noopener">Open</a>
-            </div>
-          </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No resources yet.</p>'}
-      </div>
+          `).join('') || '<p class="muted">No courses yet.</p>'}
+        </div>
+      `).join('') || '<p class="muted">No departments yet.</p>'}
     `;
     if (isLecturer) {
       document.getElementById('upload-form').addEventListener('submit', async (e) => {
@@ -2132,6 +2166,7 @@
         fd.append('courseId', document.getElementById('lib-course').value);
         fd.append('title', document.getElementById('lib-title').value);
         fd.append('author', document.getElementById('lib-author').value);
+        fd.append('publisher', document.getElementById('lib-publisher').value);
         fd.append('type', document.getElementById('lib-type').value);
         const file = document.getElementById('lib-file').files[0];
         if (!file) return toast('Attach a file from your device.');
@@ -2142,7 +2177,7 @@
         submitBtn.textContent = 'Uploading…';
         try {
           const { storage } = await api('/library', { method: 'POST', body: fd });
-          toast('Resource uploaded');
+          toast('Textbook added');
           if (storage === 'local-disk') {
             toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
           }
