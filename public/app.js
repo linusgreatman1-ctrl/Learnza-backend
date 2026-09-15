@@ -552,7 +552,7 @@
   async function renderStudentCourses() {
     const [{ courses: mine }, { departments }] = await Promise.all([
       api('/students/me/courses'),
-      api('/departments'),
+      api(`/departments?schoolId=${state.user.schoolId}`),
     ]);
     const deptCourses = {};
     for (const d of departments) {
@@ -1070,7 +1070,7 @@
   }
 
   async function renderLeaderboard() {
-    const { departments } = await api('/departments');
+    const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
     const deptId = state.view.departmentId || '';
     const { leaderboard } = await api('/leaderboard' + (deptId ? `?departmentId=${deptId}` : ''));
     const myEntry = leaderboard.find((row) => row.fullName === state.user.fullName);
@@ -1855,7 +1855,7 @@
   // ================= LECTURER =================
 
   async function ensureLectCourses() {
-    const { departments } = await api('/departments');
+    const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
     const myDept = departments.find((d) => d.id === state.user.departmentId) || departments[0];
     const courses = myDept ? (await api(`/departments/${myDept.id}/courses`)).courses : [];
     window.__lectCourses = courses;
