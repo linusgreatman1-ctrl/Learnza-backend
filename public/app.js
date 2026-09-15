@@ -224,18 +224,26 @@
   // features. They get their own self-directed courses instead of "My Courses".
   const NAV = {
     STUDENT: [
+      ['my-dashboard', 'My Dashboard'],
       ['courses', 'My Courses'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
-      ['assessments', 'CBT & Tests'],
+      ['past-questions-hub', 'Past Questions'],
+      ['cbt-mock', 'CBT Mock Exam Practice'],
+      ['semester-exam-hub', 'Semester Exam'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
     ],
+    // Individual learners get the same dashboard concept, but no library/groups/
+    // leaderboard/digital-id (school-institutional features) and no CBT/past-questions/
+    // semester-exam yet -- those need an app-generated-content engine for self-created
+    // courses that doesn't exist yet.
     STUDENT_INDIVIDUAL: [
       ['individual-courses', 'My Courses'],
+      ['my-dashboard', 'My Dashboard'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['billing', 'Subscription'],
@@ -244,12 +252,14 @@
       ['lect-courses', 'My Courses'],
       ['lect-library', 'e-Library'],
       ['lect-assessments', 'Assessments'],
+      ['lect-semester-exam', 'Semester Exam'],
       ['research', 'AI Research Assistant'],
       ['staff-profile', 'My Staff Profile'],
     ],
     ADMIN: [
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
+      ['admin-semester-exam', 'Semester Exam'],
       ['admin-activity', 'Lecturer Activity'],
       ['admin-student-activity', 'Student Activity'],
       ['admin-lab-queue', 'Digital Lab'],
@@ -410,9 +420,21 @@
     render();
   }
 
+  // Navigation should feel instant: only show a "Loading…" placeholder if the target
+  // screen's data hasn't arrived within 150ms, instead of blanking the page on every
+  // click regardless of how fast the response is.
   async function render() {
-    view.innerHTML = '<p class="muted">Loading…</p>';
+    const loadingTimer = setTimeout(() => { view.innerHTML = '<p class="muted">Loading…</p>'; }, 150);
     try {
+      await dispatch();
+    } catch (err) {
+      if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+      view.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    } finally {
+      clearTimeout(loadingTimer);
+    }
+
+    function dispatch() {
       switch (state.view.screen) {
         case 'courses': return renderStudentCourses();
         case 'individual-courses': return renderIndividualCourses();
@@ -422,7 +444,8 @@
         case 'library': return renderLibrary(false);
         case 'groups': return renderGroups();
         case 'group-chat': return renderGroupChat();
-        case 'assessments': return renderAssessments(false);
+        case 'my-dashboard': return renderMyDashboard();
+        case 'cbt-mock': return renderAssessments(false);
         case 'take-assessment': return renderTakeAssessment();
         case 'billing': return renderBilling();
         case 'ai-teacher-session': return renderAiTeacherSession();
@@ -433,15 +456,16 @@
         case 'digital-id': return renderDigitalId();
         case 'lab': return renderLab();
         case 'transcript': return renderTranscript();
-        case 'assignments': return renderStudentAssignments();
         case 'attendance-history': return renderStudentAttendanceHistory();
-        case 'past-questions': return renderPastQuestions();
+        case 'past-questions-hub': return renderPastQuestionsHub();
         case 'practice-take': return renderPracticeTake();
+        case 'semester-exam-hub': return renderSemesterExamHub();
 
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
         case 'lect-assessments': return renderAssessments(true);
+        case 'lect-semester-exam': return renderLecturerSemesterExam();
         case 'lect-assessment-results': return renderAssessmentResults();
         case 'lect-attendance': return renderLecturerAttendance();
         case 'lect-assignments': return renderLecturerAssignments();
@@ -453,6 +477,7 @@
         case 'admin-directory-list': return renderAdminDirectoryList();
         case 'admin-directory-detail': return renderAdminDirectoryDetail();
         case 'admin-academics': return renderAdminAcademics();
+        case 'admin-semester-exam': return renderAdminSemesterExam();
         case 'admin-activity': return renderAdminActivity();
         case 'admin-lab-queue': return renderAdminLabQueue();
         case 'admin-admissions': return renderAdminAdmissions();
@@ -465,9 +490,6 @@
         case 'admin-student-activity': return renderAdminStudentActivity();
         default: view.innerHTML = '<p>Not found.</p>';
       }
-    } catch (err) {
-      if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
-      view.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
     }
   }
 
@@ -651,11 +673,6 @@
         </div>
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>
-      <div style="display:flex; gap:12px; margin-bottom:18px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="open-assignments-btn">📋 Assignments</button>
-        <button class="btn btn-ghost" id="open-attendance-btn">🗓️ My attendance</button>
-        <button class="btn btn-ghost" id="open-past-questions-btn">📝 Past questions practice</button>
-      </div>
       <div class="card">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
@@ -678,9 +695,6 @@
       startAiTeacherSession(course.id, topic.trim());
     });
     document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
-    document.getElementById('open-assignments-btn').addEventListener('click', () => navigate('assignments', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
-    document.getElementById('open-attendance-btn').addEventListener('click', () => navigate('attendance-history', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
-    document.getElementById('open-past-questions-btn').addEventListener('click', () => navigate('past-questions', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
     const joinLiveBtn = document.getElementById('join-live-btn');
     if (joinLiveBtn) joinLiveBtn.addEventListener('click', () => {
       navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: false, title: liveClass.title });
@@ -1076,7 +1090,7 @@
     const myEntry = leaderboard.find((row) => row.fullName === state.user.fullName);
 
     view.innerHTML = `
-      <div class="page-head"><h1>Leaderboard</h1></div>
+      <div class="page-head"><h1>Leaderboard</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       <div class="field" style="max-width:280px; margin-bottom:16px;">
         <label>Department</label>
         <select id="leaderboard-dept">
@@ -1102,6 +1116,7 @@
         </table>
       </div>
     `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('my-dashboard'));
     document.getElementById('leaderboard-dept').addEventListener('change', (e) => {
       navigate('leaderboard', { departmentId: e.target.value });
     });
@@ -1264,30 +1279,49 @@
 
   // ================= STUDENT: ASSIGNMENTS, ATTENDANCE HISTORY, PAST QUESTIONS =================
 
-  async function renderStudentAssignments() {
-    const { courseId, courseTitle, courseCode } = state.view;
-    const { assignments } = await api(`/courses/${courseId}/assignments`);
+  // ---------- My Dashboard ----------
+  // Aggregates every enrolled course's assignments, attendance and recent test scores
+  // in one place, so a student never has to hunt through each course individually.
+  async function renderMyDashboard() {
+    const [{ assignments, attendance, recentResults }, { notifications }] = await Promise.all([
+      api('/students/me/dashboard'),
+      api('/notifications'),
+    ]);
+    const attendancePct = attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
+    const avgScorePct = recentResults.length
+      ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length)
+      : null;
+    const attendanceByCourse = {};
+    for (const a of attendance.recent) {
+      if (!attendanceByCourse[a.course.code]) attendanceByCourse[a.course.code] = { present: 0, total: 0, courseId: a.courseId, courseCode: a.course.code };
+      attendanceByCourse[a.course.code].total += 1;
+      if (a.status === 'PRESENT') attendanceByCourse[a.course.code].present += 1;
+    }
+
     view.innerHTML = `
-      <div class="page-head">
-        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Assignments — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+      <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        <div class="card course-card"><div class="code">${assignments.filter((a) => !a.mySubmission).length}</div><div class="meta">Assignments pending</div></div>
+        <div class="card course-card"><div class="code">${attendancePct == null ? '—' : attendancePct + '%'}</div><div class="meta">Attendance rate</div></div>
+        <div class="card course-card"><div class="code">${avgScorePct == null ? '—' : avgScorePct + '%'}</div><div class="meta">Recent test average</div></div>
       </div>
-      <div class="card">
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
+      <div class="card" style="margin-bottom:26px;">
         ${assignments.map((a) => `
           <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
             <div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
-              <div><div style="font-weight:600;">${esc(a.title)}</div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
+              <div><div style="font-weight:600;">${esc(a.title)} <span class="meta">(${esc(a.course.code)})</span></div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
               ${a.mySubmission
                 ? a.mySubmission.status === 'MARKED'
                   ? `<span class="pill pill-pass">Marked: ${a.mySubmission.score}</span>`
                   : '<span class="pill pill-accent">Submitted — awaiting mark</span>'
                 : ''}
             </div>
-            <p style="white-space:pre-wrap;">${esc(a.instructions)}</p>
             ${a.mySubmission
               ? a.mySubmission.status === 'MARKED' && a.mySubmission.feedback
                 ? `<p class="meta">Feedback: ${esc(a.mySubmission.feedback)}</p>`
-                : `<p class="meta">Your answer: ${esc(a.mySubmission.answerText)}</p>`
+                : ''
               : `<form class="submit-form" data-assignment="${a.id}" style="display:flex; flex-direction:column; gap:8px; width:100%;">
                   <textarea class="submit-answer" placeholder="Write your answer…" required></textarea>
                   <button class="btn btn-primary btn-sm" type="submit" style="align-self:flex-start;">Submit answer</button>
@@ -1295,15 +1329,57 @@
           </div>
         `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
       </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
+      <div class="card" style="margin-bottom:26px;">
+        ${Object.values(attendanceByCourse).map((c) => `
+          <div class="list-row">
+            <div>${esc(c.courseCode)}</div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="meta tabular">${c.present}/${c.total} present</span>
+              <button class="btn btn-ghost btn-sm" data-view-attendance="${c.courseId}" data-code="${esc(c.courseCode)}">View history</button>
+            </div>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No attendance recorded yet.</p>'}
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Recent test results</h3>
+      <div class="card" style="margin-bottom:26px;">
+        ${recentResults.map((r) => `
+          <div class="list-row">
+            <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course.code)} · ${esc(r.assessment.type)}</div></div>
+            <span class="tabular">${r.score}/${r.total}</span>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No test results yet.</p>'}
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
+      <div class="card" style="margin-bottom:26px;">
+        ${notifications.slice(0, 8).map((n) => `
+          <div class="list-row">
+            <div><div style="font-weight:600;">${esc(n.title)}</div><div class="meta">${esc(n.body)}</div></div>
+            <span class="meta tabular">${new Date(n.createdAt).toLocaleDateString()}</span>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No notifications yet.</p>'}
+      </div>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button>
+        <button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>
+      </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId }));
+    document.getElementById('dash-leaderboard-btn').addEventListener('click', () => navigate('leaderboard'));
+    document.getElementById('dash-profile-btn').addEventListener('click', () => navigate('digital-id'));
+    view.querySelectorAll('[data-view-attendance]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('attendance-history', { courseId: btn.dataset.viewAttendance, courseCode: btn.dataset.code }));
+    });
     view.querySelectorAll('.submit-form').forEach((form) => {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         try {
           await api(`/assignments/${form.dataset.assignment}/submit`, { method: 'POST', body: { answerText: form.querySelector('.submit-answer').value } });
           toast('Answer submitted');
-          navigate('assignments', { courseId, courseTitle, courseCode });
+          render();
         } catch (err) { toast(err.message); }
       });
     });
@@ -1314,8 +1390,8 @@
     const { records } = await api(`/courses/${courseId}/attendance/me`);
     view.innerHTML = `
       <div class="page-head">
-        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>My attendance — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+        <div><h1>My attendance${courseCode ? ` — ${esc(courseCode)}` : ''}${courseTitle ? ` (${esc(courseTitle)})` : ''}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to dashboard</button>
       </div>
       <div class="card">
         ${records.map((r) => `
@@ -1326,32 +1402,42 @@
         `).join('') || '<p class="muted" style="padding:16px;">No attendance recorded yet.</p>'}
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate('my-dashboard'));
   }
 
-  async function renderPastQuestions() {
-    const { courseId, courseTitle, courseCode } = state.view;
-    const { assessments } = await api(`/courses/${courseId}/assessments`);
-    const pastQuestionSets = assessments.filter((a) => a.type === 'PAST_QUESTION');
+  // Every past-question set across every enrolled course, in one page -- the sidebar's
+  // "Past Questions" entry (no more per-course-only access).
+  async function renderPastQuestionsHub() {
+    const { courses } = await api('/students/me/courses');
+    const rows = [];
+    for (const c of courses) {
+      const { assessments } = await api(`/courses/${c.id}/assessments`);
+      rows.push({ course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') });
+    }
     view.innerHTML = `
-      <div class="page-head">
-        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Past questions — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
-      </div>
+      <div class="page-head"><h1>Past Questions</h1></div>
       <p class="muted" style="margin-bottom:16px;">Practice as many times as you like — these don't affect your CBT scores.</p>
-      <div class="card">
-        ${pastQuestionSets.map((a) => `
-          <div class="list-row">
-            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
-            <button class="btn btn-primary btn-sm" data-practice="${a.id}">Practice</button>
+      ${rows.map(({ course, sets }) => `
+        <div style="margin-bottom:22px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="card">
+            ${sets.map((a) => `
+              <div class="list-row">
+                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
+                <button class="btn btn-primary btn-sm" data-practice="${a.id}" data-course-id="${course.id}" data-course-title="${esc(course.title)}" data-course-code="${esc(course.code)}">Practice</button>
+              </div>
+            `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No past questions uploaded for this course yet.</p>'}
-      </div>
+        </div>
+      `).join('') || '<p class="muted">No courses yet.</p>'}
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId }));
     view.querySelectorAll('[data-practice]').forEach((btn) => {
-      const a = pastQuestionSets.find((x) => x.id === btn.dataset.practice);
-      btn.addEventListener('click', () => navigate('practice-take', { assessmentId: a.id, assessmentTitle: a.title, courseId, courseTitle, courseCode }));
+      btn.addEventListener('click', () => navigate('practice-take', {
+        assessmentId: btn.dataset.practice,
+        courseId: btn.dataset.courseId,
+        courseTitle: btn.dataset.courseTitle,
+        courseCode: btn.dataset.courseCode,
+      }));
     });
   }
 
@@ -1377,7 +1463,7 @@
       </div>
       <p id="pq-score" class="meta" style="margin-top:12px;"></p>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('past-questions', { courseId, courseTitle, courseCode }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate('past-questions-hub'));
     view.querySelectorAll('.quiz-opt').forEach((opt) => {
       opt.addEventListener('click', () => {
         const q = opt.dataset.q;
@@ -1764,18 +1850,24 @@
     });
   }
 
-  async function renderAssessments(isLecturer) {
+  // opts.typeFilter restricts to specific Assessment.type values (e.g. only
+  // SEMESTER_EXAM for the Semester Exam pages); otherwise students see everything
+  // except PAST_QUESTION and SEMESTER_EXAM (those have their own dedicated pages) and
+  // lecturers see everything they've created.
+  async function renderAssessments(isLecturer, opts = {}) {
+    const { heading, typeFilter, defaultType } = opts;
     const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
     const rows = [];
     for (const c of courses) {
       const { assessments } = await api(`/courses/${c.id}/assessments`);
       rows.push({ course: c, assessments });
     }
+    const defaultExclude = ['PAST_QUESTION', 'SEMESTER_EXAM'];
     view.innerHTML = `
-      <div class="page-head"><h1>${isLecturer ? 'Assessments' : 'CBT & Tests'}</h1></div>
+      <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Assessments' : 'CBT Mock Exam Practice'))}</h1></div>
       ${isLecturer ? `<button class="btn btn-accent btn-sm" id="new-assessment-btn" style="margin-bottom:18px;">+ New assessment</button>` : ''}
       ${rows.map(({ course, assessments: allAssessments }) => {
-        const assessments = isLecturer ? allAssessments : allAssessments.filter((a) => a.type !== 'PAST_QUESTION');
+        const assessments = allAssessments.filter((a) => typeFilter ? typeFilter.includes(a.type) : (isLecturer || !defaultExclude.includes(a.type)));
         return `
         <div style="margin-bottom:22px;">
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
@@ -1797,14 +1889,22 @@
       }).join('') || '<p class="muted">No courses yet.</p>'}
     `;
     view.querySelectorAll('[data-take]').forEach((btn) => {
-      btn.addEventListener('click', () => navigate('take-assessment', { assessmentId: btn.dataset.take }));
+      btn.addEventListener('click', () => navigate('take-assessment', { assessmentId: btn.dataset.take, backTo: state.view.screen }));
     });
     view.querySelectorAll('[data-results]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('lect-assessment-results', { assessmentId: btn.dataset.results }));
     });
     if (isLecturer) {
-      document.getElementById('new-assessment-btn').addEventListener('click', () => openNewAssessmentDialog(courses));
+      document.getElementById('new-assessment-btn').addEventListener('click', () => openNewAssessmentDialog(courses, { defaultType }));
     }
+  }
+
+  function renderLecturerSemesterExam() {
+    return renderAssessments(true, { heading: 'Semester Exam', typeFilter: ['SEMESTER_EXAM'], defaultType: 'SEMESTER_EXAM' });
+  }
+
+  function renderSemesterExamHub() {
+    return renderAssessments(false, { heading: 'Semester Exam', typeFilter: ['SEMESTER_EXAM'] });
   }
 
   async function renderTakeAssessment() {
@@ -1817,7 +1917,7 @@
           <p style="margin-top:12px; font-size:1.3rem;" class="tabular">${mySubmission.score} / ${mySubmission.total}</p>
         </div>
       `;
-      document.getElementById('back-btn').addEventListener('click', () => navigate('assessments'));
+      document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock'));
       return;
     }
     const answers = {};
@@ -1832,7 +1932,7 @@
       `).join('')}
       <button class="btn btn-primary" id="submit-btn">Submit test</button>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('assessments'));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock'));
     view.querySelectorAll('.quiz-opt').forEach((opt) => {
       opt.addEventListener('click', () => {
         const q = opt.dataset.q;
@@ -1847,7 +1947,7 @@
         const { submission, pointsEarned, newBadges } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
         toast(`Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
         (newBadges || []).forEach((b) => setTimeout(() => toast(`Badge earned: ${b.icon} ${b.name}`), 400));
-        navigate('take-assessment', { assessmentId: assessment.id });
+        navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo });
       } catch (err) { toast(err.message); }
     });
   }
@@ -2214,7 +2314,7 @@
     });
   }
 
-  function openNewAssessmentDialog(courses) {
+  function openNewAssessmentDialog(courses, opts = {}) {
     const container = document.createElement('div');
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
@@ -2238,9 +2338,12 @@
       <div class="field"><label>Course</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)}</option>`).join('')}</select></div>
       <div class="field"><label>Title</label><input type="text" id="na-title" required></div>
       <div class="field"><label>Type</label><select id="na-type">
-        <option value="CA">CA</option><option value="Test">Test</option><option value="Mock">Mock</option>
-        <option value="Assignment">Assignment</option><option value="SEMESTER_EXAM">Semester Exam</option>
-        <option value="PAST_QUESTION">Past Question (practice)</option>
+        <option value="CA" ${opts.defaultType === 'CA' ? 'selected' : ''}>CA</option>
+        <option value="Test" ${opts.defaultType === 'Test' ? 'selected' : ''}>Test</option>
+        <option value="Mock" ${opts.defaultType === 'Mock' ? 'selected' : ''}>Mock</option>
+        <option value="Assignment" ${opts.defaultType === 'Assignment' ? 'selected' : ''}>Assignment</option>
+        <option value="SEMESTER_EXAM" ${opts.defaultType === 'SEMESTER_EXAM' ? 'selected' : ''}>Semester Exam</option>
+        <option value="PAST_QUESTION" ${opts.defaultType === 'PAST_QUESTION' ? 'selected' : ''}>Past Question (practice)</option>
       </select></div>
       <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
       <div class="field"><label>Duration (minutes)</label><input type="number" id="na-duration" value="20"></div>
@@ -2314,7 +2417,42 @@
         </table>
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-assessments'));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'lect-assessments'));
+  }
+
+  // Read-only, school-wide view of every semester exam set by any lecturer -- admin
+  // can drill into results but not create/edit (that's the lecturer's job).
+  async function renderAdminSemesterExam() {
+    const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
+    const rows = [];
+    for (const d of departments) {
+      const { courses } = await api(`/departments/${d.id}/courses`);
+      for (const c of courses) {
+        const { assessments } = await api(`/courses/${c.id}/assessments`);
+        const exams = assessments.filter((a) => a.type === 'SEMESTER_EXAM');
+        if (exams.length) rows.push({ course: c, exams });
+      }
+    }
+    view.innerHTML = `
+      <div class="page-head"><h1>Semester Exam</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Read-only view of every semester exam set by lecturers across the school.</p>
+      ${rows.map(({ course, exams }) => `
+        <div style="margin-bottom:22px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="card">
+            ${exams.map((a) => `
+              <div class="list-row">
+                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a.durationMin} min</div></div>
+                <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('') || '<p class="muted">No semester exams set yet.</p>'}
+    `;
+    view.querySelectorAll('[data-results]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('lect-assessment-results', { assessmentId: btn.dataset.results, backTo: 'admin-semester-exam' }));
+    });
   }
 
   // ================= STAFF PROFILE (attendance, CPD, publications) =================

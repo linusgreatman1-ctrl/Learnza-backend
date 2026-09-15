@@ -24,6 +24,7 @@ const classAttendanceRoutes = require('./routes/classAttendance');
 const assignmentsRoutes = require('./routes/assignments');
 const notificationsRoutes = require('./routes/notifications');
 const resultsRoutes = require('./routes/results');
+const dashboardRoutes = require('./routes/dashboard');
 const { attachLiveNamespace } = require('./realtime/live');
 
 const app = express();
@@ -55,6 +56,7 @@ app.use('/api', classAttendanceRoutes);
 app.use('/api', assignmentsRoutes);
 app.use('/api', notificationsRoutes);
 app.use('/api', resultsRoutes);
+app.use('/api', dashboardRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
