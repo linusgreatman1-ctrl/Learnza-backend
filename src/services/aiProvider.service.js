@@ -14,7 +14,11 @@ function activeProvider() {
 }
 
 async function callGemini(systemPrompt, userPrompt, { json = true } = {}) {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  // gemini-2.0-flash was retired by Google (confirmed live 2026-09-15: the API now
+  // 404s with "no longer available", not a slow deprecation warning) -- this was
+  // silently broken the whole time GEMINI_API_KEY was unset, since every caller hit
+  // AI_NOT_CONFIGURED first and never reached this request.
+  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -26,7 +30,14 @@ async function callGemini(systemPrompt, userPrompt, { json = true } = {}) {
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Gemini request failed');
+  if (!res.ok) {
+    // Every caller (lab Q&A, research assistant, AI Teacher, quiz/lab generation)
+    // catches and swallows this into a generic "please try again" -- log it here once,
+    // centrally, so a real failure (bad model name, quota, etc.) is actually visible
+    // in server logs instead of requiring live reproduction to diagnose.
+    console.error('Gemini request failed:', res.status, data.error?.message || data);
+    throw new Error(data.error?.message || 'Gemini request failed');
+  }
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Gemini returned an empty response');
   return text;
@@ -49,7 +60,10 @@ async function callAnthropic(systemPrompt, userPrompt) {
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Claude request failed');
+  if (!res.ok) {
+    console.error('Claude request failed:', res.status, data.error?.message || data);
+    throw new Error(data.error?.message || 'Claude request failed');
+  }
   const text = data.content?.[0]?.text;
   if (!text) throw new Error('Claude returned an empty response');
   return text;
@@ -78,7 +92,10 @@ async function synthesizeSpeech(text) {
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Speech synthesis request failed');
+  if (!res.ok) {
+    console.error('Gemini TTS request failed:', res.status, data.error?.message || data);
+    throw new Error(data.error?.message || 'Speech synthesis request failed');
+  }
   const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
   if (!part?.data) throw new Error('Speech synthesis returned no audio');
   return { data: part.data, mimeType: part.mimeType || 'audio/pcm' };
