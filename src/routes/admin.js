@@ -14,13 +14,46 @@ router.get('/school', async (req, res) => {
   res.json({ school });
 });
 
+// Distinct courses a lecturer/staff member has actually taught (authored a lesson
+// for) -- there's no direct "assigned courses" relation, so this is derived from real
+// teaching activity, same signal already used for workload (staff.js).
+async function coursesTaughtBy(userId) {
+  const lessons = await prisma.lesson.findMany({
+    where: { authorId: userId },
+    distinct: ['courseId'],
+    select: { course: { select: { id: true, code: true, title: true } } },
+  });
+  return lessons.map((l) => l.course);
+}
+
+async function coursesEnrolledBy(studentId) {
+  const enrollments = await prisma.enrollment.findMany({
+    where: { studentId },
+    select: { course: { select: { id: true, code: true, title: true } } },
+  });
+  return enrollments.map((e) => e.course);
+}
+
 router.get('/students', async (req, res) => {
   const students = await prisma.user.findMany({
     where: { schoolId: req.user.schoolId, role: 'STUDENT' },
     include: { department: true },
     orderBy: { fullName: 'asc' },
   });
-  res.json({ students: students.map(({ passwordHash, ...s }) => s) });
+  const withCourses = await Promise.all(
+    students.map(async ({ passwordHash, ...s }) => ({ ...s, courses: await coursesEnrolledBy(s.id) }))
+  );
+  res.json({ students: withCourses });
+});
+
+router.get('/students/:id', async (req, res) => {
+  const student = await prisma.user.findFirst({
+    where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STUDENT' },
+    include: { department: true },
+  });
+  if (!student) return res.status(404).json({ error: 'Not found' });
+  const { passwordHash, ...safe } = student;
+  res.json({ student: { ...safe, courses: await coursesEnrolledBy(student.id) } });
 });
 
 router.get('/lecturers', async (req, res) => {
@@ -29,7 +62,45 @@ router.get('/lecturers', async (req, res) => {
     include: { department: true },
     orderBy: { fullName: 'asc' },
   });
-  res.json({ lecturers: lecturers.map(({ passwordHash, ...l }) => l) });
+  const withCourses = await Promise.all(
+    lecturers.map(async ({ passwordHash, ...l }) => ({ ...l, courses: await coursesTaughtBy(l.id) }))
+  );
+  res.json({ lecturers: withCourses });
+});
+
+router.get('/lecturers/:id', async (req, res) => {
+  const lecturer = await prisma.user.findFirst({
+    where: { id: req.params.id, schoolId: req.user.schoolId, role: 'LECTURER' },
+    include: { department: true },
+  });
+  if (!lecturer) return res.status(404).json({ error: 'Not found' });
+  const { passwordHash, ...safe } = lecturer;
+  res.json({ lecturer: { ...safe, courses: await coursesTaughtBy(lecturer.id) } });
+});
+
+// Non-academic staff (librarians, accountants, registrars, etc.) -- role STAFF,
+// distinct from LECTURER. They don't teach a course, so "position" (job title)
+// stands in for "course" in their directory listing. Routed as /non-academic-staff,
+// not /staff, since staff.js already owns /admin/staff/* (workload, attendance, CPD,
+// publications) on a separate router mounted ahead of this one -- a /staff/:id route
+// here would shadow those.
+router.get('/non-academic-staff', async (req, res) => {
+  const staff = await prisma.user.findMany({
+    where: { schoolId: req.user.schoolId, role: 'STAFF' },
+    include: { department: true },
+    orderBy: { fullName: 'asc' },
+  });
+  res.json({ staff: staff.map(({ passwordHash, ...s }) => s) });
+});
+
+router.get('/non-academic-staff/:id', async (req, res) => {
+  const staff = await prisma.user.findFirst({
+    where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STAFF' },
+    include: { department: true },
+  });
+  if (!staff) return res.status(404).json({ error: 'Not found' });
+  const { passwordHash, ...safe } = staff;
+  res.json({ staff: safe });
 });
 
 // Monitoring reaches lecturer activity only -- students are never tracked here by design.
@@ -46,7 +117,7 @@ router.get('/lecturer-activity', async (req, res) => {
 // Every student assessment/assignment/exam score in one place -- the "school can see
 // students' tests, assignments and exams" view.
 router.get('/student-activity', async (req, res) => {
-  const [submissions, assignmentSubs, results] = await Promise.all([
+  const [submissions, assignmentSubs, results, attendance] = await Promise.all([
     prisma.submission.findMany({
       where: { student: { schoolId: req.user.schoolId } },
       include: { student: { select: { fullName: true, matricNumber: true } }, assessment: { select: { title: true, type: true, course: { select: { code: true } } } } },
@@ -65,13 +136,21 @@ router.get('/student-activity', async (req, res) => {
       orderBy: { publishedAt: 'desc' },
       take: 100,
     }),
+    prisma.classAttendanceRecord.findMany({
+      where: { student: { schoolId: req.user.schoolId } },
+      include: { student: { select: { fullName: true, matricNumber: true } }, course: { select: { code: true } } },
+      orderBy: { date: 'desc' },
+      take: 100,
+    }),
   ]);
-  res.json({ submissions, assignmentSubmissions: assignmentSubs, results });
+  res.json({ submissions, assignmentSubmissions: assignmentSubs, results, attendance });
 });
 
-router.post('/lecturers', async (req, res) => {
-  const { fullName, email, staffId, departmentId } = req.body;
-  if (!fullName || !email || !departmentId) {
+// Shared by every "admin directly adds a user" flow -- always auto-generates the
+// access code and a temp password, never accepts either as input.
+async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [] }) {
+  const { fullName, email, phone } = req.body;
+  if (!fullName || !email || requiredFields.some((f) => !req.body[f])) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -81,11 +160,38 @@ router.post('/lecturers', async (req, res) => {
   let accessCode = generateAccessCode();
   while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
 
-  const lecturer = await prisma.user.create({
-    data: { fullName, email, passwordHash, staffId, departmentId, schoolId: req.user.schoolId, role: 'LECTURER', accessCode },
+  const user = await prisma.user.create({
+    data: { fullName, email, phone: phone || null, passwordHash, schoolId: req.user.schoolId, role, accessCode, ...extraFields },
   });
-  const { passwordHash: _, ...safe } = lecturer;
-  res.json({ lecturer: safe, accessCode, tempPassword });
+  const { passwordHash: _, ...safe } = user;
+  return res.json({ user: safe, accessCode, tempPassword });
+}
+
+router.post('/lecturers', async (req, res) => {
+  const { staffId, departmentId } = req.body;
+  return createSchoolUser(req, res, {
+    role: 'LECTURER',
+    requiredFields: ['departmentId'],
+    extraFields: { staffId: staffId || null, departmentId, staffType: 'ACADEMIC' },
+  });
+});
+
+router.post('/non-academic-staff', async (req, res) => {
+  const { staffId, position, departmentId } = req.body;
+  return createSchoolUser(req, res, {
+    role: 'STAFF',
+    requiredFields: ['position'],
+    extraFields: { staffId: staffId || null, position, departmentId: departmentId || null, staffType: 'NON_ACADEMIC' },
+  });
+});
+
+router.post('/students', async (req, res) => {
+  const { matricNumber, departmentId } = req.body;
+  return createSchoolUser(req, res, {
+    role: 'STUDENT',
+    requiredFields: ['matricNumber', 'departmentId'],
+    extraFields: { matricNumber, departmentId },
+  });
 });
 
 router.post('/departments', async (req, res) => {
@@ -131,6 +237,10 @@ router.post('/lecturers/:id/:action', (req, res) =>
   setUserStatus(req, res, { role: 'LECTURER', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })
 );
 
+router.post('/non-academic-staff/:id/:action', (req, res) =>
+  setUserStatus(req, res, { role: 'STAFF', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })
+);
+
 router.post('/students/:id/:action', (req, res) =>
   setUserStatus(req, res, { role: 'STUDENT', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', expel: 'EXPELLED' } })
 );
@@ -154,11 +264,27 @@ router.post('/semesters/:id/activate', async (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- Hostel allocations (approved, with room + student details) ----
-router.get('/hostel-allocations', async (req, res) => {
+// ---- Named hostels, grouped allocations ----
+router.get('/hostels', async (req, res) => {
+  const hostels = await prisma.hostel.findMany({
+    where: { schoolId: req.user.schoolId },
+    include: { _count: { select: { applications: { where: { status: 'APPROVED' } } } } },
+    orderBy: { name: 'asc' },
+  });
+  res.json({ hostels });
+});
+
+router.post('/hostels', async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  const hostel = await prisma.hostel.create({ data: { name, schoolId: req.user.schoolId } });
+  res.json({ hostel });
+});
+
+router.get('/hostels/:id/allocations', async (req, res) => {
   const allocations = await prisma.hostelApplication.findMany({
-    where: { status: 'APPROVED', student: { schoolId: req.user.schoolId } },
-    include: { student: { select: { fullName: true, matricNumber: true, department: { select: { name: true } } } } },
+    where: { hostelId: req.params.id, status: 'APPROVED', student: { schoolId: req.user.schoolId } },
+    include: { student: { select: { fullName: true, matricNumber: true, phone: true, email: true, department: { select: { name: true } } } } },
     orderBy: { decidedAt: 'desc' },
   });
   res.json({ allocations });

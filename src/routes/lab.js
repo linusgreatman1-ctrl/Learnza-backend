@@ -10,21 +10,14 @@ function shape(demo) {
   return { ...demo, steps: JSON.parse(demo.stepsJson) };
 }
 
-// Approved demonstrations for a course, plus the current user's own pending requests
-// (so they can see "waiting on admin review" without exposing other students' requests).
+// Every approved demonstration for a course -- curated and AI-generated alike are
+// visible immediately (AI generation is gated by subscription, not admin review).
 router.get('/courses/:id/lab', requireAuth, async (req, res) => {
-  const approved = await prisma.labDemonstration.findMany({
+  const demos = await prisma.labDemonstration.findMany({
     where: { courseId: req.params.id, status: 'APPROVED' },
     orderBy: { createdAt: 'desc' },
   });
-  const ownPending =
-    req.user.role === 'STUDENT'
-      ? await prisma.labDemonstration.findMany({
-          where: { courseId: req.params.id, status: 'PENDING', authorId: req.user.id },
-          orderBy: { createdAt: 'desc' },
-        })
-      : [];
-  res.json({ demonstrations: [...approved, ...ownPending].map(shape) });
+  res.json({ demonstrations: demos.map(shape) });
 });
 
 // Lecturer/admin-authored demonstrations are trusted content -- approved immediately.
@@ -48,9 +41,9 @@ router.post('/courses/:id/lab', requireAuth, requireRole('LECTURER', 'ADMIN'), a
   res.json({ demonstration: shape(demo) });
 });
 
-// Student requests a practical on a topic not yet covered -- AI drafts it, but it
-// stays invisible to everyone (including the requester's classmates) until an admin
-// reviews and approves it.
+// Any subscribed student can request a practical on a topic not yet covered -- the AI
+// drafts it and it's live immediately, gated only by having an active subscription
+// (no admin review step).
 router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
   const { topic } = req.body;
   if (!topic || !topic.trim()) return res.status(400).json({ error: 'Describe the practical topic first.' });
@@ -66,7 +59,7 @@ router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), re
         description: draft.description,
         stepsJson: JSON.stringify(draft.steps),
         source: 'AI_GENERATED',
-        status: 'PENDING',
+        status: 'APPROVED',
         authorId: req.user.id,
       },
     });
@@ -77,24 +70,15 @@ router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), re
   }
 });
 
-// Admin approval queue.
-router.get('/admin/lab/pending', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const pending = await prisma.labDemonstration.findMany({
-    where: { status: 'PENDING', course: { department: { schoolId: req.user.schoolId } } },
+// Read-only records of all lab activity for the school -- there's no approval step
+// to action here any more, just visibility into what's been curated vs AI-generated.
+router.get('/admin/lab', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const demos = await prisma.labDemonstration.findMany({
+    where: { course: { department: { schoolId: req.user.schoolId } } },
     include: { course: { select: { code: true, title: true } }, author: { select: { fullName: true } } },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: 'desc' },
   });
-  res.json({ pending: pending.map(shape) });
-});
-
-router.post('/admin/lab/:id/approve', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const demo = await prisma.labDemonstration.update({ where: { id: req.params.id }, data: { status: 'APPROVED' } });
-  res.json({ demonstration: shape(demo) });
-});
-
-router.post('/admin/lab/:id/reject', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const demo = await prisma.labDemonstration.update({ where: { id: req.params.id }, data: { status: 'REJECTED' } });
-  res.json({ demonstration: shape(demo) });
+  res.json({ demonstrations: demos.map(shape) });
 });
 
 module.exports = router;

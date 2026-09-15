@@ -12,6 +12,7 @@ async function main() {
     await backfillSchoolLocation();
     await backfillSemester();
     await backfillDemoContactDetails();
+    await backfillHostels();
     return;
   }
 
@@ -301,6 +302,27 @@ async function backfillDemoContactDetails() {
     await prisma.user.update({ where: { id: admin.id }, data: { phone: '+2348030000001' } });
     console.log('Backfilled contact details for demo admin');
   }
+}
+
+// Named hostels are a new model -- a school seeded before it existed has none, and any
+// already-approved hostel application (like the demo student's) predates it too, so it
+// has no hostelId to group under in the hostel-by-name admin view.
+async function backfillHostels() {
+  const school = await prisma.school.findFirst();
+  if (!school) return;
+  let daws = await prisma.hostel.findFirst({ where: { schoolId: school.id, name: 'Daws Hostel' } });
+  if (!daws) {
+    daws = await prisma.hostel.create({ data: { schoolId: school.id, name: 'Daws Hostel' } });
+    await prisma.hostel.create({ data: { schoolId: school.id, name: 'Mammy Hostel' } });
+    console.log('Backfilled example hostels: Daws Hostel, Mammy Hostel');
+  }
+  const orphanedApproved = await prisma.hostelApplication.findMany({
+    where: { status: 'APPROVED', hostelId: null, student: { schoolId: school.id } },
+  });
+  for (const app of orphanedApproved) {
+    await prisma.hostelApplication.update({ where: { id: app.id }, data: { hostelId: daws.id } });
+  }
+  if (orphanedApproved.length) console.log(`Backfilled hostelId onto ${orphanedApproved.length} pre-existing approved application(s)`);
 }
 
 if (require.main === module) {

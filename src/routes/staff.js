@@ -66,24 +66,25 @@ router.get('/admin/staff/workload', requireAuth, requireRole('ADMIN'), async (re
   });
   const workload = await Promise.all(
     lecturers.map(async (l) => {
-      const [lessons, assessments, liveClasses, labDemos] = await Promise.all([
+      const [lessons, assessments, liveClasses, labDemos, courseIds] = await Promise.all([
         prisma.lesson.count({ where: { authorId: l.id } }),
         prisma.assessment.count({ where: { authorId: l.id } }),
         prisma.liveClass.count({ where: { hostId: l.id } }),
         prisma.labDemonstration.count({ where: { authorId: l.id, source: 'CURATED' } }),
+        prisma.lesson.findMany({ where: { authorId: l.id }, distinct: ['courseId'], select: { courseId: true } }),
       ]);
-      return { fullName: l.fullName, department: l.department?.name || null, lessons, assessments, liveClasses, labDemos };
+      return { fullName: l.fullName, department: l.department?.name || null, courses: courseIds.length, lessons, assessments, liveClasses, labDemos };
     })
   );
   res.json({ workload });
 });
 
+// Every attendance record, not just recent -- the admin's own "Attendance" view.
 router.get('/admin/staff/attendance', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const records = await prisma.staffAttendanceRecord.findMany({
     where: { user: { schoolId: req.user.schoolId, role: 'LECTURER' } },
     include: { user: { select: { fullName: true } } },
     orderBy: { date: 'desc' },
-    take: 200,
   });
   res.json({ records });
 });

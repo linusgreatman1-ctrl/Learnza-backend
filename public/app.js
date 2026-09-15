@@ -252,11 +252,11 @@
       ['admin-academics', 'Departments & Courses'],
       ['admin-activity', 'Lecturer Activity'],
       ['admin-student-activity', 'Student Activity'],
-      ['admin-lab-queue', 'Digital Lab Approvals'],
+      ['admin-lab-queue', 'Digital Lab'],
       ['admin-admissions', 'Admissions'],
       ['admin-staff-records', 'Staff Records'],
       ['admin-student-requests', 'Student Requests'],
-      ['admin-hostel-allocations', 'Hostel Allocations'],
+      ['admin-hostel-allocations', 'Hostels'],
     ],
   };
 
@@ -450,13 +450,18 @@
         case 'staff-profile': return renderStaffProfile();
 
         case 'admin-directory': return renderAdminDirectory();
+        case 'admin-directory-list': return renderAdminDirectoryList();
+        case 'admin-directory-detail': return renderAdminDirectoryDetail();
         case 'admin-academics': return renderAdminAcademics();
         case 'admin-activity': return renderAdminActivity();
         case 'admin-lab-queue': return renderAdminLabQueue();
         case 'admin-admissions': return renderAdminAdmissions();
+        case 'admin-admissions-detail': return renderAdminAdmissionDetail();
+        case 'admin-attitude-test': return renderAdminAttitudeTest();
         case 'admin-staff-records': return renderAdminStaffRecords();
         case 'admin-student-requests': return renderAdminStudentRequests();
         case 'admin-hostel-allocations': return renderAdminHostelAllocations();
+        case 'admin-hostel-detail': return renderAdminHostelDetail();
         case 'admin-student-activity': return renderAdminStudentActivity();
         default: view.innerHTML = '<p>Not found.</p>';
       }
@@ -1493,36 +1498,29 @@
     });
   }
 
+  // Read-only records of lab activity -- students get lab access straight from their
+  // subscription now, so there's nothing here for admin to approve/reject any more.
   async function renderAdminLabQueue() {
-    const { pending } = await api('/admin/lab/pending');
+    const { demonstrations } = await api('/admin/lab');
     view.innerHTML = `
-      <div class="page-head"><h1>Digital Lab Approvals</h1></div>
-      <p class="muted" style="margin-bottom:18px;">AI-drafted practicals stay hidden from students until approved here.</p>
-      ${pending.map((d) => `
+      <div class="page-head"><h1>Digital Lab</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Records of every practical — lecturer-curated and AI-generated alike. Student access to AI-generated practicals is based on their subscription, not admin approval.</p>
+      ${demonstrations.map((d) => `
         <div class="card" style="padding:20px; margin-bottom:14px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
             <div>
-              <div class="muted tabular">${esc(d.course.code)} · requested by ${esc(d.author.fullName)}</div>
+              <div class="muted tabular">${esc(d.course.code)} · ${d.source === 'AI_GENERATED' ? `AI-generated, requested by ${esc(d.author ? d.author.fullName : 'a student')}` : 'Lecturer-curated'}</div>
               <div style="font-weight:600; margin-top:4px;">${esc(d.title)}</div>
               <div class="meta">${esc(d.description)}</div>
             </div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn btn-primary btn-sm" data-approve="${d.id}">Approve</button>
-              <button class="btn btn-ghost btn-sm" data-reject="${d.id}">Reject</button>
-            </div>
+            <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
           </div>
           <ol style="margin:14px 0 0; padding-left:20px; display:flex; flex-direction:column; gap:6px;">
             ${d.steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
           </ol>
         </div>
-      `).join('') || '<p class="muted">Nothing pending review.</p>'}
+      `).join('') || '<p class="muted">No lab activity yet.</p>'}
     `;
-    view.querySelectorAll('[data-approve]').forEach((btn) => {
-      btn.addEventListener('click', async () => { await api(`/admin/lab/${btn.dataset.approve}/approve`, { method: 'POST' }); toast('Approved'); render(); });
-    });
-    view.querySelectorAll('[data-reject]').forEach((btn) => {
-      btn.addEventListener('click', async () => { await api(`/admin/lab/${btn.dataset.reject}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
-    });
   }
 
   // ================= AI RESEARCH ASSISTANT =================
@@ -2416,78 +2414,179 @@
     return `<span class="pill ${cls}">${esc(status || 'ACTIVE')}</span>`;
   }
 
+  // Three banners -> a shared list/detail implementation, parameterized by type, so
+  // academic staff, non-academic staff and students don't need three near-identical
+  // screens each.
+  const DIRECTORY_TYPES = {
+    ACADEMIC: {
+      label: 'Academic Staff', base: '/admin/lecturers', listKey: 'lecturers', detailKey: 'lecturer',
+      idLabel: 'Staff ID', idField: 'staffId', extraLabel: 'Course(s)',
+      extraValue: (u) => (u.courses || []).map((c) => c.code).join(', ') || '—',
+      actions: [
+        { key: 'suspend', label: 'Suspend', show: (u) => u.status === 'ACTIVE' },
+        { key: 'lift-suspension', label: 'Lift suspension', show: (u) => u.status === 'SUSPENDED' },
+        { key: 'dismiss', label: 'Dismiss', show: (u) => u.status !== 'DISMISSED' },
+      ],
+      addFields: [
+        { key: 'fullName', label: 'Full name', required: true },
+        { key: 'staffId', label: 'Staff ID' },
+        { key: 'departmentId', label: 'Department', type: 'department', required: true },
+        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'phone', label: 'Phone number', type: 'tel' },
+      ],
+    },
+    NON_ACADEMIC: {
+      label: 'Non-Academic Staff', base: '/admin/non-academic-staff', listKey: 'staff', detailKey: 'staff',
+      idLabel: 'Staff ID', idField: 'staffId', extraLabel: 'Position',
+      extraValue: (u) => u.position || '—',
+      actions: [
+        { key: 'suspend', label: 'Suspend', show: (u) => u.status === 'ACTIVE' },
+        { key: 'lift-suspension', label: 'Lift suspension', show: (u) => u.status === 'SUSPENDED' },
+        { key: 'dismiss', label: 'Dismiss', show: (u) => u.status !== 'DISMISSED' },
+      ],
+      addFields: [
+        { key: 'fullName', label: 'Full name', required: true },
+        { key: 'staffId', label: 'Staff ID' },
+        { key: 'position', label: 'Position', required: true },
+        { key: 'departmentId', label: 'Department', type: 'department' },
+        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'phone', label: 'Phone number', type: 'tel' },
+      ],
+    },
+    STUDENT: {
+      label: 'Students', base: '/admin/students', listKey: 'students', detailKey: 'student',
+      idLabel: 'Matric No.', idField: 'matricNumber', extraLabel: 'Course(s)',
+      extraValue: (u) => (u.courses || []).map((c) => c.code).join(', ') || '—',
+      actions: [
+        { key: 'suspend', label: 'Suspend', show: (u) => u.status === 'ACTIVE' },
+        { key: 'lift-suspension', label: 'Lift suspension', show: (u) => u.status === 'SUSPENDED' },
+        { key: 'expel', label: 'Expel', show: (u) => u.status !== 'EXPELLED' },
+      ],
+      addFields: [
+        { key: 'fullName', label: 'Full name', required: true },
+        { key: 'matricNumber', label: 'Matric number', required: true },
+        { key: 'departmentId', label: 'Department', type: 'department', required: true },
+        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'phone', label: 'Phone number', type: 'tel' },
+      ],
+    },
+  };
+
+  async function departmentOptionsHtml(selectedId) {
+    const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
+    return departments.map((d) => `<option value="${d.id}" ${d.id === selectedId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+  }
+
   async function renderAdminDirectory() {
-    const [{ students }, { lecturers }] = await Promise.all([api('/admin/students'), api('/admin/lecturers')]);
     view.innerHTML = `
       <div class="page-head"><h1>Staff & Student Directory</h1></div>
-      <h3 style="margin-bottom:10px; font-size:1rem;">Lecturers (${lecturers.length})</h3>
-      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
-        <table class="data-table">
-          <thead><tr><th>Name</th><th>Staff ID</th><th>Department</th><th>Email</th><th>Status</th><th></th></tr></thead>
-          <tbody>${lecturers.map((l) => `<tr>
-            <td>${esc(l.fullName)}</td><td class="tabular">${esc(l.staffId || '—')}</td><td>${esc(l.department ? l.department.name : '—')}</td><td>${esc(l.email)}</td>
-            <td>${statusPillHtml(l.status)}</td>
-            <td style="display:flex; gap:6px; flex-wrap:wrap;">
-              ${l.status === 'SUSPENDED'
-                ? `<button class="btn btn-ghost btn-sm" data-lect-action="lift-suspension" data-id="${l.id}">Lift suspension</button>`
-                : l.status === 'DISMISSED' ? '' : `<button class="btn btn-ghost btn-sm" data-lect-action="suspend" data-id="${l.id}">Suspend</button>`}
-              ${l.status !== 'DISMISSED' ? `<button class="btn btn-ghost btn-sm" data-lect-action="dismiss" data-id="${l.id}">Dismiss</button>` : ''}
-            </td>
-          </tr>`).join('') || '<tr><td colspan="6" class="muted">None yet.</td></tr>'}</tbody>
-        </table>
+      <div class="grid-cards">
+        <div class="card course-card" data-type="ACADEMIC"><div class="code">Academic Staff</div><div class="meta">Lecturers</div></div>
+        <div class="card course-card" data-type="NON_ACADEMIC"><div class="code">Non-Academic Staff</div><div class="meta">Librarians, admin staff, and other non-teaching roles</div></div>
+        <div class="card course-card" data-type="STUDENT"><div class="code">Students</div><div class="meta">All enrolled students</div></div>
       </div>
-      <h3 style="margin-bottom:10px; font-size:1rem;">Students (${students.length})</h3>
+    `;
+    view.querySelectorAll('[data-type]').forEach((el) => {
+      el.addEventListener('click', () => navigate('admin-directory-list', { directoryType: el.dataset.type }));
+    });
+  }
+
+  async function renderAdminDirectoryList() {
+    const cfg = DIRECTORY_TYPES[state.view.directoryType];
+    const { [cfg.listKey]: items } = await api(cfg.base);
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>${cfg.label}</h1>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-accent btn-sm" id="add-btn">+ Add</button>
+          <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+        </div>
+      </div>
+      <div id="add-box" hidden></div>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Matric No.</th><th>Department</th><th>Email</th><th>Status</th><th></th></tr></thead>
-          <tbody>${students.map((s) => `<tr>
-            <td>${esc(s.fullName)}</td><td class="tabular">${esc(s.matricNumber || '—')}</td><td>${esc(s.department ? s.department.name : '—')}</td><td>${esc(s.email)}</td>
-            <td>${statusPillHtml(s.status)}</td>
-            <td style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn btn-ghost btn-sm" data-issue-credential="${s.id}" data-name="${esc(s.fullName)}">Issue credential</button>
-              ${s.status === 'SUSPENDED'
-                ? `<button class="btn btn-ghost btn-sm" data-stud-action="lift-suspension" data-id="${s.id}">Lift suspension</button>`
-                : s.status === 'EXPELLED' ? '' : `<button class="btn btn-ghost btn-sm" data-stud-action="suspend" data-id="${s.id}">Suspend</button>`}
-              ${s.status !== 'EXPELLED' ? `<button class="btn btn-ghost btn-sm" data-stud-action="expel" data-id="${s.id}">Expel</button>` : ''}
-            </td>
-          </tr>`).join('') || '<tr><td colspan="6" class="muted">None yet.</td></tr>'}</tbody>
+          <thead><tr><th>Name</th><th>${cfg.idLabel}</th><th>Department</th><th>${cfg.extraLabel}</th><th>Status</th></tr></thead>
+          <tbody>${items.map((u) => `<tr class="clickable" data-id="${u.id}" style="cursor:pointer;">
+            <td>${esc(u.fullName)}</td><td class="tabular">${esc(u[cfg.idField] || '—')}</td><td>${esc(u.department ? u.department.name : '—')}</td><td>${esc(cfg.extraValue(u))}</td>
+            <td>${statusPillHtml(u.status)}</td>
+          </tr>`).join('') || `<tr><td colspan="5" class="muted" style="padding:16px;">None yet.</td></tr>`}</tbody>
         </table>
       </div>
     `;
-    view.querySelectorAll('[data-issue-credential]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const title = prompt(`Credential title for ${btn.dataset.name}:`, 'Nigeria Certificate in Education (NCE)');
-        if (!title || !title.trim()) return;
-        try {
-          const { credential } = await api('/admin/credentials', { method: 'POST', body: { studentId: btn.dataset.issueCredential, title: title.trim() } });
-          alert(`Credential issued.\n\nVerification link: ${location.origin}/verify.html?code=${credential.verifyCode}`);
-        } catch (err) { toast(err.message); }
-      });
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory'));
+    view.querySelectorAll('tr[data-id]').forEach((row) => {
+      row.addEventListener('click', () => navigate('admin-directory-detail', { directoryType: state.view.directoryType, userId: row.dataset.id }));
     });
-    view.querySelectorAll('[data-lect-action]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        if (!confirm(`${btn.dataset.lectAction} this lecturer?`)) return;
+    document.getElementById('add-btn').addEventListener('click', async () => {
+      const box = document.getElementById('add-box');
+      box.hidden = !box.hidden;
+      if (box.hidden) return;
+      const fieldsHtml = await Promise.all(cfg.addFields.map(async (f) => {
+        if (f.type === 'department') {
+          return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">${f.required ? 'Select…' : 'None'}</option>${await departmentOptionsHtml()}</select></div>`;
+        }
+        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="add-${f.key}" ${f.required ? 'required' : ''}></div>`;
+      }));
+      box.innerHTML = `<form id="add-form" class="card" style="padding:20px; margin-bottom:18px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">Add & generate access code</button></form>`;
+      box.hidden = false;
+      document.getElementById('add-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = {};
+        for (const f of cfg.addFields) body[f.key] = document.getElementById(`add-${f.key}`).value.trim();
         try {
-          await api(`/admin/lecturers/${btn.dataset.id}/${btn.dataset.lectAction}`, { method: 'POST' });
-          toast('Updated');
-          render();
-        } catch (err) { toast(err.message); }
-      });
-    });
-    view.querySelectorAll('[data-stud-action]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        if (!confirm(`${btn.dataset.studAction} this student?`)) return;
-        try {
-          await api(`/admin/students/${btn.dataset.id}/${btn.dataset.studAction}`, { method: 'POST' });
-          toast('Updated');
+          const { user, accessCode, tempPassword } = await api(cfg.base, { method: 'POST', body });
+          alert(`${user.fullName} added.\n\nAccess code: ${accessCode}\nTemporary password: ${tempPassword}\n\nShare these with them to log in.`);
           render();
         } catch (err) { toast(err.message); }
       });
     });
   }
 
+  async function renderAdminDirectoryDetail() {
+    const cfg = DIRECTORY_TYPES[state.view.directoryType];
+    const { [cfg.detailKey]: u } = await api(`${cfg.base}/${state.view.userId}`);
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(u.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <div class="card" style="padding:24px; max-width:560px;">
+        <div class="id-grid" style="margin-bottom:8px;">
+          <div><div class="meta">${cfg.idLabel}</div><div>${esc(u[cfg.idField] || '—')}</div></div>
+          <div><div class="meta">Department</div><div>${esc(u.department ? u.department.name : '—')}</div></div>
+          <div><div class="meta">${cfg.extraLabel}</div><div>${esc(cfg.extraValue(u))}</div></div>
+          <div><div class="meta">Status</div><div>${statusPillHtml(u.status)}</div></div>
+          <div><div class="meta">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="meta">Phone</div><div>${esc(u.phone || '—')}</div></div>
+          <div><div class="meta">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:16px;">
+          ${cfg.actions.filter((a) => a.show(u)).map((a) => `<button class="btn btn-ghost btn-sm" data-action="${a.key}">${a.label}</button>`).join('')}
+          ${state.view.directoryType === 'STUDENT' ? `<button class="btn btn-ghost btn-sm" id="issue-credential-btn">Issue credential</button>` : ''}
+        </div>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory-list', { directoryType: state.view.directoryType }));
+    view.querySelectorAll('[data-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`${btn.dataset.action} ${u.fullName}?`)) return;
+        try {
+          await api(`${cfg.base}/${u.id}/${btn.dataset.action}`, { method: 'POST' });
+          toast('Updated');
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
+    const issueBtn = document.getElementById('issue-credential-btn');
+    if (issueBtn) issueBtn.addEventListener('click', async () => {
+      const title = prompt(`Credential title for ${u.fullName}:`, 'Nigeria Certificate in Education (NCE)');
+      if (!title || !title.trim()) return;
+      try {
+        const { credential } = await api('/admin/credentials', { method: 'POST', body: { studentId: u.id, title: title.trim() } });
+        alert(`Credential issued.\n\nVerification link: ${location.origin}/verify.html?code=${credential.verifyCode}`);
+      } catch (err) { toast(err.message); }
+    });
+  }
+
   async function renderAdminAcademics() {
-    const [{ departments }, { school }] = await Promise.all([api('/departments'), api('/admin/school')]);
+    const [{ departments }, { school }] = await Promise.all([api(`/departments?schoolId=${state.user.schoolId}`), api('/admin/school')]);
     const deptCourses = {};
     for (const d of departments) deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
     view.innerHTML = `
@@ -2496,6 +2595,7 @@
         <div><span style="font-weight:600;">School licence</span> <span class="meta">— ${esc(school.name)}</span></div>
         <span class="pill ${school.licenseStatus === 'ACTIVE' ? 'pill-pass' : 'pill-danger'}">${school.licenseStatus === 'ACTIVE' ? 'Active' : 'Expired'}${school.licenseExpiresAt ? ` until ${new Date(school.licenseExpiresAt).toLocaleDateString()}` : ''}</span>
       </div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Add Departments and Courses</h3>
       <div class="grid-2" style="margin-bottom:26px;">
         <div class="card" style="padding:20px;">
           <h3 style="margin-bottom:12px; font-size:1rem;">Add department</h3>
@@ -2549,15 +2649,28 @@
     });
   }
 
+  const ACTIVITY_ACTION_LABELS = {
+    LOGIN: 'Logged in',
+    CREATE_COURSE: 'Created course',
+    CREATE_LESSON: 'Published lesson',
+    DELETE_LESSON: 'Removed lesson',
+    CREATE_LAB_DEMO: 'Added digital practical',
+    CREATE_ASSESSMENT: 'Created test/exam',
+    UPLOAD_LIBRARY_RESOURCE: 'Uploaded library resource',
+    CREATE_ASSIGNMENT: 'Created assignment',
+    CREATE_PROJECT: 'Created project',
+    START_LIVE_CLASS: 'Started live class',
+  };
+
   async function renderAdminActivity() {
     const { logs } = await api('/admin/lecturer-activity');
     view.innerHTML = `
       <div class="page-head"><h1>Lecturer Activity</h1></div>
-      <p class="muted" style="margin-bottom:18px;">Logins, lessons published, resources uploaded and assessments created — by design, student activity is never tracked here.</p>
+      <p class="muted" style="margin-bottom:18px;">Logins, lessons published, resources uploaded, and assignments/tests/exams/projects created — by design, student activity is never tracked here.</p>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
           <thead><tr><th>Lecturer</th><th>Action</th><th>Detail</th><th>When</th></tr></thead>
-          <tbody>${logs.map((l) => `<tr><td>${esc(l.user.fullName)}</td><td>${esc(l.action)}</td><td>${esc(l.detail || '—')}</td><td class="tabular">${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No activity yet.</td></tr>'}</tbody>
+          <tbody>${logs.map((l) => `<tr><td>${esc(l.user.fullName)}</td><td>${esc(ACTIVITY_ACTION_LABELS[l.action] || l.action)}</td><td>${esc(l.detail || '—')}</td><td class="tabular">${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No activity yet.</td></tr>'}</tbody>
         </table>
       </div>
     `;
@@ -2567,55 +2680,142 @@
 
   async function renderAdminAdmissions() {
     const statusFilter = state.view.status || 'SUBMITTED';
-    const { applications } = await api(`/admin/admissions?status=${statusFilter}`);
+    const [{ applications: allApps }, { applications }] = await Promise.all([
+      api('/admin/admissions'),
+      api(`/admin/admissions?status=${statusFilter}`),
+    ]);
+    const counts = Object.fromEntries(APPLICATION_TABS.map((s) => [s, allApps.filter((a) => a.status === s).length]));
 
     view.innerHTML = `
-      <div class="page-head"><h1>Admissions</h1></div>
+      <div class="page-head"><h1>Admissions</h1><button class="btn btn-ghost btn-sm" id="manage-attitude-test-btn">Manage attitude test</button></div>
+      <div class="grid-cards" style="margin-bottom:20px;">
+        ${APPLICATION_TABS.map((s) => `<div class="card course-card" data-status-tile="${s}"><div class="code">${counts[s]}</div><div class="meta">${s.replace('_', ' ')}</div></div>`).join('')}
+      </div>
       <div class="tabs" style="max-width:100%; overflow-x:auto; display:inline-flex;">
         ${APPLICATION_TABS.map((s) => `<button class="tab-btn ${s === statusFilter ? 'active' : ''}" data-status="${s}">${s.replace('_', ' ')}</button>`).join('')}
       </div>
       <div style="margin-top:18px;">
         ${applications.map((a) => `
-          <div class="card" style="padding:20px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
-            <div>
-              <div style="font-weight:600;">${esc(a.fullName)}</div>
-              <div class="meta">${esc(a.email)} · ${esc(a.phone)} · ${esc(a.department.name)} · ${esc(a.level)}</div>
-              ${a.statement ? `<p class="muted" style="margin-top:8px; max-width:52ch;">${esc(a.statement)}</p>` : ''}
-              <div class="meta" style="margin-top:6px;">Applied ${new Date(a.createdAt).toLocaleDateString()}</div>
-            </div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              ${a.status === 'SUBMITTED' ? `<button class="btn btn-ghost btn-sm" data-screen="${a.id}">Screen</button>` : ''}
-              ${['SUBMITTED', 'UNDER_REVIEW'].includes(a.status) ? `
-                <button class="btn btn-primary btn-sm" data-accept="${a.id}">Accept</button>
-                <button class="btn btn-ghost btn-sm" data-reject="${a.id}">Reject</button>
-              ` : ''}
-              ${a.status === 'ACCEPTED' ? `<button class="btn btn-accent btn-sm" data-register="${a.id}">Register as student</button>` : ''}
-            </div>
+          <div class="card clickable" data-app-id="${a.id}" style="padding:20px; margin-bottom:14px; cursor:pointer;">
+            <div style="font-weight:600;">${esc(a.fullName)}</div>
+            <div class="meta">${esc(a.email)} · ${esc(a.phone)} · ${esc(a.department.name)} · ${esc(a.level)}</div>
+            <div class="meta" style="margin-top:6px;">Applied ${new Date(a.createdAt).toLocaleDateString()}</div>
           </div>
         `).join('') || '<p class="muted">No applications here yet.</p>'}
       </div>
     `;
+    document.getElementById('manage-attitude-test-btn').addEventListener('click', () => navigate('admin-attitude-test'));
+    view.querySelectorAll('[data-status-tile]').forEach((el) => {
+      el.addEventListener('click', () => navigate('admin-admissions', { status: el.dataset.statusTile }));
+    });
     view.querySelectorAll('[data-status]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('admin-admissions', { status: btn.dataset.status }));
     });
-    view.querySelectorAll('[data-screen]').forEach((btn) => {
-      btn.addEventListener('click', async () => { await api(`/admin/admissions/${btn.dataset.screen}/screen`, { method: 'POST' }); toast('Marked under review'); render(); });
+    view.querySelectorAll('[data-app-id]').forEach((card) => {
+      card.addEventListener('click', () => navigate('admin-admissions-detail', { applicationId: card.dataset.appId }));
     });
-    view.querySelectorAll('[data-accept]').forEach((btn) => {
-      btn.addEventListener('click', async () => { await api(`/admin/admissions/${btn.dataset.accept}/accept`, { method: 'POST' }); toast('Accepted'); render(); });
+  }
+
+  async function renderAdminAdmissionDetail() {
+    const { application: a } = await api(`/admin/admissions/${state.view.applicationId}`);
+    const sub = a.attitudeTestSubmission;
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(a.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <div class="card" style="padding:24px; max-width:560px; margin-bottom:18px;">
+        <div class="id-grid">
+          <div><div class="meta">Email</div><div>${esc(a.email)}</div></div>
+          <div><div class="meta">Phone</div><div>${esc(a.phone)}</div></div>
+          <div><div class="meta">Department</div><div>${esc(a.department.name)}</div></div>
+          <div><div class="meta">Level</div><div>${esc(a.level)}</div></div>
+          <div><div class="meta">Status</div><div>${esc(a.status.replace('_', ' '))}</div></div>
+          <div><div class="meta">Applied</div><div class="tabular">${new Date(a.createdAt).toLocaleDateString()}</div></div>
+          <div><div class="meta">Attitude test</div><div>${sub ? `${sub.score} / ${sub.total}` : 'Not taken yet'}</div></div>
+        </div>
+        ${a.statement ? `<p class="muted" style="margin-top:14px;">${esc(a.statement)}</p>` : ''}
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:18px;">
+          ${a.status === 'SUBMITTED' ? `<button class="btn btn-ghost btn-sm" data-screen>Screen</button>` : ''}
+          ${['SUBMITTED', 'UNDER_REVIEW'].includes(a.status) ? `<button class="btn btn-primary btn-sm" data-accept>Accept</button><button class="btn btn-ghost btn-sm" data-reject>Reject</button>` : ''}
+          ${a.status === 'ACCEPTED' ? `<button class="btn btn-accent btn-sm" data-register>Register as student</button>` : ''}
+        </div>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-admissions'));
+    const screenBtn = view.querySelector('[data-screen]');
+    if (screenBtn) screenBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/screen`, { method: 'POST' }); toast('Marked under review'); render(); });
+    const acceptBtn = view.querySelector('[data-accept]');
+    if (acceptBtn) acceptBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/accept`, { method: 'POST' }); toast('Accepted'); render(); });
+    const rejectBtn = view.querySelector('[data-reject]');
+    if (rejectBtn) rejectBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
+    const registerBtn = view.querySelector('[data-register]');
+    if (registerBtn) registerBtn.addEventListener('click', async () => {
+      try {
+        const { user, tempPassword } = await api(`/admin/admissions/${a.id}/register`, { method: 'POST' });
+        alert(`Student account created.\n\nName: ${user.fullName}\nMatric number: ${user.matricNumber}\nEmail: ${user.email}\nTemporary password: ${tempPassword}\n\nShare these with the student now — this password won't be shown again.`);
+        render();
+      } catch (err) { toast(err.message); }
     });
-    view.querySelectorAll('[data-reject]').forEach((btn) => {
-      btn.addEventListener('click', async () => { await api(`/admin/admissions/${btn.dataset.reject}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
+  }
+
+  async function renderAdminAttitudeTest() {
+    const { test } = await api('/admin/attitude-test');
+    view.innerHTML = `
+      <div class="page-head"><h1>Admission Attitude Test</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      ${test ? `<p class="meta" style="margin-bottom:14px;">Current test: "${esc(test.title)}" (${test.questions.length} questions). Saving below replaces it with a new version for future applicants — past scores stay as they were.</p>` : '<p class="meta" style="margin-bottom:14px;">No attitude test configured yet — applicants won\'t see one to take until you add questions below.</p>'}
+      <form id="attitude-form" class="card" style="padding:20px;">
+        <div class="field"><label>Test title</label><input type="text" id="at-title" value="${test ? esc(test.title) : 'General Attitude Test'}" required></div>
+        <div id="at-questions">
+          ${(test ? test.questions : [{ text: '', options: ['', '', '', ''], correctIndex: 0 }]).map((q, qi) => questionEditorHtml(qi, q)).join('')}
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="at-add-q" style="margin:10px 0;">+ Add question</button>
+        <button class="btn btn-primary" type="submit" style="display:block;">Save test</button>
+      </form>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-admissions'));
+    wireQuestionEditor('at-questions', 'at-add-q');
+    document.getElementById('attitude-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const questions = readQuestionEditor('at-questions');
+      if (!questions.length) return toast('Add at least one question.');
+      try {
+        await api('/admin/attitude-test', { method: 'POST', body: { title: document.getElementById('at-title').value.trim(), questions } });
+        toast('Attitude test saved');
+        navigate('admin-admissions');
+      } catch (err) { toast(err.message); }
     });
-    view.querySelectorAll('[data-register]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        try {
-          const { user, tempPassword } = await api(`/admin/admissions/${btn.dataset.register}/register`, { method: 'POST' });
-          alert(`Student account created.\n\nName: ${user.fullName}\nMatric number: ${user.matricNumber}\nEmail: ${user.email}\nTemporary password: ${tempPassword}\n\nShare these with the student now — this password won't be shown again.`);
-          render();
-        } catch (err) { toast(err.message); }
-      });
+  }
+
+  // Shared MCQ-question editor, reused by the attitude test and (Phase 4) CBT/exam
+  // authoring screens.
+  function questionEditorHtml(qi, q) {
+    return `
+      <div class="card quiz-q" data-q-idx="${qi}">
+        <div class="field"><label>Question ${qi + 1}</label><input type="text" class="q-text" value="${esc(q.text || '')}" required></div>
+        ${[0, 1, 2, 3].map((oi) => `
+          <div class="field" style="display:flex; align-items:center; gap:8px;">
+            <input type="radio" name="q-correct-${qi}" class="q-correct" value="${oi}" ${(q.correctIndex ?? 0) === oi ? 'checked' : ''}>
+            <input type="text" class="q-opt" placeholder="Option ${oi + 1}" value="${esc((q.options && q.options[oi]) || '')}" required style="flex:1;">
+          </div>
+        `).join('')}
+        <button type="button" class="btn btn-ghost btn-sm" data-remove-q>Remove question</button>
+      </div>
+    `;
+  }
+  function wireQuestionEditor(containerId, addBtnId) {
+    const container = document.getElementById(containerId);
+    container.addEventListener('click', (e) => {
+      if (e.target.matches('[data-remove-q]')) e.target.closest('.quiz-q').remove();
     });
+    document.getElementById(addBtnId).addEventListener('click', () => {
+      const idx = container.querySelectorAll('.quiz-q').length;
+      container.insertAdjacentHTML('beforeend', questionEditorHtml(idx, { text: '', options: ['', '', '', ''], correctIndex: 0 }));
+    });
+  }
+  function readQuestionEditor(containerId) {
+    return Array.from(document.getElementById(containerId).querySelectorAll('.quiz-q')).map((row) => ({
+      text: row.querySelector('.q-text').value.trim(),
+      options: Array.from(row.querySelectorAll('.q-opt')).map((i) => i.value.trim()),
+      correctIndex: Number(row.querySelector('.q-correct:checked')?.value || 0),
+    })).filter((q) => q.text);
   }
 
   async function renderAdminStaffRecords() {
@@ -2632,16 +2832,16 @@
       <h3 style="margin-bottom:10px; font-size:1rem;">Workload (from real activity — courses, lessons, assessments, live classes, practicals)</h3>
       <div class="card" style="overflow-x:auto; margin-bottom:26px;">
         <table class="data-table">
-          <thead><tr><th>Lecturer</th><th>Department</th><th>Lessons</th><th>Assessments</th><th>Live classes</th><th>Practicals</th></tr></thead>
-          <tbody>${workload.map((w) => `<tr><td>${esc(w.fullName)}</td><td>${esc(w.department || '—')}</td><td class="tabular">${w.lessons}</td><td class="tabular">${w.assessments}</td><td class="tabular">${w.liveClasses}</td><td class="tabular">${w.labDemos}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No lecturers yet.</td></tr>'}</tbody>
+          <thead><tr><th>Lecturer</th><th>Department</th><th>Courses</th><th>Lessons</th><th>Assessments</th><th>Live classes</th><th>Practicals</th></tr></thead>
+          <tbody>${workload.map((w) => `<tr><td>${esc(w.fullName)}</td><td>${esc(w.department || '—')}</td><td class="tabular">${w.courses}</td><td class="tabular">${w.lessons}</td><td class="tabular">${w.assessments}</td><td class="tabular">${w.liveClasses}</td><td class="tabular">${w.labDemos}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No lecturers yet.</td></tr>'}</tbody>
         </table>
       </div>
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Recent attendance</h3>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
       <div class="card" style="overflow-x:auto; margin-bottom:26px;">
         <table class="data-table">
           <thead><tr><th>Lecturer</th><th>Date</th><th>Status</th></tr></thead>
-          <tbody>${attendance.slice(0, 20).map((r) => `<tr><td>${esc(r.user.fullName)}</td><td class="tabular">${new Date(r.date).toLocaleDateString()}</td><td>${esc(r.status)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No records yet.</td></tr>'}</tbody>
+          <tbody>${attendance.map((r) => `<tr><td>${esc(r.user.fullName)}</td><td class="tabular">${new Date(r.date).toLocaleDateString()}</td><td>${esc(r.status)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No records yet.</td></tr>'}</tbody>
         </table>
       </div>
 
@@ -2726,8 +2926,14 @@
     });
     view.querySelectorAll('[data-approve-hostel]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const roomAssigned = prompt('Room to assign (e.g. Block A, Room 12):') || 'To be confirmed';
-        await api(`/admin/hostel-applications/${btn.dataset.approveHostel}/approve`, { method: 'POST', body: { roomAssigned } });
+        const { hostels } = await api('/admin/hostels');
+        if (!hostels.length) return toast('Add a hostel first, from the Hostels page.');
+        const names = hostels.map((h) => h.name).join(', ');
+        const chosen = prompt(`Which hostel? (${names})`);
+        const hostel = hostels.find((h) => h.name.toLowerCase() === (chosen || '').trim().toLowerCase());
+        if (!hostel) return toast('No matching hostel name — approval cancelled.');
+        const roomAssigned = prompt('Room number:') || 'To be confirmed';
+        await api(`/admin/hostel-applications/${btn.dataset.approveHostel}/approve`, { method: 'POST', body: { hostelId: hostel.id, roomAssigned } });
         toast('Approved');
         render();
       });
@@ -2738,12 +2944,32 @@
   }
 
   async function renderAdminHostelAllocations() {
-    const { allocations } = await api('/admin/hostel-allocations');
+    const { hostels } = await api('/admin/hostels');
     view.innerHTML = `
-      <div class="page-head"><h1>Hostel Allocations</h1></div>
+      <div class="page-head"><h1>Hostels</h1><button class="btn btn-accent btn-sm" id="add-hostel-btn">+ Add hostel</button></div>
+      <div class="grid-cards">
+        ${hostels.map((h) => `<div class="card course-card" data-hostel-id="${h.id}"><div class="code">${esc(h.name)}</div><div class="meta">${h._count.applications} student${h._count.applications === 1 ? '' : 's'}</div></div>`).join('') || '<p class="muted">No hostels added yet.</p>'}
+      </div>
+    `;
+    document.getElementById('add-hostel-btn').addEventListener('click', async () => {
+      const name = prompt('Hostel name, e.g. "Daws Hostel"');
+      if (!name || !name.trim()) return;
+      await api('/admin/hostels', { method: 'POST', body: { name: name.trim() } });
+      toast('Hostel added');
+      render();
+    });
+    view.querySelectorAll('[data-hostel-id]').forEach((el) => {
+      el.addEventListener('click', () => navigate('admin-hostel-detail', { hostelId: el.dataset.hostelId, hostelName: el.querySelector('.code').textContent }));
+    });
+  }
+
+  async function renderAdminHostelDetail() {
+    const { allocations } = await api(`/admin/hostels/${state.view.hostelId}/allocations`);
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(state.view.hostelName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Student</th><th>Matric No.</th><th>Department</th><th>Room</th><th>Allocated</th></tr></thead>
+          <thead><tr><th>Student</th><th>Matric No.</th><th>Department</th><th>Room</th><th>Phone</th><th>Allocated</th></tr></thead>
           <tbody>
             ${allocations.map((a) => `
               <tr>
@@ -2751,17 +2977,19 @@
                 <td class="tabular">${esc(a.student.matricNumber || '—')}</td>
                 <td>${esc(a.student.department ? a.student.department.name : '—')}</td>
                 <td class="tabular">${esc(a.roomAssigned || '—')}</td>
+                <td class="tabular">${esc(a.student.phone || '—')}</td>
                 <td class="tabular">${a.decidedAt ? new Date(a.decidedAt).toLocaleDateString() : '—'}</td>
               </tr>
-            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No hostel allocations yet.</td></tr>'}
+            `).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">No students allocated here yet.</td></tr>'}
           </tbody>
         </table>
       </div>
     `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-hostel-allocations'));
   }
 
   async function renderAdminStudentActivity() {
-    const { submissions, assignmentSubmissions, results } = await api('/admin/student-activity');
+    const { submissions, assignmentSubmissions, results, attendance } = await api('/admin/student-activity');
     view.innerHTML = `
       <div class="page-head"><h1>Student Activity</h1></div>
       <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; exams</h3>
@@ -2783,6 +3011,13 @@
         <table class="data-table">
           <thead><tr><th>Student</th><th>Course</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
           <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td class="tabular">${esc(r.course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">None yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <h3 style="margin-bottom:10px; font-size:1rem; margin-top:26px;">Classes attended</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Course</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>${attendance.map((a) => `<tr><td>${esc(a.student.fullName)}</td><td class="tabular">${esc(a.course.code)}</td><td class="tabular">${new Date(a.date).toLocaleDateString()}</td><td>${esc(a.status)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted" style="padding:16px;">None yet.</td></tr>'}</tbody>
         </table>
       </div>
     `;

@@ -129,12 +129,15 @@ router.get('/admin/hostel-applications', requireAuth, requireRole('ADMIN'), asyn
 });
 
 router.post('/admin/hostel-applications/:id/approve', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const roomAssigned = req.body.roomAssigned || 'To be confirmed';
+  const { hostelId, roomAssigned } = req.body;
+  if (!hostelId) return res.status(400).json({ error: 'Choose a hostel to allocate into.' });
+  const hostel = await prisma.hostel.findFirst({ where: { id: hostelId, schoolId: req.user.schoolId } });
+  if (!hostel) return res.status(404).json({ error: 'Hostel not found' });
   const application = await prisma.hostelApplication.update({
     where: { id: req.params.id },
-    data: { status: 'APPROVED', roomAssigned, decidedAt: new Date() },
+    data: { status: 'APPROVED', hostelId, roomAssigned: roomAssigned || 'To be confirmed', decidedAt: new Date() },
   });
-  await notify(application.studentId, 'Hostel application approved', `You've been allocated: ${roomAssigned}.`, 'digital-id');
+  await notify(application.studentId, 'Hostel application approved', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'digital-id');
   res.json({ application });
 });
 
