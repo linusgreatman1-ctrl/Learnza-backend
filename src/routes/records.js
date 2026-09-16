@@ -114,6 +114,7 @@ router.post('/students/me/hostel-application', requireAuth, requireRole('STUDENT
 router.get('/students/me/hostel-application', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const application = await prisma.hostelApplication.findFirst({
     where: { studentId: req.user.id },
+    include: { hostel: { select: { name: true } } },
     orderBy: { requestedAt: 'desc' },
   });
   res.json({ application });

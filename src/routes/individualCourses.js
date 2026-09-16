@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const quizGen = require('../services/quizGen.service');
+const autoGen = require('../services/individualAutoGen.service');
 
 const router = express.Router();
 
@@ -38,51 +38,21 @@ router.delete('/individual-courses/:id', requireAuth, requireRole('STUDENT'), as
 });
 
 // App-generated tests/assignments for a self-directed course -- there's no lecturer to
-// set these, so the AI drafts them on request. Taking/scoring/review-mistakes reuse the
-// exact same generic /assessments/:id/* endpoints school courses use.
+// set these, and the student never triggers generation themselves either: the app
+// auto-generates a fresh assignment daily, a test weekly, and a semester exam roughly
+// once a term (individualAutoGen.service.js), ensured lazily right here. Taking/
+// scoring/review-mistakes reuse the exact same generic /assessments/:id/* endpoints
+// school courses use.
 router.get('/individual-courses/:id/assessments', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
   if (!course) return res.status(404).json({ error: 'Course not found' });
+  await autoGen.ensureAutoContentForCourse(course, req.user.id).catch(() => {});
   const assessments = await prisma.assessment.findMany({
     where: { individualCourseId: course.id },
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: 'desc' },
   });
   res.json({ assessments });
-});
-
-router.post('/individual-courses/:id/assessments/generate', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const { topic, kind } = req.body; // kind: 'TEST' | 'ASSIGNMENT'
-  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Describe the topic first.' });
-  const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
-  if (!course) return res.status(404).json({ error: 'Course not found' });
-
-  try {
-    const isAssignment = kind === 'ASSIGNMENT';
-    const draft = isAssignment
-      ? await quizGen.generateAssignment({ courseTitle: course.title, topic })
-      : await quizGen.generateQuiz({ courseTitle: course.title, topic });
-
-    const assessment = await prisma.assessment.create({
-      data: {
-        individualCourseId: course.id,
-        authorId: req.user.id,
-        title: draft.title || topic,
-        type: isAssignment ? 'Assignment' : 'Test',
-        durationMin: isAssignment ? 30 : 15,
-        questions: {
-          create: (draft.questions || []).map((q, i) => isAssignment
-            ? { questionType: 'THEORY', text: q.text, modelAnswer: q.modelAnswer || null, order: i }
-            : { questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, order: i }),
-        },
-      },
-      include: { questions: true },
-    });
-    res.json({ assessment });
-  } catch (err) {
-    if (err.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: err.message, code: err.code });
-    res.status(502).json({ error: 'Could not generate that right now. Please try again.' });
-  }
 });
 
 module.exports = router;

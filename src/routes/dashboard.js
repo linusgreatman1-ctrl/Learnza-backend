@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
+const autoGen = require('../services/individualAutoGen.service');
 
 const router = express.Router();
 
@@ -9,8 +10,14 @@ const router = express.Router();
 // separately by the frontend via the existing /notifications endpoint. Assignments and
 // attendance are school-course concepts and stay empty for individual learners (they
 // have no enrollments); their recentResults still populates from app-generated
-// individual-course assessments, since Submission isn't school-scoped.
+// individual-course assessments, since Submission isn't school-scoped. Individual
+// learners instead get `individualAssessments` -- the app's own auto-generated
+// assignments/tests/exams (see individualAutoGen.service.js), ensured fresh right here
+// so opening the dashboard is enough to catch up on anything due.
 router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  if (req.user.isIndividual) {
+    await autoGen.ensureAutoContent(req.user.id).catch(() => {});
+  }
   const enrollments = await prisma.enrollment.findMany({
     where: { studentId: req.user.id },
     select: { courseId: true },
@@ -58,11 +65,31 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
   const subByAssignment = new Map(mySubs.map((s) => [s.assignmentId, s]));
   const presentCount = attendance.filter((a) => a.status === 'PRESENT').length;
 
+  let individualAssessments = [];
+  if (req.user.isIndividual) {
+    const myIndividualCourses = await prisma.individualCourse.findMany({ where: { studentId: req.user.id }, select: { id: true } });
+    const icIds = myIndividualCourses.map((c) => c.id);
+    if (icIds.length) {
+      const [icAssessments, icSubs] = await Promise.all([
+        prisma.assessment.findMany({
+          where: { individualCourseId: { in: icIds } },
+          include: { _count: { select: { questions: true } }, individualCourse: { select: { title: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+        }),
+        prisma.submission.findMany({ where: { studentId: req.user.id } }),
+      ]);
+      const subByAssessment = new Map(icSubs.map((s) => [s.assessmentId, s]));
+      individualAssessments = icAssessments.map((a) => ({ ...a, mySubmission: subByAssessment.get(a.id) || null }));
+    }
+  }
+
   res.json({
     assignments: assignments.map((a) => ({ ...a, mySubmission: subByAssignment.get(a.id) || null })),
     attendance: { recent: attendance, presentCount, totalCount: attendance.length },
     recentResults,
     lessons,
+    individualAssessments,
   });
 });
 

@@ -34,4 +34,21 @@ async function generateAssignment({ courseTitle, topic }) {
   return ai.askForJson(ASSIGNMENT_SYSTEM_PROMPT, userPrompt);
 }
 
-module.exports = { generateQuiz, generateAssignment };
+const SEMESTER_EXAM_SYSTEM_PROMPT = `You are writing a semester-ending multiple-choice exam for a self-directed learner studying on their own. Reply with JSON only, matching exactly:
+{
+  "title": string,
+  "questions": [
+    { "text": string, "options": [string, string, string, string], "correctIndex": number }
+  ]
+}
+Rules:
+- Exactly 15 questions, each with exactly 4 options and one correct answer (correctIndex is 0-3).
+- Cover a broad spread of sub-topics within the course, testing real understanding, not trivia.
+Return JSON only, no prose before or after.`;
+
+async function generateSemesterExam({ courseTitle, topic }) {
+  const userPrompt = `Course of study: ${courseTitle}\nSemester exam scope: ${topic}`;
+  return ai.askForJson(SEMESTER_EXAM_SYSTEM_PROMPT, userPrompt);
+}
+
+module.exports = { generateQuiz, generateAssignment, generateSemesterExam };

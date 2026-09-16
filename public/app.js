@@ -217,7 +217,12 @@
   // block the rest of boot, since navigate() will surface the real auth error anyway.
   async function loadHeaderContext() {
     try {
-      const { school, department } = await api('/auth/me');
+      const { user, school, department } = await api('/auth/me');
+      // Refresh state.user (and its localStorage copy) too, not just school/department --
+      // otherwise a server-side change to the student's own record (level, admission
+      // details, etc.) never reaches an already-logged-in browser until they log out and
+      // back in, since state.user was only ever set once at login time.
+      if (user) { state.user = user; localStorage.setItem('vp_user', JSON.stringify(user)); }
       state.school = school;
       state.department = department;
     } catch { state.school = null; state.department = null; }
@@ -250,6 +255,13 @@
   // displayed in the Nigerian tertiary "level" format -- 100L, 200L, 300L.
   function levelLabel(yearOfStudy) {
     return yearOfStudy ? `${yearOfStudy * 100}L` : null;
+  }
+
+  // App-generated Assessment.type values for an individual learner's auto-scheduled
+  // content -- friendlier labels than the raw type string.
+  const INDIVIDUAL_ASSESSMENT_TYPE_LABELS = { ASSIGNMENT: 'Daily Assignment', CA: 'Weekly Test', SEMESTER_EXAM: 'Semester Exam' };
+  function individualAssessmentTypeLabel(type) {
+    return INDIVIDUAL_ASSESSMENT_TYPE_LABELS[type] || type;
   }
 
   function defaultScreenFor(role) {
@@ -624,18 +636,14 @@
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; assignments</h3>
-      <p class="muted" style="margin-bottom:12px;">No lecturer here — the AI Teacher generates these on request, auto-scores them, and always shows you a review of your mistakes.</p>
-      <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" id="gen-test-btn">📝 Generate a test</button>
-        <button class="btn btn-ghost btn-sm" id="gen-assignment-btn">📋 Generate an assignment</button>
-      </div>
+      <p class="muted" style="margin-bottom:12px;">No lecturer here — the app automatically sets you a new assignment every day, a test every week, and a semester exam once a term. They also show up on your dashboard.</p>
       <div class="card" style="margin-bottom:22px;">
         ${assessments.map((a) => `
           <div class="list-row" data-take="${a.id}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
+            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${esc(individualAssessmentTypeLabel(a.type))} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
             <span class="pill pill-accent">Open</span>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">None yet — generate one above.</p>'}
+        `).join('') || '<p class="muted" style="padding:16px;">Nothing yet — check back shortly, the app sets your first assignment automatically.</p>'}
       </div>
 
       <button class="btn btn-ghost btn-sm" id="delete-course-btn" style="color:var(--danger);">Delete this course</button>
@@ -646,21 +654,6 @@
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim(), true);
     });
-    async function generate(kind, label) {
-      const topic = prompt(`What topic should the ${label} cover?`);
-      if (!topic || !topic.trim()) return;
-      toast(`Generating your ${label}…`);
-      try {
-        await api(`/individual-courses/${course.id}/assessments/generate`, { method: 'POST', body: { topic: topic.trim(), kind } });
-        toast(`${label.charAt(0).toUpperCase() + label.slice(1)} ready`);
-        render();
-      } catch (err) {
-        if (err.code === 'AI_NOT_CONFIGURED') return renderUpgradePrompt(err.message);
-        toast(err.message);
-      }
-    }
-    document.getElementById('gen-test-btn').addEventListener('click', () => generate('TEST', 'test'));
-    document.getElementById('gen-assignment-btn').addEventListener('click', () => generate('ASSIGNMENT', 'assignment'));
     view.querySelectorAll('[data-take]').forEach((row) => {
       row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.take, backTo: 'individual-course-detail', backCourseId: course.id }));
     });
@@ -1837,6 +1830,7 @@
           <div><div class="id-field">Department</div><div>${state.department ? esc(state.department.name) : '—'}</div></div>
           <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
           <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
           <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
         </div>
       </div>
@@ -1865,7 +1859,7 @@
         <li>
           <span>Hostel / accommodation</span>
           ${hostelApp
-            ? hostelApp.status === 'APPROVED' ? `<span class="pill pill-pass">Room: ${esc(hostelApp.roomAssigned)}</span>`
+            ? hostelApp.status === 'APPROVED' ? `<span class="pill pill-pass">${hostelApp.hostel ? `${esc(hostelApp.hostel.name)} — ` : ''}Room: ${esc(hostelApp.roomAssigned)}</span>`
             : hostelApp.status === 'REJECTED' ? '<span class="pill pill-danger">Not approved</span>'
             : '<span class="pill pill-accent">Pending admin review</span>'
             : `<button class="btn btn-ghost btn-sm" id="request-hostel-btn">Apply for hostel</button>`}
@@ -1983,7 +1977,7 @@
 
   async function renderMyDashboard() {
     const isIndividual = state.user.isIndividual;
-    const [{ assignments, attendance, recentResults, lessons }, { notifications }] = await Promise.all([
+    const [{ assignments, attendance, recentResults, lessons, individualAssessments }, { notifications }] = await Promise.all([
       api('/students/me/dashboard'),
       api('/notifications'),
     ]);
@@ -2003,7 +1997,11 @@
     // results. Each tile links to the dashboard section (or dedicated screen) it
     // summarizes, instead of being a static, unclickable number.
     const statTiles = isIndividual
-      ? [[avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'], [recentResults.length, 'Tests & assignments taken', '#dash-results']]
+      ? [
+          [(individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length, 'Assignments & tests pending', '#dash-individualAssessments'],
+          [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'],
+          [recentResults.length, 'Tests & assignments taken', '#dash-results'],
+        ]
       : [
           [assignments.filter((a) => !a.mySubmission).length, 'Assignments pending', '#dash-assignments'],
           [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate', '#dash-attendance'],
@@ -2062,6 +2060,17 @@
             <span class="meta tabular">${new Date(n.createdAt).toLocaleDateString()}</span>
           </div>`;
     }
+    // Individual learners' app-generated assignments/tests/exams (no lecturer here --
+    // see individualAutoGen.service.js) -- clicking one opens it the same way a school
+    // student opens a test result, whether it's still unanswered or already scored.
+    function individualAssessmentRowHtml(a) {
+      const done = a.mySubmission && a.mySubmission.submittedAt;
+      return `
+          <div class="list-row clickable" data-open-result="${a.id}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${esc(a.individualCourse.title)} · ${esc(individualAssessmentTypeLabel(a.type))} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
+            ${done ? `<span class="pill pill-pass tabular">${a.mySubmission.score}/${a.mySubmission.total}</span>` : '<span class="pill pill-accent">Not started</span>'}
+          </div>`;
+    }
 
     // Renders a section capped at DASH_LIMIT items with a "View more" button that,
     // when clicked, swaps in the full list for that one section only.
@@ -2095,6 +2104,11 @@
       <h3 id="dash-lessons" style="margin-bottom:10px; font-size:1rem;">Lessons</h3>
       ${dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lessons yet.')}
       `}
+
+      ${isIndividual ? `
+      <h3 id="dash-individualAssessments" style="margin-bottom:10px; font-size:1rem;">Assignments &amp; Tests</h3>
+      ${dashSection('individualAssessments', individualAssessments || [], individualAssessmentRowHtml, 'Nothing yet — check back shortly.')}
+      ` : ''}
 
       <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
       ${dashSection('results', recentResults, resultRowHtml, `No ${isIndividual ? 'tests or assignments' : 'test results'} yet.`)}
@@ -4096,6 +4110,15 @@
   async function renderAdminDirectoryList() {
     const cfg = DIRECTORY_TYPES[state.view.directoryType];
     const { [cfg.listKey]: items } = await api(cfg.base);
+    const idNoun = state.view.directoryType === 'STUDENT' ? 'matric number' : 'staff ID';
+
+    function rowsHtml(list) {
+      return list.map((u) => `<tr class="clickable" data-id="${u.id}" style="cursor:pointer;">
+            <td>${esc(u.fullName)}</td><td class="tabular">${esc(u[cfg.idField] || '—')}</td><td>${esc(u.department ? u.department.name : '—')}</td><td>${esc(cfg.extraValue(u))}</td>
+            <td>${statusPillHtml(u.status)}</td>
+          </tr>`).join('') || `<tr><td colspan="5" class="muted" style="padding:16px;">None yet.</td></tr>`;
+    }
+
     view.innerHTML = `
       <div class="page-head">
         <h1>${cfg.label}</h1>
@@ -4104,21 +4127,32 @@
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
+      <div class="field" style="max-width:340px; margin-bottom:16px;">
+        <input type="text" id="directory-search" placeholder="Search by name or ${idNoun}…" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+      </div>
       <div id="add-box" hidden></div>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
           <thead><tr><th>Name</th><th>${cfg.idLabel}</th><th>Department</th><th>${cfg.extraLabel}</th><th>Status</th></tr></thead>
-          <tbody>${items.map((u) => `<tr class="clickable" data-id="${u.id}" style="cursor:pointer;">
-            <td>${esc(u.fullName)}</td><td class="tabular">${esc(u[cfg.idField] || '—')}</td><td>${esc(u.department ? u.department.name : '—')}</td><td>${esc(cfg.extraValue(u))}</td>
-            <td>${statusPillHtml(u.status)}</td>
-          </tr>`).join('') || `<tr><td colspan="5" class="muted" style="padding:16px;">None yet.</td></tr>`}</tbody>
+          <tbody id="directory-tbody">${rowsHtml(items)}</tbody>
         </table>
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory'));
-    view.querySelectorAll('tr[data-id]').forEach((row) => {
-      row.addEventListener('click', () => navigate('admin-directory-detail', { directoryType: state.view.directoryType, userId: row.dataset.id }));
+    function wireRows() {
+      view.querySelectorAll('tr[data-id]').forEach((row) => {
+        row.addEventListener('click', () => navigate('admin-directory-detail', { directoryType: state.view.directoryType, userId: row.dataset.id }));
+      });
+    }
+    wireRows();
+    document.getElementById('directory-search').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const filtered = !q ? items : items.filter((u) =>
+        (u.fullName || '').toLowerCase().includes(q) || (u[cfg.idField] || '').toLowerCase().includes(q)
+      );
+      document.getElementById('directory-tbody').innerHTML = rowsHtml(filtered);
+      wireRows();
     });
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory'));
     document.getElementById('add-btn').addEventListener('click', async () => {
       const box = document.getElementById('add-box');
       box.hidden = !box.hidden;
