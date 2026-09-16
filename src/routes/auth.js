@@ -136,4 +136,38 @@ router.get('/me', requireAuth, async (req, res) => {
   res.json({ user: publicUser(req.user), school, department });
 });
 
+// ---- Settings: shared by every role (student, lecturer, admin, staff) ----
+
+// Edit Profile -- only the fields every role can safely self-edit; anything
+// role-specific (matric number, access code, department, etc.) is admin-managed.
+router.patch('/me', requireAuth, async (req, res) => {
+  const { fullName, phone } = req.body;
+  const data = {};
+  if (fullName !== undefined) {
+    if (!fullName.trim()) return res.status(400).json({ error: 'Name cannot be empty.' });
+    data.fullName = fullName.trim();
+  }
+  if (phone !== undefined) data.phone = phone || null;
+  const user = await prisma.user.update({ where: { id: req.user.id }, data });
+  res.json({ user: publicUser(user) });
+});
+
+router.post('/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password are required.' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  const ok = await bcrypt.compare(currentPassword, req.user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'Current password is incorrect.' });
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash } });
+  res.json({ ok: true });
+});
+
+// "Mute notifications" -- suppresses new in-app notifications for this user without
+// deleting anything already delivered; checked centrally in notification.service.js.
+router.patch('/me/notifications', requireAuth, async (req, res) => {
+  const user = await prisma.user.update({ where: { id: req.user.id }, data: { notificationsMuted: !!req.body.muted } });
+  res.json({ user: publicUser(user) });
+});
+
 module.exports = router;

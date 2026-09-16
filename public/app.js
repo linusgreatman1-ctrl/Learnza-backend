@@ -9,6 +9,15 @@
   };
   let examTimerHandle = null; // the countdown interval from renderTakeAssessment, if any
 
+  // Dark Mode (Settings > Appearance) -- a per-device preference, applied immediately
+  // on boot (before any render) so there's no flash of the wrong theme. No preference
+  // stored means "follow the system", which app.html's CSS already handles on its own
+  // via prefers-color-scheme.
+  (function applyStoredTheme() {
+    const theme = localStorage.getItem('vp_theme');
+    if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
+  })();
+
   // ---------- API helper ----------
   async function api(path, opts = {}) {
     const headers = Object.assign({}, opts.headers);
@@ -271,7 +280,7 @@
 
   // App-generated Assessment.type values for an individual learner's auto-scheduled
   // content -- friendlier labels than the raw type string.
-  const INDIVIDUAL_ASSESSMENT_TYPE_LABELS = { ASSIGNMENT: 'Daily Assignment', CA: 'Weekly Test', SEMESTER_EXAM: 'Semester Exam' };
+  const INDIVIDUAL_ASSESSMENT_TYPE_LABELS = { ASSIGNMENT: 'Daily Assignment', CA: 'Weekly Test', Mock: 'Mock Exam', PAST_QUESTION: 'Past Questions', SEMESTER_EXAM: 'Semester Exam' };
   function individualAssessmentTypeLabel(type) {
     return INDIVIDUAL_ASSESSMENT_TYPE_LABELS[type] || type;
   }
@@ -283,9 +292,12 @@
   }
 
   // ---------- Sidebar ----------
-  // Individual (non-school) learners get a deliberately smaller nav -- no
-  // library/groups/CBT/leaderboard/digital-id, since those are all school-institutional
-  // features. They get their own self-directed courses instead of "My Courses".
+  // Individual (non-school) learners get every feature a school student has, scoped to
+  // their own self-directed IndividualCourse instead of a school Course/lecturer, with
+  // three deliberate exceptions: no live classes (there's no human lecturer to host
+  // one), no Admission Status (no admission process for a self-registered learner), and
+  // school-administrative concepts folded into their Digital ID instead (hostel/
+  // transcript/clearance -- there's no school admin to administer those).
   const NAV = {
     STUDENT: [
       ['my-dashboard', 'My Dashboard'],
@@ -303,17 +315,24 @@
       ['admission-status', 'Admission Status'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
+      ['settings', 'Settings'],
     ],
-    // Individual learners get the same dashboard concept, but no library/groups/
-    // leaderboard/digital-id (school-institutional features) and no CBT/past-questions/
-    // semester-exam yet -- those need an app-generated-content engine for self-created
-    // courses that doesn't exist yet.
     STUDENT_INDIVIDUAL: [
       ['individual-courses', 'My Courses'],
       ['my-dashboard', 'My Dashboard'],
+      ['library', 'e-Library'],
+      ['groups', 'Study Groups'],
+      ['lab-hub', 'Digital Lab'],
+      ['past-questions-hub', 'Past Questions'],
+      ['tests-hub', 'Tests'],
+      ['cbt-mock', 'CBT Mock Exam Practice'],
+      ['semester-exam-hub', 'Semester Exam'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
+      ['leaderboard', 'Leaderboard'],
+      ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
+      ['settings', 'Settings'],
     ],
     LECTURER: [
       ['lect-courses', 'My Courses'],
@@ -334,6 +353,7 @@
       ['admin-staff-records', 'Staff Records'],
       ['admin-student-requests', 'Student Requests'],
       ['admin-hostel-allocations', 'Hostels'],
+      ['settings', 'Settings'],
     ],
   };
 
@@ -540,6 +560,9 @@
         case 'leaderboard': return renderLeaderboard();
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
+        case 'settings': return renderSettings();
+        case 'settings-profile': return renderSettingsProfile();
+        case 'settings-password': return renderSettingsPassword();
         case 'lab': return renderLab();
         case 'lab-hub': return renderLabHub();
         case 'lab-teach': return renderLabTeach();
@@ -833,7 +856,7 @@
       <div class="card" style="padding:48px 24px; text-align:center;">
         <div class="ai-avatar-ring" style="margin:0 auto 18px; animation: avatar-pulse 1.4s ease-in-out infinite;">✨</div>
         <h3 style="margin-bottom:8px;">Preparing your lesson on "${esc(topic)}"…</h3>
-        <p class="muted">The AI Teacher is drafting it now — this takes a few seconds.</p>
+        <p class="muted">The AI Teacher is drafting a full, comprehensive lesson — this takes a little while.</p>
       </div>
     `;
     try {
@@ -1662,13 +1685,18 @@
   }
 
   async function renderLeaderboard() {
-    const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
+    const isIndividual = state.user.isIndividual;
+    // Individual learners have no department concept at all -- gamification.getLeaderboard
+    // already scopes by schoolId (null for individuals), so this naturally becomes an
+    // individual-learners-only leaderboard with no department filter needed.
+    const departments = isIndividual ? [] : (await api(`/departments?schoolId=${state.user.schoolId}`)).departments;
     const deptId = state.view.departmentId || '';
     const { leaderboard } = await api('/leaderboard' + (deptId ? `?departmentId=${deptId}` : ''));
     const myEntry = leaderboard.find((row) => row.fullName === state.user.fullName);
 
     view.innerHTML = `
       <div class="page-head"><h1>Leaderboard</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      ${isIndividual ? '' : `
       <div class="field" style="max-width:280px; margin-bottom:16px;">
         <label>Department</label>
         <select id="leaderboard-dept">
@@ -1676,26 +1704,28 @@
           ${departments.map((d) => `<option value="${d.id}" ${d.id === deptId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
         </select>
       </div>
+      `}
       ${myEntry ? `<div class="card" style="padding:14px 18px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;"><span>Your rank: <strong class="tabular">#${myEntry.rank}</strong></span><span class="pill pill-accent tabular">${myEntry.points} pts</span></div>` : ''}
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>#</th><th>Student</th><th>Department</th><th>Points</th><th>Streak</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th>${isIndividual ? '' : '<th>Department</th>'}<th>Points</th><th>Streak</th></tr></thead>
           <tbody>
             ${leaderboard.map((row) => `
               <tr ${row.fullName === state.user.fullName ? 'style="background:var(--accent-soft);"' : ''}>
                 <td class="tabular">${row.rank}</td>
                 <td>${esc(row.fullName)}</td>
-                <td>${esc(row.department || '—')}</td>
+                ${isIndividual ? '' : `<td>${esc(row.department || '—')}</td>`}
                 <td class="tabular">${row.points}</td>
                 <td class="tabular">${row.currentStreak}🔥</td>
               </tr>
-            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No points earned yet — be the first!</td></tr>'}
+            `).join('') || `<tr><td colspan="${isIndividual ? 4 : 5}" class="muted" style="padding:16px;">No points earned yet — be the first!</td></tr>`}
           </tbody>
         </table>
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('my-dashboard'));
-    document.getElementById('leaderboard-dept').addEventListener('change', (e) => {
+    const deptSelect = document.getElementById('leaderboard-dept');
+    if (deptSelect) deptSelect.addEventListener('change', (e) => {
       navigate('leaderboard', { departmentId: e.target.value });
     });
   }
@@ -1830,7 +1860,51 @@
     return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
   }
 
+  // Individual (non-school) learners get a Digital ID too -- structured around Learnza
+  // account details (member since, subscription, self-directed courses, e-Library
+  // access) and their own personal/student details, instead of school-only concepts
+  // (department, matric number, hostel, transcript, clearance) that don't apply to them.
+  async function renderIndividualDigitalId() {
+    const [{ courses }, { active, subscription }] = await Promise.all([
+      api('/individual-courses'),
+      api('/billing/status'),
+    ]);
+    const u = state.user;
+    view.innerHTML = `
+      <div class="page-head"><h1>Digital ID</h1></div>
+      <div class="id-card" style="margin-bottom:28px;">
+        <div class="id-top"><span>Learnza</span><span>Independent Learner</span></div>
+        <div class="id-row">
+          <div class="id-avatar">${esc(initials(u.fullName))}</div>
+          <div>
+            <div class="id-value">${esc(u.fullName)}</div>
+            <div class="id-field tabular" style="margin-top:4px;">${esc(u.email)}</div>
+          </div>
+        </div>
+        <div class="id-grid">
+          <div><div class="id-field">Phone</div><div>${esc(u.phone || '—')}</div></div>
+          <div><div class="id-field">Institution type</div><div>${esc(INSTITUTION_TYPE_LABELS[u.institutionType] || '—')}</div></div>
+          <div><div class="id-field">Attended institution</div><div>${esc(u.attendedSchoolName || '—')}</div></div>
+          <div><div class="id-field">Department</div><div>${esc(u.attendedDepartment || '—')}</div></div>
+          <div><div class="id-field">Course of study</div><div>${esc(u.courseOfStudy || '—')}</div></div>
+          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom:12px; font-size:1rem;">Learnza account</h3>
+      <ul class="credential-list" style="margin-bottom:28px;">
+        <li class="clickable" id="cred-courses" style="cursor:pointer;"><span>Self-directed courses</span><span class="pill pill-pass">${courses.length} course${courses.length === 1 ? '' : 's'}</span></li>
+        <li class="clickable" id="cred-subscription" style="cursor:pointer;"><span>Subscription</span><span class="pill ${active ? 'pill-pass' : 'pill-muted'}">${active ? `Active until ${new Date(subscription.expiresAt).toLocaleDateString()}` : 'No active plan'}</span></li>
+        <li class="clickable" id="cred-library" style="cursor:pointer;"><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
+      </ul>
+    `;
+    document.getElementById('cred-courses').addEventListener('click', () => navigate('individual-courses'));
+    document.getElementById('cred-subscription').addEventListener('click', () => navigate('billing'));
+    document.getElementById('cred-library').addEventListener('click', () => navigate('library'));
+  }
+
   async function renderDigitalId() {
+    if (state.user.isIndividual) return renderIndividualDigitalId();
     const [{ courses }, { results }, { results: formalResults }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
       api('/students/me/courses'),
       api('/students/me/results'),
@@ -1962,6 +2036,157 @@
       await api('/students/me/hostel-application', { method: 'POST', body: { roomPreference } });
       toast('Hostel application submitted');
       render();
+    });
+  }
+
+  // ================= SETTINGS (student, lecturer, admin -- shared) =================
+  // Structured the same way PassNow's Settings screens are: uppercase section labels,
+  // each a card of stacked rows -- either a toggle (persisted immediately on change)
+  // or an arrow row that navigates to a sub-screen (Edit Profile / Change Password).
+
+  function settingsToggleRowHtml({ icon, label, sub, key, on }) {
+    return `
+      <div class="settings-item">
+        <div class="settings-item-icon">${icon}</div>
+        <div class="settings-item-text"><div style="font-weight:600;">${esc(label)}</div>${sub ? `<div class="settings-item-sub">${esc(sub)}</div>` : ''}</div>
+        <button class="settings-toggle ${on ? 'on' : ''}" data-toggle-key="${key}"><div class="settings-toggle-knob"></div></button>
+      </div>`;
+  }
+
+  function settingsArrowRowHtml({ icon, label, sub, action }) {
+    return `
+      <div class="settings-item clickable" data-settings-action="${action}">
+        <div class="settings-item-icon">${icon}</div>
+        <div class="settings-item-text"><div style="font-weight:600;">${esc(label)}</div>${sub ? `<div class="settings-item-sub">${esc(sub)}</div>` : ''}</div>
+        <span class="settings-item-arrow">›</span>
+      </div>`;
+  }
+
+  function renderSettings() {
+    const u = state.user;
+    const isAdmin = u.role === 'ADMIN';
+    const currentTheme = localStorage.getItem('vp_theme') || 'system';
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Settings</h1></div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">Appearance</div>
+        <div class="card">
+          ${settingsToggleRowHtml({ icon: '🌙', label: 'Dark Mode', sub: 'Easier on the eyes at night', key: 'darkMode', on: currentTheme === 'dark' })}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">Notifications</div>
+        <div class="card">
+          ${settingsToggleRowHtml({ icon: '🔔', label: 'Notifications', sub: u.notificationsMuted ? 'Muted -- you won\'t get new alerts' : 'You\'ll get new alerts as they happen', key: 'notificationsMuted', on: !u.notificationsMuted })}
+        </div>
+      </div>
+
+      ${isAdmin ? `
+      <div class="settings-section">
+        <div class="settings-section-label">School</div>
+        <div class="card">
+          ${settingsArrowRowHtml({ icon: '🏫', label: 'Departments & Courses', action: 'nav:admin-academics' })}
+          ${settingsArrowRowHtml({ icon: '🏠', label: 'Hostels', action: 'nav:admin-hostel-allocations' })}
+        </div>
+      </div>
+      ` : ''}
+
+      <div class="settings-section">
+        <div class="settings-section-label">Account</div>
+        <div class="card">
+          ${settingsArrowRowHtml({ icon: '👤', label: 'Edit Profile', sub: 'Name and phone number', action: 'nav:settings-profile' })}
+          ${settingsArrowRowHtml({ icon: '🔒', label: 'Change Password', action: 'nav:settings-password' })}
+          ${settingsArrowRowHtml({ icon: '🚪', label: 'Log Out', action: 'logout' })}
+        </div>
+      </div>
+    `;
+
+    view.querySelectorAll('[data-toggle-key]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const key = btn.dataset.toggleKey;
+        if (key === 'darkMode') {
+          const next = currentTheme === 'dark' ? 'light' : 'dark';
+          localStorage.setItem('vp_theme', next);
+          document.documentElement.setAttribute('data-theme', next);
+          render();
+          return;
+        }
+        if (key === 'notificationsMuted') {
+          const nextMuted = !u.notificationsMuted;
+          try {
+            const { user } = await api('/auth/me/notifications', { method: 'PATCH', body: { muted: nextMuted } });
+            state.user = user;
+            localStorage.setItem('vp_user', JSON.stringify(user));
+            render();
+          } catch (err) { toast(err.message); }
+        }
+      });
+    });
+    view.querySelectorAll('[data-settings-action]').forEach((row) => {
+      row.addEventListener('click', () => {
+        const action = row.dataset.settingsAction;
+        if (action === 'logout') return document.getElementById('signout-btn').click();
+        if (action.startsWith('nav:')) navigate(action.slice(4));
+      });
+    });
+  }
+
+  function renderSettingsProfile() {
+    const u = state.user;
+    view.innerHTML = `
+      <div class="page-head"><h1>Edit Profile</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to Settings</button></div>
+      <div class="card" style="padding:24px; max-width:480px;">
+        <form id="profile-form">
+          <div class="field"><label>Full name</label><input type="text" id="profile-name" value="${esc(u.fullName)}" required></div>
+          <div class="field"><label>Phone number</label><input type="tel" id="profile-phone" value="${esc(u.phone || '')}"></div>
+          <button class="btn btn-primary" type="submit">Save changes</button>
+        </form>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('settings'));
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const { user } = await api('/auth/me', {
+          method: 'PATCH',
+          body: { fullName: document.getElementById('profile-name').value, phone: document.getElementById('profile-phone').value },
+        });
+        state.user = user;
+        localStorage.setItem('vp_user', JSON.stringify(user));
+        toast('Profile updated');
+        navigate('settings');
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  function renderSettingsPassword() {
+    view.innerHTML = `
+      <div class="page-head"><h1>Change Password</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to Settings</button></div>
+      <div class="card" style="padding:24px; max-width:480px;">
+        <form id="password-form">
+          <div class="field"><label>Current password</label><input type="password" id="pw-current" required></div>
+          <div class="field"><label>New password</label><input type="password" id="pw-new" required minlength="6"></div>
+          <div class="field"><label>Confirm new password</label><input type="password" id="pw-confirm" required minlength="6"></div>
+          <button class="btn btn-primary" type="submit">Update password</button>
+        </form>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('settings'));
+    document.getElementById('password-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newPassword = document.getElementById('pw-new').value;
+      if (newPassword !== document.getElementById('pw-confirm').value) return toast('New passwords do not match.');
+      try {
+        await api('/auth/change-password', {
+          method: 'POST',
+          body: { currentPassword: document.getElementById('pw-current').value, newPassword },
+        });
+        toast('Password updated');
+        navigate('settings');
+      } catch (err) { toast(err.message); }
     });
   }
 
@@ -2273,16 +2498,23 @@
   // "Past Questions" entry (no more per-course-only access).
   async function renderPastQuestionsHub() {
     const { courses } = await api('/students/me/courses');
-    const rows = await Promise.all(courses.map(async (c) => {
-      const { assessments } = await api(`/courses/${c.id}/assessments`);
-      return { course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') };
-    }));
+    const { courses: individualCourses } = await api('/individual-courses');
+    const rows = await Promise.all([
+      ...courses.map(async (c) => {
+        const { assessments } = await api(`/courses/${c.id}/assessments`);
+        return { course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') };
+      }),
+      ...individualCourses.map(async (c) => {
+        const { assessments } = await api(`/individual-courses/${c.id}/assessments`);
+        return { course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') };
+      }),
+    ]);
     view.innerHTML = `
       <div class="page-head"><h1>Past Questions</h1></div>
       <p class="muted" style="margin-bottom:16px;">Practice as many times as you like — these don't affect your CBT scores.</p>
       ${rows.map(({ course, sets }) => `
         <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
           <div class="card">
             ${sets.map((a) => `
               <div class="list-row">
@@ -2457,7 +2689,7 @@
         </div>
         <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
       </div>
-      ${opts.courseId ? `<button class="btn btn-accent btn-sm" data-teach-lab="${d.id}" data-teach-course="${opts.courseId}" style="margin-top:12px;">▶ Start guided practical</button>` : ''}
+      ${opts.courseId ? `<button class="btn btn-accent btn-sm" data-teach-lab="${d.id}" data-teach-course="${opts.courseId}" data-teach-individual="${opts.isIndividual ? 'true' : 'false'}" style="margin-top:12px;">▶ Start guided practical</button>` : ''}
       <ol style="margin:14px 0 0; padding-left: 20px; display:flex; flex-direction:column; gap:8px;">
         ${steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
       </ol>
@@ -2526,9 +2758,9 @@
       if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
     }
     speechCtrl = null;
-    const { courseId, demoId } = state.view;
+    const { courseId, demoId, isIndividual } = state.view;
     const [{ demonstrations }, { avatarConfigured, aiCredits }] = await Promise.all([
-      api(`/courses/${courseId}/lab`),
+      api(isIndividual ? `/individual-courses/${courseId}/lab` : `/courses/${courseId}/lab`),
       api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null })),
     ]);
     const demo = demonstrations.find((d) => d.id === demoId);
@@ -2599,7 +2831,10 @@
 
     document.getElementById('back-btn').addEventListener('click', () => {
       stopped = true;
-      navigate('lab', { courseId });
+      // renderLab (single course view) only understands school Courses -- individual
+      // learners always came from the cross-course Lab Hub, so send them back there.
+      if (isIndividual) navigate('lab-hub');
+      else navigate('lab', { courseId });
     });
 
     function renderStep(idx) {
@@ -2790,23 +3025,50 @@
   // Digital Lab only being reachable from inside a specific course.
   async function renderLabHub() {
     const { courses } = await api('/students/me/courses');
-    const rows = await Promise.all(courses.map(async (c) => {
-      const { demonstrations } = await api(`/courses/${c.id}/lab`);
-      return { course: c, demonstrations };
-    }));
+    const { courses: individualCourses } = await api('/individual-courses');
+    const rows = await Promise.all([
+      ...courses.map(async (c) => ({ course: c, isIndividual: false, demonstrations: (await api(`/courses/${c.id}/lab`)).demonstrations })),
+      ...individualCourses.map(async (c) => ({ course: c, isIndividual: true, demonstrations: (await api(`/individual-courses/${c.id}/lab`)).demonstrations })),
+    ]);
     view.innerHTML = `
       <div class="page-head"><h1>Digital Lab</h1></div>
       <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI teacher and a smart board — pick a course to see what's available.</p>
-      ${rows.map(({ course, demonstrations }) => `
+      ${rows.map(({ course, isIndividual, demonstrations }) => `
         <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
-          ${demonstrations.map((d) => demoCardHtml(d, { courseId: course.id })).join('') || '<p class="muted" style="padding:8px 0;">No practicals published yet.</p>'}
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
+          ${isIndividual ? `
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+              <input type="text" class="gen-demo-topic" data-gen-course="${course.id}" placeholder="e.g. Titration of acid and base" style="flex:1; min-width:220px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+              <button class="btn btn-accent btn-sm request-demo-btn" data-gen-course="${course.id}">Generate practical</button>
+            </div>
+          ` : ''}
+          ${demonstrations.map((d) => demoCardHtml(d, { courseId: course.id, isIndividual })).join('') || '<p class="muted" style="padding:8px 0;">No practicals published yet.</p>'}
         </div>
-      `).join('') || '<p class="muted">Enroll in a course first to see its practicals.</p>'}
+      `).join('') || '<p class="muted">Enroll in (or create) a course first to see its practicals.</p>'}
     `;
     wireLabQuestionPanels(view);
     view.querySelectorAll('[data-teach-lab]').forEach((btn) => {
-      btn.addEventListener('click', () => navigate('lab-teach', { courseId: btn.dataset.teachCourse, demoId: btn.dataset.teachLab }));
+      btn.addEventListener('click', () => navigate('lab-teach', { courseId: btn.dataset.teachCourse, demoId: btn.dataset.teachLab, isIndividual: btn.dataset.teachIndividual === 'true' }));
+    });
+    view.querySelectorAll('.request-demo-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const courseId = btn.dataset.genCourse;
+        const input = view.querySelector(`.gen-demo-topic[data-gen-course="${courseId}"]`);
+        const topic = input.value.trim();
+        if (!topic) return toast('Type a topic first.');
+        btn.disabled = true;
+        btn.textContent = 'Generating…';
+        try {
+          await api(`/individual-courses/${courseId}/lab/generate`, { method: 'POST', body: { topic } });
+          toast('Practical ready');
+          render();
+        } catch (err) {
+          if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
+          toast(aiErrorMessage(err));
+          btn.disabled = false;
+          btn.textContent = 'Generate practical';
+        }
+      });
     });
   }
 
@@ -2979,7 +3241,25 @@
   // enroll" screen, not limited to the courses the viewer happens to be enrolled in
   // or teaching. Textbooks (with real authors/publishers) are the primary resource
   // type; past questions, journals and handouts are still supported as secondary types.
+  // Individual (non-school) learners have no department/course hierarchy to browse by
+  // -- they see a flat list of resources Learnza itself stocks directly (uploaded with
+  // no course attached), per "we will upload textbooks ourselves, not through school".
+  async function renderIndividualLibrary() {
+    const { items } = await api('/library?global=true');
+    view.innerHTML = `
+      <div class="page-head"><h1>e-Library</h1></div>
+      <p class="muted" style="margin-bottom:20px;">Textbooks and resources available to every Learnza learner.</p>
+      <div class="card">
+        ${items.map(libraryItemCardHtml).join('') || '<p class="muted" style="padding:16px;">No textbooks available yet — check back soon.</p>'}
+      </div>
+    `;
+    view.querySelectorAll('[data-open-pdf]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('pdf-viewer', { url: btn.dataset.openPdf, title: btn.dataset.pdfTitle, backTo: 'library' }));
+    });
+  }
+
   async function renderLibrary(isLecturer) {
+    if (!isLecturer && state.user.isIndividual) return renderIndividualLibrary();
     const [{ departments }, { items: allItems }, lecturerCourses] = await Promise.all([
       api(`/departments?schoolId=${state.user.schoolId}`),
       api(`/library?schoolId=${state.user.schoolId}`),
@@ -3061,18 +3341,19 @@
 
   async function renderGroups() {
     const { courses } = await api('/students/me/courses');
-    const groupsByCourse = await Promise.all(courses.map(async (c) => {
-      const { groups } = await api(`/courses/${c.id}/groups`);
-      return { course: c, groups };
-    }));
+    const { courses: individualCourses } = await api('/individual-courses');
+    const groupsByCourse = await Promise.all([
+      ...courses.map(async (c) => ({ course: c, isIndividual: false, groups: (await api(`/courses/${c.id}/groups`)).groups })),
+      ...individualCourses.map(async (c) => ({ course: c, isIndividual: true, groups: (await api(`/individual-courses/${c.id}/groups`)).groups })),
+    ]);
     view.innerHTML = `
       <div class="page-head"><h1>Study Groups</h1></div>
       <p class="muted" style="margin-bottom:20px;">Peer discussion spaces for your courses — no scores, no leaderboard.</p>
-      ${groupsByCourse.map(({ course, groups }) => `
+      ${groupsByCourse.map(({ course, isIndividual, groups }) => `
         <div style="margin-bottom:22px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <div class="muted" style="font-weight:700;">${esc(course.code)} — ${esc(course.title)}</div>
-            <button class="btn btn-ghost btn-sm" data-new-group="${course.id}">+ New group</button>
+            <div class="muted" style="font-weight:700;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
+            <button class="btn btn-ghost btn-sm" data-new-group="${course.id}" data-new-group-individual="${isIndividual ? 'true' : 'false'}">+ New group</button>
           </div>
           <div class="card">
             ${groups.map((g) => `
@@ -3086,13 +3367,14 @@
             `).join('') || '<p class="muted" style="padding:16px;">No groups yet — start one.</p>'}
           </div>
         </div>
-      `).join('') || '<p class="muted">Enroll in a course first to join its study group.</p>'}
+      `).join('') || '<p class="muted">Enroll in (or create) a course first to join its study group.</p>'}
     `;
     view.querySelectorAll('[data-new-group]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const name = prompt('Name your study group:');
         if (!name) return;
-        await api(`/courses/${btn.dataset.newGroup}/groups`, { method: 'POST', body: { name } });
+        const base = btn.dataset.newGroupIndividual === 'true' ? '/individual-courses' : '/courses';
+        await api(`${base}/${btn.dataset.newGroup}/groups`, { method: 'POST', body: { name } });
         render();
       });
     });
@@ -3226,10 +3508,14 @@
   async function renderAssessments(isLecturer, opts = {}) {
     const { heading, typeFilter, defaultType } = opts;
     const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
-    const rows = await Promise.all(courses.map(async (c) => {
-      const { assessments } = await api(`/courses/${c.id}/assessments`);
-      return { course: c, assessments };
-    }));
+    // Individual (non-school) learners have IndividualCourse rows instead of enrolled
+    // Courses -- their app-generated assessments live under /individual-courses/:id
+    // instead of /courses/:id, but otherwise render identically here.
+    const individualCourses = isLecturer ? [] : (await api('/individual-courses')).courses;
+    const rows = await Promise.all([
+      ...courses.map(async (c) => ({ course: c, assessments: (await api(`/courses/${c.id}/assessments`)).assessments })),
+      ...individualCourses.map(async (c) => ({ course: c, assessments: (await api(`/individual-courses/${c.id}/assessments`)).assessments })),
+    ]);
     const defaultExclude = ['PAST_QUESTION', 'SEMESTER_EXAM'];
     view.innerHTML = `
       <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Assessments' : 'CBT Mock Exam Practice'))}</h1></div>
@@ -3238,7 +3524,7 @@
         const assessments = allAssessments.filter((a) => typeFilter ? typeFilter.includes(a.type) : (isLecturer || !defaultExclude.includes(a.type)));
         return `
         <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
           <div class="card">
             ${assessments.map((a) => `
               <div class="list-row">
@@ -3943,7 +4229,7 @@
       <p class="muted" style="margin-bottom:18px;">Read-only view of every semester exam set by lecturers across the school.</p>
       ${rows.map(({ course, exams }) => `
         <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
           <div class="card">
             ${exams.map((a) => `
               <div class="list-row">

@@ -8,11 +8,15 @@ const upload = memoryUpload(25);
 
 // Browsable across a whole school (every department/course, not just the ones the
 // caller is enrolled in or teaches) -- the e-Library is meant to be a shared campus
-// catalog, matching how the department/course browse screen already works.
+// catalog, matching how the department/course browse screen already works. Individual
+// (non-school) learners have no school/department/course to browse by at all -- they
+// see only resources uploaded with no course attached (?global=true), a catalog
+// Learnza itself stocks directly rather than through any one school.
 router.get('/library', requireAuth, async (req, res) => {
-  const { courseId, departmentId, schoolId } = req.query;
+  const { courseId, departmentId, schoolId, global } = req.query;
   let where;
-  if (courseId) where = { courseId };
+  if (global === 'true') where = { courseId: null };
+  else if (courseId) where = { courseId };
   else if (departmentId) where = { course: { departmentId } };
   else if (schoolId) where = { course: { department: { schoolId } } };
   const items = await prisma.libraryResource.findMany({

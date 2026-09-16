@@ -9,6 +9,7 @@ const quizGen = require('./quizGen.service');
 // without needing a separate cron/worker process.
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+const MONTH_MS = 30 * DAY_MS;
 const SEMESTER_MS = 105 * DAY_MS; // ~15 weeks, one Nigerian academic semester
 
 function startOfToday() {
@@ -63,6 +64,38 @@ async function generateOne(course, studentId, type) {
           },
         },
       });
+    } else if (type === 'Mock') {
+      const draft = await quizGen.generateQuiz({ courseTitle: course.title, topic: course.title });
+      await prisma.assessment.create({
+        data: {
+          individualCourseId: course.id,
+          authorId: studentId,
+          title: draft.title || `${course.title} — Mock Exam`,
+          type: 'Mock',
+          durationMin: 15,
+          questions: {
+            create: (draft.questions || []).map((q, i) => ({
+              questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, order: i,
+            })),
+          },
+        },
+      });
+    } else if (type === 'PAST_QUESTION') {
+      const draft = await quizGen.generateQuiz({ courseTitle: course.title, topic: course.title });
+      await prisma.assessment.create({
+        data: {
+          individualCourseId: course.id,
+          authorId: studentId,
+          title: draft.title || `${course.title} — Past Questions`,
+          type: 'PAST_QUESTION',
+          durationMin: 20,
+          questions: {
+            create: (draft.questions || []).map((q, i) => ({
+              questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, order: i,
+            })),
+          },
+        },
+      });
     } else if (type === 'SEMESTER_EXAM') {
       const draft = await quizGen.generateSemesterExam({ courseTitle: course.title, topic: course.title });
       await prisma.assessment.create({
@@ -88,15 +121,19 @@ async function generateOne(course, studentId, type) {
 }
 
 async function ensureAutoContentForCourse(course, studentId) {
-  const [lastAssignment, lastTest, lastExam] = await Promise.all([
+  const [lastAssignment, lastTest, lastMock, lastPastQuestion, lastExam] = await Promise.all([
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'ASSIGNMENT' }, orderBy: { createdAt: 'desc' } }),
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'CA' }, orderBy: { createdAt: 'desc' } }),
+    prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'Mock' }, orderBy: { createdAt: 'desc' } }),
+    prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'PAST_QUESTION' }, orderBy: { createdAt: 'desc' } }),
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'SEMESTER_EXAM' }, orderBy: { createdAt: 'desc' } }),
   ]);
 
   const tasks = [];
   if (!lastAssignment || lastAssignment.createdAt < startOfToday()) tasks.push(generateOne(course, studentId, 'ASSIGNMENT'));
   if (!lastTest || Date.now() - lastTest.createdAt.getTime() > WEEK_MS) tasks.push(generateOne(course, studentId, 'CA'));
+  if (!lastMock || Date.now() - lastMock.createdAt.getTime() > WEEK_MS) tasks.push(generateOne(course, studentId, 'Mock'));
+  if (!lastPastQuestion || Date.now() - lastPastQuestion.createdAt.getTime() > MONTH_MS) tasks.push(generateOne(course, studentId, 'PAST_QUESTION'));
   if (!lastExam || Date.now() - lastExam.createdAt.getTime() > SEMESTER_MS) tasks.push(generateOne(course, studentId, 'SEMESTER_EXAM'));
   await Promise.allSettled(tasks);
 }

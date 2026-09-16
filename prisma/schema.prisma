@@ -110,6 +110,7 @@ model User {
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
   yearOfStudy    Int?      // school students only, e.g. 1, 2, 3 -- set by admin at registration
+  notificationsMuted Boolean @default(false) // Settings: "Mute notifications" -- suppresses new in-app notifications, doesn't delete existing ones
   createdAt      DateTime  @default(now())
 
   disciplinaryRecords DisciplinaryRecord[] @relation("DisciplinaryStudent")
@@ -289,10 +290,15 @@ model LibraryResource {
   createdAt    DateTime   @default(now())
 }
 
+// courseId/individualCourseId are mutually exclusive, mirroring Assessment's split --
+// an individual learner's own self-directed course can have its own study group too
+// (e.g. shared with a study partner they invite by email), not just school courses.
 model StudyGroup {
   id          String   @id @default(cuid())
-  course      Course   @relation(fields: [courseId], references: [id])
-  courseId    String
+  course      Course?  @relation(fields: [courseId], references: [id])
+  courseId    String?
+  individualCourse   IndividualCourse? @relation(fields: [individualCourseId], references: [id])
+  individualCourseId String?
   name        String
   creator     User     @relation("GroupCreator", fields: [creatorId], references: [id])
   creatorId   String
@@ -434,10 +440,15 @@ model LiveClass {
 // Student-requested ones are AI-generated on demand and held back behind a human
 // admin approval queue before any student can see them -- same safety pattern PassNow
 // uses, since an unreviewed AI-written "practical" could describe an unsafe procedure.
+// courseId/individualCourseId are mutually exclusive, mirroring Assessment's split --
+// individual learners get AI-generated Digital Lab practicals for their own
+// self-directed course too, not just school courses.
 model LabDemonstration {
   id          String   @id @default(cuid())
-  course      Course   @relation(fields: [courseId], references: [id])
-  courseId    String
+  course      Course?  @relation(fields: [courseId], references: [id])
+  courseId    String?
+  individualCourse   IndividualCourse? @relation(fields: [individualCourseId], references: [id])
+  individualCourseId String?
   title       String
   description String
   stepsJson   String   // JSON-encoded [{title, instruction, expectedResult}]
@@ -569,8 +580,10 @@ model HostelApplication {
 }
 
 // A self-directed course an individual (non-school) learner creates for themselves --
-// the AI Teacher teaches it, but there is no lecturer, no department, no enrollment
-// catalog. Individual learners never see school/lecturer features at all.
+// the AI Teacher teaches it, and there is no lecturer, no department, no enrollment
+// catalog, no real classmates -- but otherwise the same feature set a school student
+// gets (Digital Lab, Study Groups, tests/exams) is available scoped to this course
+// instead of a school Course, per individualCourseId on each of those models.
 model IndividualCourse {
   id          String   @id @default(cuid())
   student     User     @relation(fields: [studentId], references: [id])
@@ -580,6 +593,8 @@ model IndividualCourse {
   createdAt   DateTime @default(now())
   aiTeacherSessions AiTeacherSession[]
   assessments Assessment[]
+  labDemonstrations LabDemonstration[]
+  studyGroups StudyGroup[]
 }
 
 // Per-class daily attendance, marked by the lecturer teaching that course (distinct

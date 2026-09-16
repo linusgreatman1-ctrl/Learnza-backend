@@ -71,8 +71,11 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
     const icIds = myIndividualCourses.map((c) => c.id);
     if (icIds.length) {
       const [icAssessments, icSubs] = await Promise.all([
+        // PAST_QUESTION sets are unlimited-retry practice with no persisted attempt (see
+        // /assessments/:id/practice-submit) -- they belong on the Past Questions hub,
+        // not this list of things with a real submission state to show.
         prisma.assessment.findMany({
-          where: { individualCourseId: { in: icIds } },
+          where: { individualCourseId: { in: icIds }, type: { not: 'PAST_QUESTION' } },
           include: { _count: { select: { questions: true } }, individualCourse: { select: { title: true } } },
           orderBy: { createdAt: 'desc' },
           take: 30,

@@ -2,6 +2,8 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const autoGen = require('../services/individualAutoGen.service');
+const labDemo = require('../services/labDemo.service');
+const { requireActiveSubscription } = require('../subscription');
 
 const router = express.Router();
 
@@ -53,6 +55,76 @@ router.get('/individual-courses/:id/assessments', requireAuth, requireRole('STUD
     orderBy: { createdAt: 'desc' },
   });
   res.json({ assessments });
+});
+
+// Digital Lab for a self-directed course -- same AI-generated-practical engine as a
+// school course's lab, just scoped to individualCourseId instead of courseId. No
+// curated/lecturer-authored practicals here (there's no lecturer), only AI-generated
+// ones, gated by the same subscription check.
+function shapeDemo(demo) {
+  return { ...demo, steps: JSON.parse(demo.stepsJson) };
+}
+
+router.get('/individual-courses/:id/lab', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const demos = await prisma.labDemonstration.findMany({
+    where: { individualCourseId: course.id, status: 'APPROVED' },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ demonstrations: demos.map(shapeDemo) });
+});
+
+router.post('/individual-courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+  const { topic } = req.body;
+  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Describe the practical topic first.' });
+  const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+
+  try {
+    const draft = await labDemo.generateDemonstration({ courseTitle: course.title, topic });
+    const demo = await prisma.labDemonstration.create({
+      data: {
+        individualCourseId: course.id,
+        title: draft.title,
+        description: draft.description,
+        stepsJson: JSON.stringify(draft.steps),
+        source: 'AI_GENERATED',
+        status: 'APPROVED',
+        authorId: req.user.id,
+      },
+    });
+    res.json({ demonstration: shapeDemo(demo) });
+  } catch (err) {
+    if (err.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: err.message, code: err.code });
+    res.status(502).json({ error: 'Could not generate that demonstration. Please try again.' });
+  }
+});
+
+// Study Groups for a self-directed course -- the same group/chat engine a school
+// course's Study Groups uses, scoped to individualCourseId. An individual learner has
+// no automatic classmates, but can still share the group with a study partner (joining
+// a group by id has never required course enrollment -- same as school courses today).
+router.get('/individual-courses/:id/groups', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const groups = await prisma.studyGroup.findMany({
+    where: { individualCourseId: course.id },
+    include: { _count: { select: { members: true } } },
+  });
+  res.json({ groups });
+});
+
+router.post('/individual-courses/:id/groups', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Group name is required' });
+  const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const group = await prisma.studyGroup.create({
+    data: { individualCourseId: course.id, name, creatorId: req.user.id },
+  });
+  await prisma.groupMembership.create({ data: { groupId: group.id, studentId: req.user.id } });
+  res.json({ group });
 });
 
 module.exports = router;

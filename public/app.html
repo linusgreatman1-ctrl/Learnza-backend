@@ -167,6 +167,22 @@
     .lesson-stage .smart-board { flex: 1; }
   }
 
+  /* Settings screen -- grouped sections of toggle/arrow rows, matching PassNow's
+     settings layout (uppercase section labels + a card of stacked rows). */
+  .settings-section { margin-bottom: 24px; }
+  .settings-section-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 10px 4px; }
+  .settings-item { display: flex; align-items: center; gap: 13px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item.clickable { cursor: pointer; }
+  .settings-item-icon { font-size: 1.25rem; width: 28px; text-align: center; flex-shrink: 0; }
+  .settings-item-text { flex: 1; min-width: 0; }
+  .settings-item-sub { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+  .settings-toggle { width: 44px; height: 25px; border-radius: 999px; background: var(--line); position: relative; flex-shrink: 0; cursor: pointer; transition: background 0.15s; border: none; padding: 0; }
+  .settings-toggle.on { background: var(--accent); }
+  .settings-toggle-knob { position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; transition: transform 0.15s; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .settings-toggle.on .settings-toggle-knob { transform: translateX(19px); }
+  .settings-item-arrow { color: var(--ink-soft); flex-shrink: 0; }
+
   /* Collapsible "Got a question" panel -- closed by default, matching PassNow's
      placement below the lesson content rather than an always-visible input. */
   .got-question-toggle { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, #1A1A2E, #0F3460); color: #fff; cursor: pointer; margin-top: 16px; }
