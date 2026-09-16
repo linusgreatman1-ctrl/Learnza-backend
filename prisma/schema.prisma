@@ -18,6 +18,7 @@ model School {
   licenseExpiresAt DateTime?
   departments      Department[]
   users            User[]
+  affiliatedIndividuals User[] @relation("IndividualAffiliatedSchool")
   applications     Application[]
   semesters        Semester[]
   hostels          Hostel[]
@@ -103,6 +104,14 @@ model User {
   attendedSchoolName String? // individual learners only: their real institution (not a Learnza School row)
   attendedDepartment String? // individual learners only
   courseOfStudy      String? // individual learners only: their real degree programme
+  institutionType    String? // individual learners only: UNIVERSITY | POLYTECHNIC | COLLEGE_OF_EDUCATION | OTHER
+  // Optional: when an individual learner's real institution IS a Learnza-partner
+  // school, picking it here scopes their e-Library/department browsing to that
+  // school's real content -- separate from `schoolId`/`departmentId` above, which
+  // mean "is a real enrolled member of this school" and drive admin/staff/leaderboard
+  // queries a browsing-only individual learner must never appear in.
+  affiliatedSchool   School?   @relation("IndividualAffiliatedSchool", fields: [affiliatedSchoolId], references: [id])
+  affiliatedSchoolId String?
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?

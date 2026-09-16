@@ -15,14 +15,23 @@ router.get('/courses/:id/live', requireAuth, async (req, res) => {
 
 router.post('/courses/:id/live/start', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const { title } = req.body;
+  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
   await prisma.liveClass.updateMany({ where: { courseId: req.params.id, status: 'ACTIVE' }, data: { status: 'ENDED', endedAt: new Date() } });
   const liveClass = await prisma.liveClass.create({
     data: { courseId: req.params.id, hostId: req.user.id, title: title || 'Live class' },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'START_LIVE_CLASS', liveClass.title);
 
+  // Deep-links straight into the live session (not just the course page) so tapping
+  // the notification really is "tap to join", not "tap, then hunt for the join button".
+  const joinLink = `live-class?courseId=${req.params.id}&liveClassId=${liveClass.id}&title=${encodeURIComponent(liveClass.title)}`;
   const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
-  await notifyMany(students.map((s) => s.studentId), 'Live class started', liveClass.title, 'course-detail');
+  await notifyMany(
+    students.map((s) => s.studentId),
+    `${req.user.fullName} is teaching live — tap to join`,
+    `${course ? course.code + ' — ' : ''}${liveClass.title}`,
+    joinLink
+  );
 
   res.json({ liveClass });
 });

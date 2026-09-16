@@ -33,6 +33,10 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // MCQ option letters -- always A/B/C/D (E/F as a fallback for any question with
+  // more than 4 options), matching PassNow's exam-taking convention.
+  const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
   // Reflects the real backend gate (src/subscription.js's REQUIRE_SUBSCRIPTION toggle)
   // instead of a hardcoded "Subscription feature" label that would keep implying a
   // paywall while testing has it switched off -- flips itself back once launched.
@@ -152,9 +156,11 @@
         method: 'POST',
         body: {
           fullName: document.getElementById('reg-name').value.trim(),
+          institutionType: document.getElementById('reg-institution-type').value,
           attendedSchoolName: document.getElementById('reg-school').value.trim(),
           attendedDepartment: document.getElementById('reg-department').value.trim(),
           courseOfStudy: document.getElementById('reg-course').value.trim(),
+          affiliatedSchoolId: document.getElementById('reg-affiliated-school').value || null,
           email: document.getElementById('reg-email').value.trim(),
           phone: document.getElementById('reg-phone').value.trim(),
           password: document.getElementById('reg-password').value,
@@ -165,6 +171,13 @@
       authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
     }
   });
+
+  // Public endpoint -- lets an unauthenticated individual signup pick a real
+  // Learnza-partner school to affiliate their browsing (e-Library, etc.) with.
+  api('/schools').then(({ schools }) => {
+    const select = document.getElementById('reg-affiliated-school');
+    schools.forEach((s) => select.insertAdjacentHTML('beforeend', `<option value="${s.id}">${esc(s.name)}${s.location ? `, ${esc(s.location)}` : ''}</option>`));
+  }).catch(() => { /* affiliation is optional -- a failed fetch just leaves "None" */ });
 
   document.getElementById('admin-register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -212,10 +225,11 @@
   // block the rest of boot, since navigate() will surface the real auth error anyway.
   async function loadHeaderContext() {
     try {
-      const { school, department } = await api('/auth/me');
+      const { school, department, affiliatedSchool } = await api('/auth/me');
       state.school = school;
       state.department = department;
-    } catch { state.school = null; state.department = null; }
+      state.affiliatedSchool = affiliatedSchool;
+    } catch { state.school = null; state.department = null; state.affiliatedSchool = null; }
     if (state.school) {
       try { state.semesters = (await api('/semesters')).semesters; } catch { state.semesters = []; }
     } else {
@@ -223,10 +237,28 @@
     }
   }
 
+  // Notification.link is a plain string field with no structured params support, so a
+  // deep link like "join a specific live class" is encoded as "screen?key=value&...";
+  // this decodes it back into navigate()'s (screen, params) call. A bare screen name
+  // (no "?") still works exactly as before.
+  function parseNotificationLink(link) {
+    const [screen, query] = link.split('?');
+    if (!query) return [screen, {}];
+    const params = {};
+    for (const [k, v] of new URLSearchParams(query)) params[k] = v;
+    return [screen, params];
+  }
+
   // Cosmetic only -- semester names are free text ("First Semester 2025/2026"), but
   // every screen that displays one should read "1st/2nd Semester" consistently.
   function semesterLabel(name) {
     return String(name || '').replace(/^First\b/i, '1st').replace(/^Second\b/i, '2nd').replace(/^Third\b/i, '3rd');
+  }
+
+  // User.yearOfStudy is stored as a plain year number (1, 2, 3...) but always
+  // displayed in the Nigerian tertiary "level" format -- 100L, 200L, 300L.
+  function levelLabel(yearOfStudy) {
+    return yearOfStudy ? `${yearOfStudy * 100}L` : null;
   }
 
   function defaultScreenFor(role) {
@@ -290,17 +322,20 @@
   // Builds the "name / school / department" identity lines shown as a profile card
   // on the homepage (My Dashboard, or the admin/lecturer landing screen) instead of
   // the sidebar -- the sidebar stays nav-only.
+  const INSTITUTION_TYPE_LABELS = { UNIVERSITY: 'University', POLYTECHNIC: 'Polytechnic', COLLEGE_OF_EDUCATION: 'College of Education', OTHER: 'Other institution' };
+
   function profileLines() {
     const u = state.user;
     const roleLabel = u.isIndividual ? 'Independent learner' : u.role.charAt(0) + u.role.slice(1).toLowerCase();
     const lines = [`${esc(u.fullName)} · ${esc(roleLabel)}`];
     if (u.isIndividual) {
-      const bits = [u.attendedSchoolName, u.courseOfStudy].filter(Boolean).map(esc);
+      const bits = [u.attendedSchoolName, u.courseOfStudy, INSTITUTION_TYPE_LABELS[u.institutionType]].filter(Boolean).map(esc);
       if (bits.length) lines.push(bits.join(' · '));
+      if (state.affiliatedSchool) lines.push(`${esc(state.affiliatedSchool.name)} (affiliated on Learnza)`);
     } else if (state.school) {
       const schoolLine = [state.school.name, state.school.location].filter(Boolean).map(esc).join(', ');
       lines.push(schoolLine);
-      const deptBits = [state.department && state.department.name, u.yearOfStudy ? `Year ${u.yearOfStudy}` : null].filter(Boolean).map(esc);
+      const deptBits = [state.department && state.department.name, levelLabel(u.yearOfStudy)].filter(Boolean).map(esc);
       if (deptBits.length) lines.push(deptBits.join(' · '));
     }
     return lines;
@@ -343,7 +378,14 @@
 
     const nav = document.getElementById('nav-items');
     const navKey = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
-    nav.innerHTML = NAV[navKey]
+    let navItems = NAV[navKey];
+    // An individual learner who's affiliated their browsing with a real Learnza
+    // school (see /register-individual's affiliatedSchoolId) gets that school's
+    // e-Library too -- it stays off the nav entirely for anyone who hasn't.
+    if (navKey === 'STUDENT_INDIVIDUAL' && state.user.affiliatedSchoolId) {
+      navItems = [...navItems, ['library', 'e-Library']];
+    }
+    nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
     nav.querySelectorAll('.nav-item').forEach((btn) => {
@@ -405,7 +447,7 @@
         item.addEventListener('click', async () => {
           await api(`/notifications/${item.dataset.id}/read`, { method: 'POST' });
           toggleNotifPanel(false);
-          if (item.dataset.link) navigate(item.dataset.link);
+          if (item.dataset.link) navigate(...parseNotificationLink(item.dataset.link));
           refreshNotifications();
         });
       });
@@ -472,6 +514,7 @@
         case 'course-detail': return renderCourseDetail();
         case 'lesson-player': return renderLessonPlayer();
         case 'library': return renderLibrary(false);
+        case 'pdf-viewer': return renderPdfViewer();
         case 'groups': return renderGroups();
         case 'group-chat': return renderGroupChat();
         case 'my-dashboard': return renderMyDashboard();
@@ -1622,7 +1665,7 @@
         </div>
         <div class="id-grid">
           <div><div class="id-field">Department</div><div>${state.department ? esc(state.department.name) : '—'}</div></div>
-          <div><div class="id-field">Year of study</div><div>${u.yearOfStudy ? `Year ${u.yearOfStudy}` : '—'}</div></div>
+          <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
           <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
           <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
         </div>
@@ -1673,7 +1716,7 @@
           <thead><tr><th>Course</th><th>Assessment</th><th>Type</th><th>Score</th><th>Date</th></tr></thead>
           <tbody>
             ${results.map((r) => `
-              <tr>
+              <tr class="clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
                 <td class="tabular">${esc(r.courseCode || r.courseTitle)}</td>
                 <td>${esc(r.assessmentTitle)}</td>
                 <td>${esc(r.assessmentType)}</td>
@@ -1706,6 +1749,9 @@
     `;
 
     document.getElementById('cred-courses').addEventListener('click', () => navigate(state.user.isIndividual ? 'individual-courses' : 'courses'));
+    view.querySelectorAll('[data-open-result]').forEach((row) => {
+      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'digital-id' }));
+    });
     document.getElementById('cred-subscription').addEventListener('click', () => navigate('billing'));
     document.getElementById('cred-library').addEventListener('click', () => navigate('library'));
     document.getElementById('cred-certificates').addEventListener('click', () => {
@@ -1841,7 +1887,7 @@
       <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
       <div class="card" style="margin-bottom:26px;">
         ${recentResults.map((r) => `
-          <div class="list-row">
+          <div class="list-row clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
             <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course ? r.assessment.course.code : r.assessment.individualCourse.title)} · ${esc(r.assessment.type)}</div></div>
             <span class="tabular">${r.score}/${r.total}</span>
           </div>
@@ -1875,6 +1921,9 @@
     });
     view.querySelectorAll('[data-view-attendance]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('attendance-history', { courseId: btn.dataset.viewAttendance, courseCode: btn.dataset.code }));
+    });
+    view.querySelectorAll('[data-open-result]').forEach((row) => {
+      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'my-dashboard' }));
     });
     view.querySelectorAll('.submit-form').forEach((form) => {
       form.addEventListener('submit', async (e) => {
@@ -1944,67 +1993,112 @@
     });
   }
 
+  // One question at a time (matching PassNow's exam-taking pattern), like
+  // renderTakeAssessment -- but practice mode stays batch-graded with unlimited
+  // retries: answering pages through questions, then "Check my answers" switches the
+  // same paginated view into a read-only correction mode (still one question at a
+  // time) instead of dumping every corrected question down the page at once.
   async function renderPracticeTake() {
     const { assessmentId, assessmentTitle, courseId, courseTitle, courseCode } = state.view;
     const { assessment } = await api(`/assessments/${assessmentId}`);
+    const questions = assessment.questions;
     const answers = {};
+    let qIdx = 0;
+    let corrections = null; // set once graded; null while still answering
+    let score = null, total = null;
+
     view.innerHTML = `
       <div class="page-head"><h1>${esc(assessmentTitle || assessment.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
-      <p class="muted" style="margin-bottom:16px;">${assessment.questions.length} questions · practice mode — instant feedback, unlimited retries</p>
-      <div id="pq-questions">
-        ${assessment.questions.map((q, qi) => `
-          <div class="card quiz-q" data-question="${q.id}">
-            <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
-            ${q.questionType === 'THEORY'
-              ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="4" style="width:100%;"></textarea>`
-              : q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
-            <p class="pq-feedback meta" style="margin-top:8px; display:none;"></p>
-          </div>
-        `).join('')}
+      <p class="muted" style="margin-bottom:10px;">Practice mode — instant feedback, unlimited retries</p>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+        <span class="meta tabular" id="pq-counter" style="white-space:nowrap;"></span>
+        <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="pq-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
       </div>
-      <div style="display:flex; gap:10px;">
-        <button class="btn btn-primary" id="pq-submit-btn">Check my answers</button>
-        <button class="btn btn-ghost" id="pq-retry-btn" hidden>Try again</button>
+      <div id="pq-body"></div>
+      <div class="controls" style="margin-top:14px;">
+        <button class="btn btn-ghost" id="pq-prev-btn">← Previous</button>
+        <button class="btn btn-primary" id="pq-next-btn">Next →</button>
+        <button class="btn btn-ghost" id="pq-retry-btn" hidden>↻ Try again</button>
       </div>
+      <div id="pq-nav" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:18px;"></div>
       <p id="pq-score" class="meta" style="margin-top:12px;"></p>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('past-questions-hub'));
-    view.querySelectorAll('.quiz-opt').forEach((opt) => {
-      opt.addEventListener('click', () => {
-        const q = opt.dataset.q;
-        view.querySelectorAll(`.quiz-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
-        opt.classList.add('selected');
-        answers[q] = { questionId: q, choice: Number(opt.dataset.opt) };
+
+    function renderNav() {
+      document.getElementById('pq-nav').innerHTML = questions.map((q, i) => {
+        let cls = answers[q.id] ? 'answered' : '';
+        if (corrections) {
+          const c = corrections.get(q.id);
+          cls = c && c.questionType !== 'THEORY' && c.correct ? 'answered' : '';
+        }
+        return `<button class="quiz-nav-dot ${cls} ${i === qIdx ? 'current' : ''}" data-jump-q="${i}">${i + 1}</button>`;
+      }).join('');
+      document.getElementById('pq-nav').querySelectorAll('[data-jump-q]').forEach((btn) => {
+        btn.addEventListener('click', () => { qIdx = Number(btn.dataset.jumpQ); renderQuestion(); });
       });
-    });
-    view.querySelectorAll('.theory-answer').forEach((ta) => {
-      ta.addEventListener('input', () => { answers[ta.dataset.q] = { questionId: ta.dataset.q, text: ta.value }; });
-    });
-    document.getElementById('pq-submit-btn').addEventListener('click', async () => {
-      const payload = Object.values(answers);
-      try {
-        const { score, total, corrections } = await api(`/assessments/${assessmentId}/practice-submit`, { method: 'POST', body: { answers: payload } });
-        corrections.forEach((c) => {
-          const block = view.querySelector(`[data-question="${c.questionId}"]`);
-          const fb = block.querySelector('.pq-feedback');
-          fb.style.display = 'block';
-          if (c.questionType === 'THEORY') {
-            fb.textContent = `Model answer: ${c.modelAnswer || '(none provided)'}`;
-            return;
-          }
-          block.querySelectorAll('.quiz-opt').forEach((opt) => {
-            const oi = Number(opt.dataset.opt);
-            opt.classList.toggle('correct', oi === c.correctIndex);
-            opt.classList.toggle('wrong', oi === c.chosen && !c.correct);
+    }
+
+    function renderQuestion() {
+      const q = questions[qIdx];
+      const mine = answers[q.id];
+      document.getElementById('pq-counter').textContent = `Question ${qIdx + 1} of ${questions.length}`;
+      document.getElementById('pq-progress').style.width = `${Math.round(((qIdx + 1) / questions.length) * 100)}%`;
+      const c = corrections ? corrections.get(q.id) : null;
+      document.getElementById('pq-body').innerHTML = `
+        <div class="card quiz-q">
+          <div style="font-weight:600; margin-bottom:12px;">${qIdx + 1}. ${esc(q.text)}</div>
+          ${q.questionType === 'THEORY'
+            ? c
+              ? `<div class="meta">Your answer</div><p style="margin-bottom:10px;">${esc(c.myAnswer || '(no answer)')}</p><div class="meta">Model answer</div><p>${esc(c.modelAnswer || '(none provided)')}</p>`
+              : `<textarea class="theory-answer" placeholder="Write your answer…" rows="5" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
+            : q.options.map((opt, oi) => `
+                <div class="quiz-opt
+                  ${!c && mine && mine.choice === oi ? 'selected' : ''}
+                  ${c && oi === c.correctIndex ? 'correct' : ''}
+                  ${c && oi === c.chosen && !c.correct ? 'wrong' : ''}"
+                  data-opt="${oi}">
+                  <span class="opt-label">${OPTION_LABELS[oi] || oi + 1}</span>${esc(opt)}
+                </div>
+              `).join('')}
+          ${c && c.questionType !== 'THEORY' ? `<p class="meta" style="margin-top:10px;">${c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.'}</p>` : ''}
+        </div>
+      `;
+      if (!c) {
+        document.getElementById('pq-body').querySelectorAll('.quiz-opt').forEach((opt) => {
+          opt.addEventListener('click', () => {
+            answers[q.id] = { questionId: q.id, choice: Number(opt.dataset.opt) };
+            renderQuestion();
+            renderNav();
           });
-          fb.textContent = c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.';
         });
+        const theoryEl = document.getElementById('pq-body').querySelector('.theory-answer');
+        if (theoryEl) theoryEl.addEventListener('input', () => { answers[q.id] = { questionId: q.id, text: theoryEl.value }; });
+      }
+      document.getElementById('pq-prev-btn').disabled = qIdx === 0;
+      const nextBtn = document.getElementById('pq-next-btn');
+      nextBtn.hidden = !!corrections;
+      nextBtn.textContent = qIdx === questions.length - 1 ? 'Check my answers' : 'Next →';
+    }
+
+    document.getElementById('pq-prev-btn').addEventListener('click', () => { if (qIdx > 0) { qIdx--; renderQuestion(); } });
+    document.getElementById('pq-next-btn').addEventListener('click', async () => {
+      if (qIdx < questions.length - 1) { qIdx++; renderQuestion(); return; }
+      try {
+        const result = await api(`/assessments/${assessmentId}/practice-submit`, { method: 'POST', body: { answers: Object.values(answers) } });
+        corrections = new Map(result.corrections.map((c) => [c.questionId, c]));
+        score = result.score; total = result.total;
         document.getElementById('pq-score').textContent = `Score: ${score} / ${total} (objective questions only)`;
-        document.getElementById('pq-submit-btn').hidden = true;
         document.getElementById('pq-retry-btn').hidden = false;
+        qIdx = 0;
+        renderQuestion();
+        renderNav();
       } catch (err) { toast(err.message); }
     });
     document.getElementById('pq-retry-btn').addEventListener('click', () => navigate('practice-take', { assessmentId, assessmentTitle, courseId, courseTitle, courseCode }));
+
+    renderQuestion();
+    renderNav();
   }
 
   // ================= DIGITAL LAB (curated + AI-generated, admin-approved) =================
@@ -2289,10 +2383,23 @@
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
           <span class="pill pill-muted">${esc(it.type)}</span>
-          <a class="btn btn-ghost btn-sm" href="${esc(it.fileUrl)}" target="_blank" rel="noopener">Open</a>
+          <button class="btn btn-ghost btn-sm" data-open-pdf="${esc(it.fileUrl)}" data-pdf-title="${esc(it.title)}">Open</button>
         </div>
       </div>
     `;
+  }
+
+  // Read-only in-app PDF viewer -- students read on the same page, never a new tab or
+  // an external domain. Browsers render PDFs natively inside an <iframe>.
+  async function renderPdfViewer() {
+    const { url, title, backTo } = state.view;
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(title || 'Document')}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <div class="card" style="padding:0; overflow:hidden; height:80vh;">
+        <iframe src="${esc(url)}" title="${esc(title || 'Document')}" style="width:100%; height:100%; border:0;"></iframe>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate(backTo || 'library'));
   }
 
   // A shared campus catalog -- browsable by department and course like the "Browse &
@@ -2300,9 +2407,13 @@
   // or teaching. Textbooks (with real authors/publishers) are the primary resource
   // type; past questions, journals and handouts are still supported as secondary types.
   async function renderLibrary(isLecturer) {
+    // Individual learners have no schoolId of their own -- affiliatedSchoolId (set at
+    // registration, if their real institution is a Learnza partner) is what scopes
+    // their browsing instead.
+    const effectiveSchoolId = state.user.schoolId || state.user.affiliatedSchoolId;
     const [{ departments }, { items: allItems }, lecturerCourses] = await Promise.all([
-      api(`/departments?schoolId=${state.user.schoolId}`),
-      api(`/library?schoolId=${state.user.schoolId}`),
+      api(`/departments?schoolId=${effectiveSchoolId}`),
+      api(`/library?schoolId=${effectiveSchoolId}`),
       isLecturer ? ensureLectCourses().then((r) => r.courses) : Promise.resolve([]),
     ]);
     const deptCourses = {};
@@ -2374,6 +2485,9 @@
         }
       });
     }
+    view.querySelectorAll('[data-open-pdf]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('pdf-viewer', { url: btn.dataset.openPdf, title: btn.dataset.pdfTitle, backTo: isLecturer ? 'lect-library' : 'library' }));
+    });
   }
 
   async function renderGroups() {
@@ -2427,6 +2541,8 @@
     if (!m.fileUrl) return `<div class="chat-msg">${sender}${esc(m.body)}</div>`;
     const isImage = (m.fileMime || '').startsWith('image/');
     const isVideo = (m.fileMime || '').startsWith('video/');
+    const isAudio = (m.fileMime || '').startsWith('audio/');
+    if (isAudio) return `<div class="chat-msg">${sender}<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">🎙️ <audio controls src="${esc(m.fileUrl)}" style="height:32px; max-width:220px;"></audio></div></div>`;
     const preview = isImage
       ? `<img src="${esc(m.fileUrl)}" alt="${esc(m.fileName)}" style="max-width:220px; max-height:220px; border-radius:8px; display:block; margin-top:6px;">`
       : isVideo
@@ -2446,6 +2562,7 @@
         <form class="chat-input-row" id="chat-form">
           <input type="file" id="chat-file" hidden>
           <button type="button" class="btn btn-ghost" id="chat-attach-btn" title="Attach a file">📎</button>
+          <button type="button" class="btn btn-ghost" id="chat-voice-btn" title="Record a voice note">🎙️</button>
           <input type="text" id="chat-input" placeholder="Message your study group…">
           <button class="btn btn-primary" type="submit">Send</button>
         </form>
@@ -2474,6 +2591,50 @@
       } catch (err) {
         toast(err.message);
       }
+    });
+
+    // Voice notes: tap to start recording, tap again to stop and send -- same
+    // record-then-upload shape as PassNow's, but sent through the existing group
+    // file-upload endpoint (audio is just another fileMime) instead of a data URL.
+    const voiceBtn = document.getElementById('chat-voice-btn');
+    let mediaRecorder = null;
+    voiceBtn.addEventListener('click', async () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') { mediaRecorder.stop(); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast('Voice notes need microphone access, which this browser/device does not support.');
+        return;
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        toast('Microphone permission denied — cannot record a voice note.');
+        return;
+      }
+      const chunks = [];
+      const startedAt = Date.now();
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        voiceBtn.textContent = '🎙️';
+        voiceBtn.classList.remove('listening');
+        const durationSec = Math.round((Date.now() - startedAt) / 1000);
+        if (durationSec < 1) { toast('Recording too short — try again.'); return; }
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('file', new File([blob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' }));
+        try {
+          await api(`/groups/${state.view.groupId}/messages/file`, { method: 'POST', body: formData });
+          renderGroupChat();
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+      mediaRecorder.start();
+      voiceBtn.textContent = '⏹️';
+      voiceBtn.classList.add('listening');
+      toast('Recording… tap the mic again to stop and send.');
     });
   }
 
@@ -2557,6 +2718,8 @@
     const deadline = new Date(startedAt).getTime() + assessment.durationMin * 60000;
 
     const answers = {};
+    const questions = assessment.questions;
+    let qIdx = 0;
     view.innerHTML = `
       <div class="page-head">
         <h1>${esc(assessment.title)}</h1>
@@ -2565,28 +2728,66 @@
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
-      <p class="muted" style="margin-bottom:16px;">${assessment.durationMin} minutes · ${assessment.questions.length} questions · auto-graded on submit</p>
-      ${assessment.questions.map((q, qi) => `
-        <div class="card quiz-q">
-          <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
-          ${q.questionType === 'THEORY'
-            ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="4" style="width:100%;"></textarea>`
-            : q.options.map((opt, oi) => `<div class="quiz-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
-        </div>
-      `).join('')}
-      <button class="btn btn-primary" id="submit-btn">Submit test</button>
+      <p class="muted" style="margin-bottom:10px;">${assessment.durationMin} minutes · auto-graded on submit</p>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+        <span class="meta tabular" id="quiz-counter" style="white-space:nowrap;"></span>
+        <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="quiz-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
+      </div>
+      <div id="quiz-body"></div>
+      <div class="controls" style="margin-top:14px;">
+        <button class="btn btn-ghost" id="quiz-prev-btn">← Previous</button>
+        <button class="btn btn-primary" id="quiz-next-btn">Next →</button>
+      </div>
+      <div id="quiz-nav" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:18px;"></div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock', { courseId: state.view.backCourseId }));
-    view.querySelectorAll('.quiz-opt').forEach((opt) => {
-      opt.addEventListener('click', () => {
-        const q = opt.dataset.q;
-        view.querySelectorAll(`.quiz-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
-        opt.classList.add('selected');
-        answers[q] = { questionId: q, choice: Number(opt.dataset.opt) };
+
+    function renderNav() {
+      document.getElementById('quiz-nav').innerHTML = questions.map((q, i) => `
+        <button class="quiz-nav-dot ${answers[q.id] ? 'answered' : ''} ${i === qIdx ? 'current' : ''}" data-jump-q="${i}">${i + 1}</button>
+      `).join('');
+      document.getElementById('quiz-nav').querySelectorAll('[data-jump-q]').forEach((btn) => {
+        btn.addEventListener('click', () => { qIdx = Number(btn.dataset.jumpQ); renderQuestion(); });
       });
-    });
-    view.querySelectorAll('.theory-answer').forEach((ta) => {
-      ta.addEventListener('input', () => { answers[ta.dataset.q] = { questionId: ta.dataset.q, text: ta.value }; });
+    }
+
+    // One question at a time, matching PassNow's exam-taking pattern -- MCQ options
+    // are always labeled A/B/C/D, and the Prev/Next controls (plus a jump-to-any
+    // question palette below) replace scrolling through every question at once.
+    function renderQuestion() {
+      const q = questions[qIdx];
+      const mine = answers[q.id];
+      document.getElementById('quiz-counter').textContent = `Question ${qIdx + 1} of ${questions.length}`;
+      document.getElementById('quiz-progress').style.width = `${Math.round(((qIdx + 1) / questions.length) * 100)}%`;
+      document.getElementById('quiz-body').innerHTML = `
+        <div class="card quiz-q">
+          <div style="font-weight:600; margin-bottom:12px;">${qIdx + 1}. ${esc(q.text)}</div>
+          ${q.questionType === 'THEORY'
+            ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="5" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
+            : q.options.map((opt, oi) => `
+                <div class="quiz-opt ${mine && mine.choice === oi ? 'selected' : ''}" data-opt="${oi}">
+                  <span class="opt-label">${OPTION_LABELS[oi] || oi + 1}</span>${esc(opt)}
+                </div>
+              `).join('')}
+        </div>
+      `;
+      document.getElementById('quiz-body').querySelectorAll('.quiz-opt').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          answers[q.id] = { questionId: q.id, choice: Number(opt.dataset.opt) };
+          renderQuestion();
+          renderNav();
+        });
+      });
+      const theoryEl = document.getElementById('quiz-body').querySelector('.theory-answer');
+      if (theoryEl) theoryEl.addEventListener('input', () => { answers[q.id] = { questionId: q.id, text: theoryEl.value }; });
+      document.getElementById('quiz-prev-btn').disabled = qIdx === 0;
+      document.getElementById('quiz-next-btn').textContent = qIdx === questions.length - 1 ? 'Submit test' : 'Next →';
+    }
+
+    document.getElementById('quiz-prev-btn').addEventListener('click', () => { if (qIdx > 0) { qIdx--; renderQuestion(); renderNav(); } });
+    document.getElementById('quiz-next-btn').addEventListener('click', () => {
+      if (qIdx < questions.length - 1) { qIdx++; renderQuestion(); renderNav(); }
+      else doSubmit(false);
     });
 
     async function doSubmit(auto) {
@@ -2600,7 +2801,9 @@
         navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo, backCourseId: state.view.backCourseId });
       } catch (err) { toast(err.message); }
     }
-    document.getElementById('submit-btn').addEventListener('click', () => doSubmit(false));
+
+    renderQuestion();
+    renderNav();
 
     const timerEl = document.getElementById('exam-timer');
     function tick() {
@@ -3326,7 +3529,7 @@
         { key: 'fullName', label: 'Full name', required: true },
         { key: 'matricNumber', label: 'Matric number', required: true },
         { key: 'departmentId', label: 'Department', type: 'department', required: true },
-        { key: 'yearOfStudy', label: 'Year of study', type: 'year', required: true },
+        { key: 'yearOfStudy', label: 'Level', type: 'year', required: true },
         { key: 'email', label: 'Email', type: 'email', required: true },
         { key: 'phone', label: 'Phone number', type: 'tel' },
       ],
@@ -3387,7 +3590,7 @@
           return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">${f.required ? 'Select…' : 'None'}</option>${await departmentOptionsHtml()}</select></div>`;
         }
         if (f.type === 'year') {
-          const opts = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">Year ${n}</option>`).join('');
+          const opts = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n * 100}L</option>`).join('');
           return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">Select…</option>${opts}</select></div>`;
         }
         return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="add-${f.key}" ${f.required ? 'required' : ''}></div>`;
@@ -3416,7 +3619,7 @@
         <div class="id-grid" style="margin-bottom:8px;">
           <div><div class="meta">${cfg.idLabel}</div><div>${esc(u[cfg.idField] || '—')}</div></div>
           <div><div class="meta">Department</div><div>${esc(u.department ? u.department.name : '—')}</div></div>
-          ${state.view.directoryType === 'STUDENT' ? `<div><div class="meta">Year of study</div><div>${u.yearOfStudy ? `Year ${u.yearOfStudy}` : '—'}</div></div>` : ''}
+          ${state.view.directoryType === 'STUDENT' ? `<div><div class="meta">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>` : ''}
           <div><div class="meta">${cfg.extraLabel}</div><div>${esc(cfg.extraValue(u))}</div></div>
           <div><div class="meta">Status</div><div>${statusPillHtml(u.status)}</div></div>
           <div><div class="meta">Email</div><div>${esc(u.email)}</div></div>

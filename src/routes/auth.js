@@ -30,13 +30,25 @@ function checkStatus(res, user) {
 // courseOfStudy describe their real institution for display purposes only. They get
 // their own self-directed courses (see /individual-courses) taught by the AI Teacher,
 // and never see school/lecturer-only features.
+const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
+
 router.post('/register-individual', async (req, res) => {
-  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy } = req.body;
+  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, affiliatedSchoolId } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email and password are required.' });
   }
+  if (!institutionType || !INSTITUTION_TYPES.includes(institutionType)) {
+    return res.status(400).json({ error: 'Select an institution type.' });
+  }
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+
+  let resolvedAffiliatedSchoolId = null;
+  if (affiliatedSchoolId) {
+    const school = await prisma.school.findUnique({ where: { id: affiliatedSchoolId } });
+    if (!school) return res.status(400).json({ error: 'That school was not found.' });
+    resolvedAffiliatedSchoolId = school.id;
+  }
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
@@ -46,6 +58,8 @@ router.post('/register-individual', async (req, res) => {
       attendedSchoolName: attendedSchoolName || null,
       attendedDepartment: attendedDepartment || null,
       courseOfStudy: courseOfStudy || null,
+      institutionType,
+      affiliatedSchoolId: resolvedAffiliatedSchoolId,
     },
   });
   res.json({ token: signToken(user), user: publicUser(user) });
@@ -125,7 +139,11 @@ router.get('/me', requireAuth, async (req, res) => {
   let department = null;
   if (req.user.schoolId) school = await prisma.school.findUnique({ where: { id: req.user.schoolId } });
   if (req.user.departmentId) department = await prisma.department.findUnique({ where: { id: req.user.departmentId } });
-  res.json({ user: publicUser(req.user), school, department });
+  // Individual learners have no real schoolId, but may have opted their browsing
+  // (e-Library, etc.) into a real Learnza-partner school via affiliatedSchoolId.
+  let affiliatedSchool = null;
+  if (req.user.affiliatedSchoolId) affiliatedSchool = await prisma.school.findUnique({ where: { id: req.user.affiliatedSchoolId } });
+  res.json({ user: publicUser(req.user), school, department, affiliatedSchool });
 });
 
 module.exports = router;

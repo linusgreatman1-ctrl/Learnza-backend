@@ -226,6 +226,7 @@ router.get('/students/me/results', requireAuth, requireRole('STUDENT'), async (r
   res.json({
     results: submissions.map((s) => ({
       id: s.id,
+      assessmentId: s.assessmentId,
       assessmentTitle: s.assessment.title,
       assessmentType: s.assessment.type,
       courseCode: s.assessment.course ? s.assessment.course.code : null,

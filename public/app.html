@@ -60,6 +60,11 @@
   .quiz-opt.selected { border-color: var(--accent); background: var(--accent-soft); }
   .quiz-opt.correct { border-color: var(--pass); background: var(--pass-soft); }
   .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-soft); }
+  .opt-label { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--line); font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }
+  .quiz-opt.selected .opt-label { background: var(--accent); color: var(--accent-ink); }
+  .quiz-nav-dot { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper-raised); font-weight: 600; font-size: 0.85rem; }
+  .quiz-nav-dot.answered { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+  .quiz-nav-dot.current { border-color: var(--accent); border-width: 2px; }
 
   .chat-box { display: flex; flex-direction: column; height: 460px; }
   .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -217,9 +222,21 @@
       <form id="register-form" style="display:none;">
         <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Learn independently, for university, polytechnic or any higher-institution student — you create your own courses and the AI Teacher covers them.</p>
         <div class="field"><label>Full name</label><input type="text" id="reg-name" required></div>
+        <div class="field"><label>Institution type</label>
+          <select id="reg-institution-type" required>
+            <option value="">Select…</option>
+            <option value="UNIVERSITY">University</option>
+            <option value="POLYTECHNIC">Polytechnic</option>
+            <option value="COLLEGE_OF_EDUCATION">College of Education</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
         <div class="field"><label>School name</label><input type="text" id="reg-school" required placeholder="e.g. University of Lagos"></div>
         <div class="field"><label>Department</label><input type="text" id="reg-department" required placeholder="e.g. Computer Science"></div>
         <div class="field"><label>Course of study</label><input type="text" id="reg-course" required placeholder="e.g. B.Sc Computer Science"></div>
+        <div class="field"><label>Affiliated school on Learnza <span class="muted">(optional)</span></label>
+          <select id="reg-affiliated-school"><option value="">None / not listed on Learnza</option></select>
+        </div>
         <div class="field"><label>Email</label><input type="email" id="reg-email" required></div>
         <div class="field"><label>Phone number</label><input type="tel" id="reg-phone" required></div>
         <div class="field"><label>Password</label><input type="password" id="reg-password" required minlength="6"></div>
