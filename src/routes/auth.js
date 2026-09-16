@@ -26,14 +26,16 @@ function checkStatus(res, user) {
 }
 
 // Individual (non-school) learners self-register -- no Learnza school or department,
-// since they aren't affiliated with one. attendedSchoolName/attendedDepartment/
-// courseOfStudy describe their real institution for display purposes only. They get
-// their own self-directed courses (see /individual-courses) taught by the AI Teacher,
-// and never see school/lecturer-only features.
+// and deliberately no link to one at all: they aren't affiliated with any Learnza
+// School row, ever (their own uploads/textbooks are a separate, school-independent
+// concern). attendedSchoolName/attendedDepartment/courseOfStudy describe their real
+// institution for display purposes only. They get their own self-directed courses
+// (see /individual-courses) taught by the AI Teacher, and never see school/
+// lecturer-only or e-Library features.
 const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
 
 router.post('/register-individual', async (req, res) => {
-  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, affiliatedSchoolId } = req.body;
+  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email and password are required.' });
   }
@@ -42,13 +44,6 @@ router.post('/register-individual', async (req, res) => {
   }
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
-
-  let resolvedAffiliatedSchoolId = null;
-  if (affiliatedSchoolId) {
-    const school = await prisma.school.findUnique({ where: { id: affiliatedSchoolId } });
-    if (!school) return res.status(400).json({ error: 'That school was not found.' });
-    resolvedAffiliatedSchoolId = school.id;
-  }
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
@@ -59,7 +54,6 @@ router.post('/register-individual', async (req, res) => {
       attendedDepartment: attendedDepartment || null,
       courseOfStudy: courseOfStudy || null,
       institutionType,
-      affiliatedSchoolId: resolvedAffiliatedSchoolId,
     },
   });
   res.json({ token: signToken(user), user: publicUser(user) });
@@ -139,11 +133,7 @@ router.get('/me', requireAuth, async (req, res) => {
   let department = null;
   if (req.user.schoolId) school = await prisma.school.findUnique({ where: { id: req.user.schoolId } });
   if (req.user.departmentId) department = await prisma.department.findUnique({ where: { id: req.user.departmentId } });
-  // Individual learners have no real schoolId, but may have opted their browsing
-  // (e-Library, etc.) into a real Learnza-partner school via affiliatedSchoolId.
-  let affiliatedSchool = null;
-  if (req.user.affiliatedSchoolId) affiliatedSchool = await prisma.school.findUnique({ where: { id: req.user.affiliatedSchoolId } });
-  res.json({ user: publicUser(req.user), school, department, affiliatedSchool });
+  res.json({ user: publicUser(req.user), school, department });
 });
 
 module.exports = router;

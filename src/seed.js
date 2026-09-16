@@ -682,6 +682,15 @@ async function backfillDemoStudentActivity() {
   const school = await prisma.school.findFirst();
   if (!school) return;
 
+  // 200L, admitted 2024 -- so the Admission Status page has real level/graduation-year
+  // data to show instead of blanks.
+  if (!student.yearOfStudy || !student.yearOfAdmission) {
+    await prisma.user.update({
+      where: { id: student.id },
+      data: { yearOfStudy: student.yearOfStudy || 2, yearOfAdmission: student.yearOfAdmission || 2024 },
+    });
+  }
+
   const mc = (text, options, correctIndex) => ({ text, options: JSON.stringify(options), correctIndex, questionType: 'OBJECTIVE' });
 
   const courseData = [

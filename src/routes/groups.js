@@ -77,4 +77,14 @@ router.post('/groups/:id/messages/file', requireAuth, requireRole('STUDENT'), up
   res.json({ message, storage });
 });
 
+// A student can delete their own messages (text, file, or voice note) -- ownership
+// checked server-side regardless of what the client claims.
+router.delete('/groups/:groupId/messages/:messageId', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const message = await prisma.groupMessage.findUnique({ where: { id: req.params.messageId } });
+  if (!message || message.groupId !== req.params.groupId) return res.status(404).json({ error: 'Message not found' });
+  if (message.senderId !== req.user.id) return res.status(403).json({ error: 'You can only delete your own messages.' });
+  await prisma.groupMessage.delete({ where: { id: message.id } });
+  res.json({ ok: true });
+});
+
 module.exports = router;

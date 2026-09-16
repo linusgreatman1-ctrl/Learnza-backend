@@ -18,7 +18,6 @@ model School {
   licenseExpiresAt DateTime?
   departments      Department[]
   users            User[]
-  affiliatedIndividuals User[] @relation("IndividualAffiliatedSchool")
   applications     Application[]
   semesters        Semester[]
   hostels          Hostel[]
@@ -105,18 +104,16 @@ model User {
   attendedDepartment String? // individual learners only
   courseOfStudy      String? // individual learners only: their real degree programme
   institutionType    String? // individual learners only: UNIVERSITY | POLYTECHNIC | COLLEGE_OF_EDUCATION | OTHER
-  // Optional: when an individual learner's real institution IS a Learnza-partner
-  // school, picking it here scopes their e-Library/department browsing to that
-  // school's real content -- separate from `schoolId`/`departmentId` above, which
-  // mean "is a real enrolled member of this school" and drive admin/staff/leaderboard
-  // queries a browsing-only individual learner must never appear in.
-  affiliatedSchool   School?   @relation("IndividualAffiliatedSchool", fields: [affiliatedSchoolId], references: [id])
-  affiliatedSchoolId String?
+  yearOfAdmission    Int?      // school students: the year they were admitted, for admission-status/graduation-year calculations
+  classPosition      String?   // e.g. "Class Governor", "Course Representative" -- admin-assigned
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
   yearOfStudy    Int?      // school students only, e.g. 1, 2, 3 -- set by admin at registration
   createdAt      DateTime  @default(now())
+
+  disciplinaryRecords DisciplinaryRecord[] @relation("DisciplinaryStudent")
+  disciplinaryRecordsMade DisciplinaryRecord[] @relation("DisciplinaryRecorder")
 
   enrollments    Enrollment[]
   lessonsCreated Lesson[]        @relation("LessonAuthor")
@@ -530,6 +527,20 @@ model ClearanceRequest {
   note        String?
   requestedAt DateTime  @default(now())
   decidedAt   DateTime?
+}
+
+// Admin-recorded disciplinary issues, shown on a student's Admission Status page
+// (both to the student themselves and to admin) alongside their academic record.
+model DisciplinaryRecord {
+  id           String   @id @default(cuid())
+  student      User     @relation("DisciplinaryStudent", fields: [studentId], references: [id])
+  studentId    String
+  title        String
+  description  String?
+  status       String   @default("OPEN") // OPEN | RESOLVED
+  recordedBy   User?    @relation("DisciplinaryRecorder", fields: [recordedById], references: [id])
+  recordedById String?
+  createdAt    DateTime @default(now())
 }
 
 // A digital credential (e.g. a graduation certificate) with a public verification

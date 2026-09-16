@@ -160,7 +160,6 @@
           attendedSchoolName: document.getElementById('reg-school').value.trim(),
           attendedDepartment: document.getElementById('reg-department').value.trim(),
           courseOfStudy: document.getElementById('reg-course').value.trim(),
-          affiliatedSchoolId: document.getElementById('reg-affiliated-school').value || null,
           email: document.getElementById('reg-email').value.trim(),
           phone: document.getElementById('reg-phone').value.trim(),
           password: document.getElementById('reg-password').value,
@@ -171,13 +170,6 @@
       authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
     }
   });
-
-  // Public endpoint -- lets an unauthenticated individual signup pick a real
-  // Learnza-partner school to affiliate their browsing (e-Library, etc.) with.
-  api('/schools').then(({ schools }) => {
-    const select = document.getElementById('reg-affiliated-school');
-    schools.forEach((s) => select.insertAdjacentHTML('beforeend', `<option value="${s.id}">${esc(s.name)}${s.location ? `, ${esc(s.location)}` : ''}</option>`));
-  }).catch(() => { /* affiliation is optional -- a failed fetch just leaves "None" */ });
 
   document.getElementById('admin-register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -225,11 +217,10 @@
   // block the rest of boot, since navigate() will surface the real auth error anyway.
   async function loadHeaderContext() {
     try {
-      const { school, department, affiliatedSchool } = await api('/auth/me');
+      const { school, department } = await api('/auth/me');
       state.school = school;
       state.department = department;
-      state.affiliatedSchool = affiliatedSchool;
-    } catch { state.school = null; state.department = null; state.affiliatedSchool = null; }
+    } catch { state.school = null; state.department = null; }
     if (state.school) {
       try { state.semesters = (await api('/semesters')).semesters; } catch { state.semesters = []; }
     } else {
@@ -279,11 +270,13 @@
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
       ['past-questions-hub', 'Past Questions'],
+      ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
+      ['admission-status', 'Admission Status'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
     ],
@@ -332,7 +325,6 @@
     if (u.isIndividual) {
       const bits = [u.attendedSchoolName, u.courseOfStudy, INSTITUTION_TYPE_LABELS[u.institutionType]].filter(Boolean).map(esc);
       if (bits.length) lines.push(bits.join(' · '));
-      if (state.affiliatedSchool) lines.push(`${esc(state.affiliatedSchool.name)} (affiliated on Learnza)`);
     } else if (state.school) {
       const schoolLine = [state.school.name, state.school.location].filter(Boolean).map(esc).join(', ');
       lines.push(schoolLine);
@@ -379,13 +371,7 @@
 
     const nav = document.getElementById('nav-items');
     const navKey = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
-    let navItems = NAV[navKey];
-    // An individual learner who's affiliated their browsing with a real Learnza
-    // school (see /register-individual's affiliatedSchoolId) gets that school's
-    // e-Library too -- it stays off the nav entirely for anyone who hasn't.
-    if (navKey === 'STUDENT_INDIVIDUAL' && state.user.affiliatedSchoolId) {
-      navItems = [...navItems, ['library', 'e-Library']];
-    }
+    const navItems = NAV[navKey];
     nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
@@ -515,7 +501,9 @@
         case 'groups': return renderGroups();
         case 'group-chat': return renderGroupChat();
         case 'my-dashboard': return renderMyDashboard();
-        case 'cbt-mock': return renderAssessments(false);
+        case 'cbt-mock': return renderAssessments(false, { heading: 'CBT Mock Exam Practice', typeFilter: ['Mock'] });
+        case 'tests-hub': return renderAssessments(false, { heading: 'Tests', typeFilter: ['CA', 'Test'] });
+        case 'admission-status': return renderAdmissionStatus();
         case 'take-assessment': return renderTakeAssessment();
         case 'assessment-review': return renderAssessmentReview();
         case 'billing': return renderBilling();
@@ -530,6 +518,7 @@
         case 'lab-teach': return renderLabTeach();
         case 'transcript': return renderTranscript();
         case 'attendance-history': return renderStudentAttendanceHistory();
+        case 'assignment-detail': return renderAssignmentDetail();
         case 'past-questions-hub': return renderPastQuestionsHub();
         case 'practice-take': return renderPracticeTake();
         case 'semester-exam-hub': return renderSemesterExamHub();
@@ -1651,6 +1640,130 @@
     });
   }
 
+  // ================= ADMISSION STATUS (student self-view + admin view) =================
+  // Same render function for both: state.view.studentId present means an admin is
+  // viewing a specific student (editable -- year of admission, class position,
+  // disciplinary records); absent means a student viewing their own (read-only).
+  async function renderAdmissionStatus() {
+    const isAdminView = !!state.view.studentId;
+    const data = isAdminView
+      ? await api(`/admin/students/${state.view.studentId}/admission-status`)
+      : await api('/students/me/admission-status');
+
+    const statRow = (label, done, missed, total) => `
+      <div class="card course-card"><div class="code">${done}/${total}</div><div class="meta">${esc(label)} done${missed ? ` · ${missed} missed` : ''}</div></div>
+    `;
+
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>Admission Status${isAdminView ? ` — ${esc(data.fullName)}` : ''}</h1>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+      </div>
+
+      <div class="card" style="padding:24px; margin-bottom:22px;">
+        <div class="id-grid">
+          <div><div class="meta">Full name</div><div style="font-weight:600;">${esc(data.fullName)}</div></div>
+          <div><div class="meta">Matric number</div><div class="tabular">${esc(data.matricNumber || '—')}</div></div>
+          <div><div class="meta">Email</div><div>${esc(data.email)}</div></div>
+          <div><div class="meta">Phone</div><div>${esc(data.phone || '—')}</div></div>
+          <div><div class="meta">Department</div><div>${esc(data.department || '—')}</div></div>
+          <div><div class="meta">Current level</div><div>${esc(data.level || '—')}</div></div>
+          <div><div class="meta">Position held</div><div>${esc(data.classPosition || '—')}</div></div>
+          <div><div class="meta">Account status</div><div>${statusPillHtml(data.status)}</div></div>
+          <div><div class="meta">Year of admission</div><div class="tabular">${data.yearOfAdmission || '—'}</div></div>
+          <div><div class="meta">Expected graduation year</div><div class="tabular">${data.expectedGraduationYear || '—'} <span class="muted" style="font-size:0.75rem;">(3-year programme assumed)</span></div></div>
+          <div><div class="meta">CGPA</div><div class="tabular" style="font-weight:600;">${data.cgpa != null ? data.cgpa : '—'}</div></div>
+          <div><div class="meta">Disciplinary issues</div><div>${data.disciplinaryIssueCount}</div></div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom:12px; font-size:1rem;">Academic activity</h3>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        ${statRow('Semester exams', data.exams.done, data.exams.missed, data.exams.total)}
+        ${statRow('Tests / CA', data.tests.done, data.tests.missed, data.tests.total)}
+        ${statRow('Assignments', data.assignments.done, data.assignments.missed, data.assignments.total)}
+      </div>
+
+      ${isAdminView ? `
+        <h3 style="margin-bottom:12px; font-size:1rem;">Update admission details</h3>
+        <form id="admission-details-form" class="card" style="padding:20px; margin-bottom:26px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+          <div class="field" style="margin-bottom:0;"><label>Year of admission</label><input type="number" id="admission-year" value="${data.yearOfAdmission || ''}" placeholder="e.g. 2024" style="width:140px;"></div>
+          <div class="field" style="margin-bottom:0;"><label>Position held</label><input type="text" id="admission-position" value="${esc(data.classPosition || '')}" placeholder="e.g. Class Governor" style="width:200px;"></div>
+          <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        </form>
+      ` : ''}
+
+      <h3 style="margin-bottom:12px; font-size:1rem;">Disciplinary report</h3>
+      ${isAdminView ? `
+        <form id="disciplinary-form" class="card" style="padding:16px 20px; margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+          <div class="field" style="margin-bottom:0; flex:1; min-width:160px;"><label>Title</label><input type="text" id="disciplinary-title" required placeholder="e.g. Exam malpractice"></div>
+          <div class="field" style="margin-bottom:0; flex:2; min-width:220px;"><label>Description</label><input type="text" id="disciplinary-description" placeholder="Optional detail"></div>
+          <button class="btn btn-accent btn-sm" type="submit">Add record</button>
+        </form>
+      ` : ''}
+      <div class="card">
+        ${data.disciplinaryRecords.map((r) => `
+          <div class="list-row" style="align-items:flex-start;">
+            <div>
+              <div style="font-weight:600;">${esc(r.title)}</div>
+              ${r.description ? `<div class="meta">${esc(r.description)}</div>` : ''}
+              <div class="meta tabular">${new Date(r.createdAt).toLocaleDateString()}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="pill ${r.status === 'RESOLVED' ? 'pill-pass' : 'pill-danger'}">${esc(r.status)}</span>
+              ${isAdminView && r.status !== 'RESOLVED' ? `<button class="btn btn-ghost btn-sm" data-resolve-disciplinary="${r.id}">Resolve</button>` : ''}
+            </div>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No disciplinary issues on record.</p>'}
+      </div>
+    `;
+
+    document.getElementById('back-btn').addEventListener('click', () => {
+      if (isAdminView) navigate('admin-directory-detail', { directoryType: 'STUDENT', userId: state.view.studentId });
+      else navigate('my-dashboard');
+    });
+
+    const detailsForm = document.getElementById('admission-details-form');
+    if (detailsForm) detailsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/admin/students/${state.view.studentId}/admission-details`, {
+          method: 'POST',
+          body: {
+            yearOfAdmission: document.getElementById('admission-year').value,
+            classPosition: document.getElementById('admission-position').value,
+          },
+        });
+        toast('Saved');
+        render();
+      } catch (err) { toast(err.message); }
+    });
+
+    const disciplinaryForm = document.getElementById('disciplinary-form');
+    if (disciplinaryForm) disciplinaryForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/admin/students/${state.view.studentId}/disciplinary-records`, {
+          method: 'POST',
+          body: {
+            title: document.getElementById('disciplinary-title').value,
+            description: document.getElementById('disciplinary-description').value,
+          },
+        });
+        toast('Record added');
+        render();
+      } catch (err) { toast(err.message); }
+    });
+
+    view.querySelectorAll('[data-resolve-disciplinary]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await api(`/admin/disciplinary-records/${btn.dataset.resolveDisciplinary}/resolve`, { method: 'POST' });
+        toast('Marked resolved');
+        render();
+      });
+    });
+  }
+
   // ================= DIGITAL ID / STUDENT PROFILE =================
 
   function initials(name) {
@@ -1869,7 +1982,7 @@
         ${assignments.map((a) => `
           <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
             <div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
-              <div><div style="font-weight:600;">${esc(a.title)} <span class="meta">(${esc(a.course.code)})</span>${a.kind === 'PROJECT' ? ' <span class="pill pill-muted">Project</span>' : ''}</div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
+              <div data-open-assignment="${a.id}" style="cursor:pointer;"><div style="font-weight:600;">${esc(a.title)} <span class="meta">(${esc(a.course.code)})</span>${a.kind === 'PROJECT' ? ' <span class="pill pill-muted">Project</span>' : ''}</div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
               ${a.mySubmission
                 ? a.mySubmission.status === 'MARKED'
                   ? `<span class="pill pill-pass">Marked: ${a.mySubmission.score}</span>`
@@ -1943,6 +2056,9 @@
     view.querySelectorAll('[data-open-result]').forEach((row) => {
       row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'my-dashboard' }));
     });
+    view.querySelectorAll('[data-open-assignment]').forEach((el) => {
+      el.addEventListener('click', () => navigate('assignment-detail', { assignmentId: el.dataset.openAssignment }));
+    });
     view.querySelectorAll('.submit-form').forEach((form) => {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1973,6 +2089,55 @@
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('my-dashboard'));
+  }
+
+  // Full detail for one assignment -- instructions, your submission, and the
+  // lecturer's score/feedback underneath, reached by clicking it on My Dashboard
+  // instead of only seeing the inline summary there.
+  async function renderAssignmentDetail() {
+    const { assignment, mySubmission } = await api(`/assignments/${state.view.assignmentId}`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><span class="pill pill-muted">${esc(assignment.course.code)}</span><h1 style="margin-top:8px;">${esc(assignment.title)}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to dashboard</button>
+      </div>
+      <div class="card" style="padding:24px; margin-bottom:22px;">
+        ${assignment.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-bottom:10px;">Project</span>' : ''}
+        ${assignment.dueAt ? `<div class="meta" style="margin-bottom:10px;">Due ${new Date(assignment.dueAt).toLocaleDateString()}</div>` : ''}
+        <div class="meta" style="margin-bottom:6px;">Instructions</div>
+        <p style="white-space:pre-wrap;">${esc(assignment.instructions)}</p>
+      </div>
+
+      <h3 style="margin-bottom:12px; font-size:1rem;">Your submission</h3>
+      <div class="card" style="padding:24px;">
+        ${mySubmission ? `
+          <div class="meta" style="margin-bottom:6px;">Submitted ${new Date(mySubmission.submittedAt).toLocaleDateString()}</div>
+          <p style="white-space:pre-wrap; margin-bottom:16px;">${esc(mySubmission.answerText)}</p>
+          <div class="hr"></div>
+          <div style="margin-top:16px;">
+            ${mySubmission.status === 'MARKED'
+              ? `<span class="pill pill-pass tabular">Score: ${mySubmission.score}</span><p class="meta" style="margin-top:10px;">Review: ${esc(mySubmission.feedback || 'No written feedback provided.')}</p>`
+              : '<span class="pill pill-accent">Submitted — awaiting mark</span>'}
+          </div>
+        ` : `
+          <p class="muted" style="margin-bottom:14px;">You have not submitted this yet.</p>
+          <form id="assignment-submit-form">
+            <div class="field"><textarea id="assignment-answer" placeholder="Write your answer…" required rows="6"></textarea></div>
+            <button class="btn btn-primary btn-sm" type="submit">Submit answer</button>
+          </form>
+        `}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('my-dashboard'));
+    const form = document.getElementById('assignment-submit-form');
+    if (form) form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/assignments/${assignment.id}/submit`, { method: 'POST', body: { answerText: document.getElementById('assignment-answer').value } });
+        toast('Answer submitted');
+        render();
+      } catch (err) { toast(err.message); }
+    });
   }
 
   // Every past-question set across every enrolled course, in one page -- the sidebar's
@@ -2023,10 +2188,20 @@
     let qIdx = 0;
     let corrections = null; // set once graded; null while still answering
     let score = null, total = null;
+    // 1 minute per question, same rule as timed tests/exams -- auto-submits (grading
+    // whatever's answered so far) when time runs out instead of running forever.
+    const durationMin = Math.max(1, questions.length);
+    const deadline = Date.now() + durationMin * 60000;
 
     view.innerHTML = `
-      <div class="page-head"><h1>${esc(assessmentTitle || assessment.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
-      <p class="muted" style="margin-bottom:10px;">Practice mode — instant feedback, unlimited retries</p>
+      <div class="page-head">
+        <h1>${esc(assessmentTitle || assessment.title)}</h1>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span class="pill pill-accent tabular" id="pq-timer">--:--</span>
+          <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+        </div>
+      </div>
+      <p class="muted" style="margin-bottom:10px;">Practice mode — ${durationMin} minute${durationMin === 1 ? '' : 's'} (1 min/question), auto-submits when time's up</p>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
         <span class="meta tabular" id="pq-counter" style="white-space:nowrap;"></span>
         <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="pq-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
@@ -2040,7 +2215,10 @@
       <div id="pq-nav" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:18px;"></div>
       <p id="pq-score" class="meta" style="margin-top:12px;"></p>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('past-questions-hub'));
+    document.getElementById('back-btn').addEventListener('click', () => {
+      if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
+      navigate('past-questions-hub');
+    });
 
     function renderNav() {
       document.getElementById('pq-nav').innerHTML = questions.map((q, i) => {
@@ -2098,21 +2276,41 @@
       nextBtn.textContent = qIdx === questions.length - 1 ? 'Check my answers' : 'Next →';
     }
 
-    document.getElementById('pq-prev-btn').addEventListener('click', () => { if (qIdx > 0) { qIdx--; renderQuestion(); } });
-    document.getElementById('pq-next-btn').addEventListener('click', async () => {
-      if (qIdx < questions.length - 1) { qIdx++; renderQuestion(); return; }
+    async function submitPractice(auto) {
+      if (corrections) return; // already graded (e.g. timer fired right after a manual submit)
+      if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
       try {
         const result = await api(`/assessments/${assessmentId}/practice-submit`, { method: 'POST', body: { answers: Object.values(answers) } });
         corrections = new Map(result.corrections.map((c) => [c.questionId, c]));
         score = result.score; total = result.total;
-        document.getElementById('pq-score').textContent = `Score: ${score} / ${total} (objective questions only)`;
+        document.getElementById('pq-score').textContent = `${auto ? "Time's up — auto-submitted. " : ''}Score: ${score} / ${total} (objective questions only)`;
         document.getElementById('pq-retry-btn').hidden = false;
         qIdx = 0;
         renderQuestion();
         renderNav();
       } catch (err) { toast(err.message); }
+    }
+
+    document.getElementById('pq-prev-btn').addEventListener('click', () => { if (qIdx > 0) { qIdx--; renderQuestion(); } });
+    document.getElementById('pq-next-btn').addEventListener('click', () => {
+      if (qIdx < questions.length - 1) { qIdx++; renderQuestion(); return; }
+      submitPractice(false);
     });
     document.getElementById('pq-retry-btn').addEventListener('click', () => navigate('practice-take', { assessmentId, assessmentTitle, courseId, courseTitle, courseCode }));
+
+    const timerEl = document.getElementById('pq-timer');
+    function tick() {
+      const msLeft = deadline - Date.now();
+      if (msLeft <= 0) {
+        timerEl.textContent = '0:00';
+        submitPractice(true);
+        return;
+      }
+      const totalSec = Math.floor(msLeft / 1000);
+      timerEl.textContent = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+    }
+    tick();
+    examTimerHandle = setInterval(tick, 1000);
 
     renderQuestion();
     renderNav();
@@ -2628,13 +2826,9 @@
   // or teaching. Textbooks (with real authors/publishers) are the primary resource
   // type; past questions, journals and handouts are still supported as secondary types.
   async function renderLibrary(isLecturer) {
-    // Individual learners have no schoolId of their own -- affiliatedSchoolId (set at
-    // registration, if their real institution is a Learnza partner) is what scopes
-    // their browsing instead.
-    const effectiveSchoolId = state.user.schoolId || state.user.affiliatedSchoolId;
     const [{ departments }, { items: allItems }, lecturerCourses] = await Promise.all([
-      api(`/departments?schoolId=${effectiveSchoolId}`),
-      api(`/library?schoolId=${effectiveSchoolId}`),
+      api(`/departments?schoolId=${state.user.schoolId}`),
+      api(`/library?schoolId=${state.user.schoolId}`),
       isLecturer ? ensureLectCourses().then((r) => r.courses) : Promise.resolve([]),
     ]);
     const deptCourses = {};
@@ -2757,18 +2951,22 @@
   }
 
   function groupMessageBubbleHtml(m) {
+    const isMine = m.senderId === state.user.id;
     const sender = `<div class="sender">${esc(m.sender.fullName)}</div>`;
-    if (!m.fileUrl) return `<div class="chat-msg">${sender}${esc(m.body)}</div>`;
+    // Own messages (text, file, or voice note alike) get a delete button -- ownership
+    // is re-checked server-side regardless of this client-side flag.
+    const deleteBtn = isMine ? `<button class="btn btn-ghost btn-sm" data-delete-msg="${m.id}" style="margin-top:4px; padding:2px 8px; font-size:0.72rem;" title="Delete">🗑️ Delete</button>` : '';
+    if (!m.fileUrl) return `<div class="chat-msg">${sender}${esc(m.body)}${deleteBtn}</div>`;
     const isImage = (m.fileMime || '').startsWith('image/');
     const isVideo = (m.fileMime || '').startsWith('video/');
     const isAudio = (m.fileMime || '').startsWith('audio/');
-    if (isAudio) return `<div class="chat-msg">${sender}<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">🎙️ <audio controls src="${esc(m.fileUrl)}" style="height:32px; max-width:220px;"></audio></div></div>`;
+    if (isAudio) return `<div class="chat-msg">${sender}<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">🎙️ <audio controls src="${esc(m.fileUrl)}" style="height:32px; max-width:220px;"></audio></div>${deleteBtn}</div>`;
     const preview = isImage
       ? `<img src="${esc(m.fileUrl)}" alt="${esc(m.fileName)}" style="max-width:220px; max-height:220px; border-radius:8px; display:block; margin-top:6px;">`
       : isVideo
         ? `<video src="${esc(m.fileUrl)}" controls style="max-width:220px; border-radius:8px; display:block; margin-top:6px;"></video>`
         : `<div style="margin-top:6px;">📎 ${esc(m.fileName)}</div>`;
-    return `<div class="chat-msg">${sender}${preview}<a href="${esc(m.fileUrl)}" target="_blank" rel="noopener" style="font-size:0.78rem; text-decoration:underline; display:block; margin-top:4px;">⬇ Download</a></div>`;
+    return `<div class="chat-msg">${sender}${preview}<a href="${esc(m.fileUrl)}" target="_blank" rel="noopener" style="font-size:0.78rem; text-decoration:underline; display:block; margin-top:4px;">⬇ Download</a>${deleteBtn}</div>`;
   }
 
   async function renderGroupChat() {
@@ -2791,6 +2989,15 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('groups'));
     const box = document.getElementById('chat-messages');
     box.scrollTop = box.scrollHeight;
+    view.querySelectorAll('[data-delete-msg]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this message?')) return;
+        try {
+          await api(`/groups/${state.view.groupId}/messages/${btn.dataset.deleteMsg}`, { method: 'DELETE' });
+          renderGroupChat();
+        } catch (err) { toast(err.message); }
+      });
+    });
     document.getElementById('chat-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const input = document.getElementById('chat-input');
@@ -2883,7 +3090,7 @@
               <div class="list-row">
                 <div>
                   <div style="font-weight:600;">${esc(a.title)}</div>
-                  <div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a.durationMin} min</div>
+                  <div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div>
                 </div>
                 ${isLecturer
                   ? `<button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>`
@@ -2932,9 +3139,12 @@
 
     // Starting (or resuming) stamps/reads the server-side deadline -- the countdown is
     // purely a display of that, not the source of truth (server rejects a late submit
-    // regardless of what the client's clock says).
-    const { startedAt } = await api(`/assessments/${assessment.id}/start`, { method: 'POST' });
-    const deadline = new Date(startedAt).getTime() + assessment.durationMin * 60000;
+    // regardless of what the client's clock says). durationMin here is the server's
+    // computed 1-minute-per-question allowance, not the lecturer-set field on the
+    // assessment record -- using that stale value instead of what /start actually
+    // returned was the bug behind the timer looking broken.
+    const { startedAt, durationMin } = await api(`/assessments/${assessment.id}/start`, { method: 'POST' });
+    const deadline = new Date(startedAt).getTime() + durationMin * 60000;
 
     const answers = {};
     const questions = assessment.questions;
@@ -2947,7 +3157,7 @@
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
-      <p class="muted" style="margin-bottom:10px;">${assessment.durationMin} minutes · auto-graded on submit</p>
+      <p class="muted" style="margin-bottom:10px;">${durationMin} minute${durationMin === 1 ? '' : 's'} (1 min/question) · auto-graded on submit</p>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
         <span class="meta tabular" id="quiz-counter" style="white-space:nowrap;"></span>
         <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="quiz-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
@@ -3479,7 +3689,7 @@
         <option value="PAST_QUESTION" ${opts.defaultType === 'PAST_QUESTION' ? 'selected' : ''}>Past Question (practice)</option>
       </select></div>
       <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
-      <div class="field"><label>Duration (minutes)</label><input type="number" id="na-duration" value="20"></div>
+      <p class="meta" style="margin-bottom:14px;">Students get 1 minute per question automatically — no need to set a duration.</p>
       <div id="na-questions">${questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
       <div style="display:flex; gap:10px;">
@@ -3537,7 +3747,6 @@
           body: {
             title: container.querySelector('#na-title').value,
             type: container.querySelector('#na-type').value,
-            durationMin: Number(container.querySelector('#na-duration').value) || 20,
             questions,
           },
         });
@@ -3584,7 +3793,7 @@
           <div class="card">
             ${exams.map((a) => `
               <div class="list-row">
-                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a.durationMin} min</div></div>
+                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div></div>
                 <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
               </div>
             `).join('')}
@@ -3846,10 +4055,13 @@
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:16px;">
           ${cfg.actions.filter((a) => a.show(u)).map((a) => `<button class="btn btn-ghost btn-sm" data-action="${a.key}">${a.label}</button>`).join('')}
           ${state.view.directoryType === 'STUDENT' ? `<button class="btn btn-ghost btn-sm" id="issue-credential-btn">Issue credential</button>` : ''}
+          ${state.view.directoryType === 'STUDENT' ? `<button class="btn btn-accent btn-sm" id="admission-status-btn">📋 Admission Status</button>` : ''}
         </div>
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory-list', { directoryType: state.view.directoryType }));
+    const admissionBtn = document.getElementById('admission-status-btn');
+    if (admissionBtn) admissionBtn.addEventListener('click', () => navigate('admission-status', { studentId: u.id }));
     view.querySelectorAll('[data-action]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm(`${btn.dataset.action} ${u.fullName}?`)) return;

@@ -7,6 +7,13 @@ const { notifyMany } = require('../services/notification.service');
 
 const router = express.Router();
 
+// Every timed assessment (CA/Test/Mock/Semester Exam/Past Question practice) gets
+// exactly 1 minute per question -- not the lecturer-set durationMin field, which is
+// kept on the model but no longer used for the actual time limit.
+function minutesFor(questionCount) {
+  return Math.max(1, questionCount);
+}
+
 router.get('/courses/:id/assessments', requireAuth, async (req, res) => {
   const assessments = await prisma.assessment.findMany({
     where: { courseId: req.params.id },
@@ -91,19 +98,20 @@ router.get('/assessments/:id', requireAuth, async (req, res) => {
 // Stamps (or resumes) the student's attempt start time -- the deadline for /submit is
 // measured from here, not from whenever the client happens to POST the answers.
 router.post('/assessments/:id/start', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
+  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id }, include: { _count: { select: { questions: true } } } });
   if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+  const durationMin = minutesFor(assessment._count.questions);
 
   const existing = await prisma.submission.findUnique({
     where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: req.user.id } },
   });
   if (existing && existing.submittedAt) return res.status(409).json({ error: 'You have already submitted this assessment' });
-  if (existing) return res.json({ startedAt: existing.startedAt, durationMin: assessment.durationMin });
+  if (existing) return res.json({ startedAt: existing.startedAt, durationMin });
 
   const submission = await prisma.submission.create({
     data: { assessmentId: assessment.id, studentId: req.user.id, startedAt: new Date() },
   });
-  res.json({ startedAt: submission.startedAt, durationMin: assessment.durationMin });
+  res.json({ startedAt: submission.startedAt, durationMin });
 });
 
 router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), async (req, res) => {
@@ -120,7 +128,7 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
   if (existing && existing.submittedAt) return res.status(409).json({ error: 'You have already submitted this assessment' });
   if (!existing || !existing.startedAt) return res.status(400).json({ error: 'Start the assessment before submitting.' });
 
-  const deadline = new Date(existing.startedAt.getTime() + assessment.durationMin * 60000 + 15000); // 15s grace for network lag
+  const deadline = new Date(existing.startedAt.getTime() + minutesFor(assessment.questions.length) * 60000 + 15000); // 15s grace for network lag
   if (new Date() > deadline) return res.status(400).json({ error: 'Time is up for this assessment.' });
 
   const objectiveQuestions = assessment.questions.filter((q) => q.questionType !== 'THEORY');

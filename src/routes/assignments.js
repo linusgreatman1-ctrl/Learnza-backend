@@ -41,6 +41,20 @@ router.post('/courses/:id/assignments', requireAuth, requireRole('LECTURER', 'AD
   res.json({ assignment });
 });
 
+// One assignment's full detail + the caller's own submission -- powers a click-through
+// detail view from My Dashboard's assignment list instead of only the inline summary.
+router.get('/assignments/:id', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const assignment = await prisma.assignment.findUnique({
+    where: { id: req.params.id },
+    include: { course: { select: { code: true, title: true } } },
+  });
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  const mySubmission = await prisma.assignmentSubmission.findUnique({
+    where: { assignmentId_studentId: { assignmentId: assignment.id, studentId: req.user.id } },
+  });
+  res.json({ assignment, mySubmission });
+});
+
 router.post('/assignments/:id/submit', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const { answerText } = req.body;
   if (!answerText || !answerText.trim()) return res.status(400).json({ error: 'Write an answer before submitting.' });
