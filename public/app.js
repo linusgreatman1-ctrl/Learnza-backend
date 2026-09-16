@@ -1,19 +1,41 @@
 (function () {
   'use strict';
 
-  // The logged-in session lives in sessionStorage, not localStorage -- localStorage is
-  // shared across every tab of this origin, so logging into a second account in
-  // another tab would silently overwrite the first tab's session too, and refreshing
-  // it would then load "whichever account logged in last" instead of its own.
-  // sessionStorage is per-tab, so each tab keeps its own account independently (this
-  // also matters for real users sharing one browser, e.g. a school's shared/cyber-cafe
-  // computer, not just for testing multiple roles side by side).
+  // Session storage strategy: sessionStorage is the source of truth once a tab has one
+  // (per-tab, so logging into a different account in another tab never overwrites this
+  // tab's own session), but a tab reads localStorage as a fallback the moment its own
+  // sessionStorage is empty -- a brand-new tab, or a refresh in a browser/webview whose
+  // sessionStorage doesn't survive a reload -- so refreshing never forces a fresh login
+  // as long as *some* session was ever saved. Every write (login, profile update, etc.)
+  // saves to both, via saveSession()/clearSession() below, so localStorage always holds
+  // the last-active session for that fallback, while each tab's own sessionStorage
+  // still wins over whatever any other tab does afterward.
+  function readSession(key) {
+    return sessionStorage.getItem(key) || localStorage.getItem(key);
+  }
+  function saveSession(token, user) {
+    sessionStorage.setItem('vp_token', token);
+    sessionStorage.setItem('vp_user', JSON.stringify(user));
+    localStorage.setItem('vp_token', token);
+    localStorage.setItem('vp_user', JSON.stringify(user));
+  }
+  function clearSession() {
+    sessionStorage.removeItem('vp_token');
+    sessionStorage.removeItem('vp_user');
+    localStorage.removeItem('vp_token');
+    localStorage.removeItem('vp_user');
+  }
+
   const state = {
-    token: sessionStorage.getItem('vp_token') || null,
-    user: JSON.parse(sessionStorage.getItem('vp_user') || 'null'),
+    token: readSession('vp_token') || null,
+    user: JSON.parse(readSession('vp_user') || 'null'),
     schoolId: null,
     view: { screen: 'home', courseId: null, groupId: null, assessmentId: null },
   };
+  // Seed this tab's own sessionStorage immediately so it's independent from here on --
+  // later logins in other tabs (which only touch localStorage's "last active" copy)
+  // won't affect this tab even though it fell back to localStorage just now.
+  if (state.token && state.user) saveSession(state.token, state.user);
   let examTimerHandle = null; // the countdown interval from renderTakeAssessment, if any
 
   // Dark Mode (Settings > Appearance) -- a per-device preference, applied immediately
@@ -222,8 +244,7 @@
   });
 
   document.getElementById('signout-btn').addEventListener('click', () => {
-    sessionStorage.removeItem('vp_token');
-    sessionStorage.removeItem('vp_user');
+    clearSession();
     window.speechSynthesis && window.speechSynthesis.cancel();
     window.location.href = 'index.html';
   });
@@ -231,8 +252,7 @@
   async function onAuthed(token, user) {
     state.token = token;
     state.user = user;
-    sessionStorage.setItem('vp_token', token);
-    sessionStorage.setItem('vp_user', JSON.stringify(user));
+    saveSession(token, user);
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     await loadHeaderContext();
@@ -247,11 +267,11 @@
   async function loadHeaderContext() {
     try {
       const { user, school, department } = await api('/auth/me');
-      // Refresh state.user (and its sessionStorage copy) too, not just school/department
-      // -- otherwise a server-side change to the student's own record (level, admission
+      // Refresh state.user (and its saved copies) too, not just school/department --
+      // otherwise a server-side change to the student's own record (level, admission
       // details, etc.) never reaches an already-logged-in browser until they log out and
       // back in, since state.user was only ever set once at login time.
-      if (user) { state.user = user; sessionStorage.setItem('vp_user', JSON.stringify(user)); }
+      if (user) { state.user = user; saveSession(state.token, user); }
       state.school = school;
       state.department = department;
     } catch { state.school = null; state.department = null; }
@@ -317,6 +337,7 @@
       ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
+      ['student-results', 'Results'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
@@ -570,6 +591,7 @@
         case 'cbt-mock': return renderAssessments(false, { heading: 'CBT Mock Exam Practice', typeFilter: ['Mock'] });
         case 'tests-hub': return renderAssessments(false, { heading: 'Tests', typeFilter: ['CA', 'Test'] });
         case 'admission-status': return renderAdmissionStatus();
+        case 'student-results': return renderStudentResultsHub();
         case 'take-assessment': return renderTakeAssessment();
         case 'assessment-review': return renderAssessmentReview();
         case 'billing': return renderBilling();
@@ -627,6 +649,7 @@
         case 'admin-hostel-allocations': return renderAdminHostelAllocations();
         case 'admin-hostel-detail': return renderAdminHostelDetail();
         case 'admin-results': return renderAdminResults();
+        case 'admin-student-results': return renderAdminStudentResults();
         case 'admin-student-activity': return renderAdminStudentActivity();
         default: view.innerHTML = '<p>Not found.</p>';
       }
@@ -699,7 +722,7 @@
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; assignments</h3>
-      <p class="muted" style="margin-bottom:12px;">No lecturer here — the app automatically sets you a new assignment every day, a test every week, and a semester exam once a term. They also show up on your dashboard.</p>
+      <p class="muted" style="margin-bottom:12px;">No lecturer here — the app automatically sets you a new assignment every day, a test every week, and a semester exam once a semester. They also show up on your dashboard.</p>
       <div class="card" style="margin-bottom:22px;">
         ${assessments.map((a) => `
           <div class="list-row" data-take="${a.id}" style="cursor:pointer;">
@@ -1920,7 +1943,7 @@
         try {
           const { user } = await api('/auth/me/avatar', { method: 'POST', body: fd });
           state.user = user;
-          sessionStorage.setItem('vp_user', JSON.stringify(user));
+          saveSession(state.token, user);
           toast('Photo updated');
           render();
         } catch (err) { toast(err.message); }
@@ -1972,6 +1995,57 @@
     document.getElementById('cred-courses').addEventListener('click', () => navigate('individual-courses'));
     document.getElementById('cred-subscription').addEventListener('click', () => navigate('billing'));
     document.getElementById('cred-library').addEventListener('click', () => navigate('library'));
+  }
+
+  // A student's full result history, all in one place -- self-taken test/assessment
+  // scores and lecturer-published formal results, across every course, not just the
+  // capped "recent" list on the dashboard or the summary on Digital ID.
+  async function renderStudentResultsHub() {
+    const [{ results }, { results: formalResults }] = await Promise.all([
+      api('/students/me/results'),
+      api('/students/me/formal-results'),
+    ]);
+    view.innerHTML = `
+      <div class="page-head"><h1>Results</h1></div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; assessments</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Assessment</th><th>Type</th><th>Score</th><th>Date</th></tr></thead>
+          <tbody>
+            ${results.map((r) => `
+              <tr class="clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
+                <td class="tabular">${esc(r.courseCode || r.courseTitle)}</td>
+                <td>${esc(r.assessmentTitle)}</td>
+                <td>${esc(r.assessmentType)}</td>
+                <td class="tabular">${r.score}/${r.total}</td>
+                <td class="tabular">${new Date(r.submittedAt).toLocaleDateString()}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Formal results (published by lecturers)</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
+          <tbody>
+            ${formalResults.map((r) => `
+              <tr>
+                <td class="tabular">${esc(r.course.code)}</td>
+                <td>${esc(r.term)}</td>
+                <td class="tabular">${r.score}</td>
+                <td class="tabular">${esc(r.grade || '—')}</td>
+                <td>${esc(r.remark || '—')}</td>
+                <td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">No formal results published yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+    view.querySelectorAll('[data-open-result]').forEach((row) => {
+      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'student-results' }));
+    });
   }
 
   async function renderDigitalId() {
@@ -2069,7 +2143,7 @@
       <h3 style="margin:24px 0 12px; font-size:1rem;">Formal results (published by lecturers)</h3>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Course</th><th>Term</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
+          <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
           <tbody>
             ${formalResults.map((r) => `
               <tr>
@@ -2192,7 +2266,7 @@
           try {
             const { user } = await api('/auth/me/notifications', { method: 'PATCH', body: { muted: nextMuted } });
             state.user = user;
-            sessionStorage.setItem('vp_user', JSON.stringify(user));
+            saveSession(state.token, user);
             render();
           } catch (err) { toast(err.message); }
         }
@@ -2272,7 +2346,7 @@
       try {
         const { user } = await api('/auth/me', { method: 'PATCH', body });
         state.user = user;
-        sessionStorage.setItem('vp_user', JSON.stringify(user));
+        saveSession(state.token, user);
         toast('Profile updated');
         navigate('settings');
       } catch (err) { toast(err.message); }
@@ -4220,7 +4294,7 @@
         <h3 style="margin-bottom:12px; font-size:1rem;">Publish a result</h3>
         <form id="result-form">
           <div class="field"><label>Student</label><select id="res-student">${roster.map((r) => `<option value="${r.student.id}">${esc(r.student.fullName)} (${esc(r.student.matricNumber || '—')})</option>`).join('')}</select></div>
-          <div class="field"><label>Term</label><input type="text" id="res-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
+          <div class="field"><label>Semester</label><input type="text" id="res-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
           <div class="field"><label>Score</label><input type="number" id="res-score" required></div>
           <div class="field"><label>Grade (optional)</label><input type="text" id="res-grade" placeholder="e.g. A"></div>
           <div class="field"><label>Remark (optional)</label><input type="text" id="res-remark"></div>
@@ -4229,7 +4303,7 @@
       </div>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Student</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+          <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
           <tbody>
             ${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results published yet.</td></tr>'}
           </tbody>
@@ -4669,7 +4743,7 @@
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
           <div class="card" style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>Student</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+              <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
               <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results published yet.</td></tr>'}</tbody>
             </table>
           </div>
@@ -4687,7 +4761,7 @@
       <h3 style="margin-bottom:14px;">Publish a result</h3>
       <div class="field"><label>Class (course)</label><select id="pr-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
       <div class="field"><label>Student</label><select id="pr-student"><option value="">Loading students…</option></select></div>
-      <div class="field"><label>Term</label><input type="text" id="pr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
+      <div class="field"><label>Semester</label><input type="text" id="pr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
       <div class="field"><label>Score</label><input type="number" id="pr-score" required></div>
       <div class="field"><label>Grade (optional)</label><input type="text" id="pr-grade" placeholder="e.g. A"></div>
       <div class="field"><label>Remark (optional)</label><input type="text" id="pr-remark"></div>
@@ -5828,37 +5902,149 @@
   // exact same dialog the lecturer's own Student Results hub uses -- it only ever
   // needed a `courses` list, never assumed it was the lecturer's own), and see every
   // already-published result grouped by department then course.
+  // A searchable list of students -- click one to see every result they have, across
+  // every course. Publishing a new one starts from "search and select the student"
+  // rather than "pick a course first", since the point of this screen is students.
   async function renderAdminResults() {
-    const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
-    const deptRows = await Promise.all(departments.map(async (d) => {
-      const { courses } = await api(`/departments/${d.id}/courses`);
-      const courseResults = await Promise.all(courses.map(async (c) => ({ course: c, results: (await api(`/courses/${c.id}/results`)).results })));
-      return { department: d, courses, courseResults: courseResults.filter((cr) => cr.results.length) };
-    }));
-    const allCourses = deptRows.flatMap((d) => d.courses);
-    const nonEmpty = deptRows.filter((d) => d.courseResults.length);
+    const { students } = await api('/admin/students');
+
+    function rowsHtml(list) {
+      return list.map((s) => `
+        <div class="list-row clickable" data-student="${s.id}" style="cursor:pointer;">
+          <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${esc(s.matricNumber || '—')}</div></div>
+          <div class="meta">${s.department ? esc(s.department.name) : '—'}</div>
+        </div>
+      `).join('') || '<p class="muted" style="padding:16px;">No students yet.</p>';
+    }
+
     view.innerHTML = `
       <div class="page-head">
         <h1>Results</h1>
-        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Publish result</button>
+        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Send Result</button>
       </div>
-      <p class="muted" style="margin-bottom:18px;">Publish a result for any student, grouped by department. Already-published results are listed below per course.</p>
-      ${nonEmpty.map(({ department, courseResults }) => `
-        <h3 style="margin:20px 0 10px; font-size:1rem;">${esc(department.name)}</h3>
-        ${courseResults.map(({ course, results }) => `
-          <div style="margin-bottom:18px;">
-            <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
-            <div class="card" style="overflow-x:auto;">
-              <table class="data-table">
-                <thead><tr><th>Student</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
-                <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('')}</tbody>
-              </table>
-            </div>
-          </div>
-        `).join('')}
-      `).join('') || '<p class="muted">No results published yet.</p>'}
+      <p class="muted" style="margin-bottom:14px;">Click a student to see all their results. "Send Result" searches for a student to publish a new one for.</p>
+      <div class="field" style="max-width:320px; margin-bottom:16px;">
+        <input type="text" id="results-search" placeholder="Search by name or matric number…" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+      </div>
+      <div class="card" id="results-student-list">${rowsHtml(students)}</div>
     `;
-    document.getElementById('new-result-btn').addEventListener('click', () => openPublishResultDialog(allCourses));
+    function wireRows() {
+      view.querySelectorAll('[data-student]').forEach((row) => {
+        row.addEventListener('click', () => navigate('admin-student-results', { studentId: row.dataset.student }));
+      });
+    }
+    wireRows();
+    document.getElementById('results-search').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const filtered = !q ? students : students.filter((s) => s.fullName.toLowerCase().includes(q) || (s.matricNumber || '').toLowerCase().includes(q));
+      document.getElementById('results-student-list').innerHTML = rowsHtml(filtered);
+      wireRows();
+    });
+    document.getElementById('new-result-btn').addEventListener('click', () => openSendResultDialog(students));
+  }
+
+  // All of one student's published results -- every course, every semester.
+  async function renderAdminStudentResults() {
+    const { student, results } = await api(`/admin/students/${state.view.studentId}/results`);
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>${esc(student.fullName)}</h1>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-accent btn-sm" id="send-result-btn">+ Send Result</button>
+          <button class="btn btn-ghost btn-sm" id="back-btn">← Back to Results</button>
+        </div>
+      </div>
+      <p class="muted tabular" style="margin-bottom:16px;">${esc(student.matricNumber || '—')}</p>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
+          <tbody>${results.map((r) => `<tr><td class="tabular">${esc(r.course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${esc(r.remark || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">No results published for this student yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-results'));
+    document.getElementById('send-result-btn').addEventListener('click', async () => {
+      const { students } = await api('/admin/students');
+      openSendResultDialog(students, student.id);
+    });
+  }
+
+  // "Search and select student" flow: type a name/matric to filter, pick one, then the
+  // course dropdown narrows to just the courses that student is actually enrolled in
+  // (each student's own `courses` list is already included in GET /admin/students).
+  function openSendResultDialog(students, preselectStudentId) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:14px;">Send a result</h3>
+      <div class="field"><label>Student</label><input type="text" id="sr-search" placeholder="Search by name or matric number…"></div>
+      <div id="sr-matches" class="card" style="max-height:160px; overflow-y:auto; margin-bottom:14px;"></div>
+      <div id="sr-form" hidden>
+        <p class="meta" id="sr-picked" style="margin-bottom:10px;"></p>
+        <div class="field"><label>Course</label><select id="sr-course"></select></div>
+        <div class="field"><label>Semester</label><input type="text" id="sr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
+        <div class="field"><label>Score</label><input type="number" id="sr-score" required></div>
+        <div class="field"><label>Grade (optional)</label><input type="text" id="sr-grade" placeholder="e.g. A"></div>
+        <div class="field"><label>Remark (optional)</label><input type="text" id="sr-remark"></div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="sr-save" ${preselectStudentId ? '' : 'hidden'}>Send</button>
+        <button class="btn btn-ghost" id="sr-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#sr-cancel').addEventListener('click', close);
+
+    let picked = null;
+    function pickStudent(s) {
+      picked = s;
+      container.querySelector('#sr-matches').innerHTML = '';
+      container.querySelector('#sr-search').value = s.fullName;
+      container.querySelector('#sr-picked').textContent = `${s.fullName} (${s.matricNumber || '—'})`;
+      container.querySelector('#sr-course').innerHTML = (s.courses || []).map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('') || '<option value="">Not enrolled in any course</option>';
+      container.querySelector('#sr-form').hidden = false;
+      container.querySelector('#sr-save').hidden = false;
+    }
+    function renderMatches(q) {
+      const matchesEl = container.querySelector('#sr-matches');
+      if (!q) { matchesEl.innerHTML = ''; return; }
+      const matches = students.filter((s) => s.fullName.toLowerCase().includes(q.toLowerCase()) || (s.matricNumber || '').toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+      matchesEl.innerHTML = matches.map((s) => `<div class="list-row clickable" data-pick="${s.id}" style="cursor:pointer; padding:8px 12px;"><div>${esc(s.fullName)}</div><span class="meta tabular">${esc(s.matricNumber || '—')}</span></div>`).join('') || '<p class="muted" style="padding:8px 12px;">No match.</p>';
+      matchesEl.querySelectorAll('[data-pick]').forEach((row) => {
+        row.addEventListener('click', () => pickStudent(students.find((s) => s.id === row.dataset.pick)));
+      });
+    }
+    container.querySelector('#sr-search').addEventListener('input', (e) => renderMatches(e.target.value.trim()));
+    if (preselectStudentId) {
+      const pre = students.find((s) => s.id === preselectStudentId);
+      if (pre) pickStudent(pre);
+    }
+
+    container.querySelector('#sr-save').addEventListener('click', async () => {
+      if (!picked) return toast('Search for and select a student first.');
+      const courseId = container.querySelector('#sr-course').value;
+      if (!courseId) return toast(`${picked.fullName} isn't enrolled in any course.`);
+      try {
+        await api(`/courses/${courseId}/results`, {
+          method: 'POST',
+          body: {
+            studentId: picked.id,
+            term: container.querySelector('#sr-term').value.trim(),
+            score: container.querySelector('#sr-score').value,
+            grade: container.querySelector('#sr-grade').value.trim() || null,
+            remark: container.querySelector('#sr-remark').value.trim() || null,
+          },
+        });
+        toast('Result sent');
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
   }
 
   // Grouped by student name, searchable -- click a name to see all four of their
@@ -5908,7 +6094,7 @@
         <h3 style="margin-bottom:10px; font-size:1rem;">Formal results</h3>
         <div class="card" style="overflow-x:auto; margin-bottom:26px;">
           <table class="data-table">
-            <thead><tr><th>Course</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+            <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
             <tbody>${s.results.map((x) => `<tr><td class="tabular">${esc(x.course.code)}</td><td>${esc(x.term)}</td><td class="tabular">${x.score}</td><td>${esc(x.grade || '—')}</td><td class="tabular">${new Date(x.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">None yet.</td></tr>'}</tbody>
           </table>
         </div>

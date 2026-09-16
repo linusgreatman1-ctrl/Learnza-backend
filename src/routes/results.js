@@ -11,7 +11,7 @@ const router = express.Router();
 router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const { studentId, term, score, grade, remark } = req.body;
   if (!studentId || !term || score === undefined || score === null) {
-    return res.status(400).json({ error: 'Student, term and score are required.' });
+    return res.status(400).json({ error: 'Student, semester and score are required.' });
   }
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const result = await prisma.result.create({
@@ -44,6 +44,19 @@ router.get('/students/me/formal-results', requireAuth, requireRole('STUDENT'), a
     orderBy: { publishedAt: 'desc' },
   });
   res.json({ results });
+});
+
+// Every formal result for one student, across every course -- backs admin's Results
+// screen ("click a student to see all the details of their results").
+router.get('/admin/students/:id/results', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const student = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STUDENT' } });
+  if (!student) return res.status(404).json({ error: 'Student not found' });
+  const results = await prisma.result.findMany({
+    where: { studentId: student.id },
+    include: { course: { select: { code: true, title: true } } },
+    orderBy: { publishedAt: 'desc' },
+  });
+  res.json({ student: { id: student.id, fullName: student.fullName, matricNumber: student.matricNumber }, results });
 });
 
 module.exports = router;
