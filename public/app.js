@@ -316,7 +316,7 @@
   function defaultScreenFor(role) {
     if (role === 'STUDENT') return 'my-dashboard';
     if (role === 'LECTURER') return 'lect-dashboard';
-    return 'admin-directory';
+    return 'admin-dashboard';
   }
 
   // ---------- Sidebar ----------
@@ -379,6 +379,7 @@
       ['settings', 'Settings'],
     ],
     ADMIN: [
+      ['admin-dashboard', 'My Dashboard'],
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
       ['admin-semester-exam', 'Semester Exam'],
@@ -633,6 +634,7 @@
         case 'lect-student-detail': return renderLecturerStudentDetail();
         case 'staff-profile': return renderStaffProfile();
 
+        case 'admin-dashboard': return renderAdminDashboard();
         case 'admin-directory': return renderAdminDirectory();
         case 'admin-directory-list': return renderAdminDirectoryList();
         case 'admin-directory-detail': return renderAdminDirectoryDetail();
@@ -4364,6 +4366,7 @@
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
         <button class="btn btn-ghost" id="dash-staff-profile-btn">👤 My Staff Profile</button>
+        <a class="btn btn-ghost" href="index.html" target="_blank" rel="noopener">🌐 Switch to Public App</a>
       </div>
     `;
     document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
@@ -5202,6 +5205,101 @@
     const { courses } = await api('/admin/courses');
     const selected = new Set(selectedIds || []);
     return courses.map((c) => `<option value="${c.id}" ${selected.has(c.id) ? 'selected' : ''}>${esc(c.department.name)} — ${esc(c.code)}</option>`).join('');
+  }
+
+  // ================= ADMIN: DASHBOARD + ADMIN MANAGEMENT =================
+
+  async function renderAdminDashboard() {
+    const u = state.user;
+    const [{ school }, { students }, { lecturers }, { staff }, { admins }] = await Promise.all([
+      api('/admin/school'),
+      api('/admin/students'),
+      api('/admin/lecturers'),
+      api('/admin/non-academic-staff'),
+      api('/admin/admins'),
+    ]);
+    view.innerHTML = `
+      <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px;">
+        ${selfAvatarHtml('avatar-admin-dash')}
+        <div>
+          <div>${esc(u.fullName)} · Admin</div>
+          <div>${[school.name, school.location].filter(Boolean).map(esc).join(', ')}</div>
+        </div>
+      </div>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${students.length}</div><div class="meta">Students</div></div>
+        <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
+        <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
+      </div>
+
+      <div class="page-head" style="margin-bottom:12px;">
+        <h3 style="font-size:1rem;">Admin Management</h3>
+        <button class="btn btn-accent btn-sm" id="add-admin-btn">+ Add Admin</button>
+      </div>
+      <p class="muted" style="margin-bottom:14px;">Other admin accounts for ${esc(school.name)} -- e.g. a vice-principal or registrar who also needs full admin access.</p>
+      <div id="add-admin-box" hidden></div>
+      <div class="card" style="margin-bottom:26px;">
+        ${admins.map((a) => `
+          <div class="list-row">
+            <div>
+              <div style="font-weight:600;">${esc(a.fullName)} ${a.id === u.id ? '<span class="pill pill-muted" style="margin-left:6px;">You</span>' : ''}</div>
+              <div class="meta">${esc(a.email)}${a.phone ? ` · ${esc(a.phone)}` : ''}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              ${statusPillHtml(a.status)}
+              ${a.id !== u.id && a.status === 'ACTIVE' ? `<button class="btn btn-ghost btn-sm" data-remove-admin="${a.id}" data-name="${esc(a.fullName)}">Remove</button>` : ''}
+            </div>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No admins yet.</p>'}
+      </div>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
+        <a class="btn btn-ghost" id="dash-public-site-btn" href="index.html" target="_blank" rel="noopener">🌐 Switch to Public App</a>
+      </div>
+    `;
+    wireSelfAvatarUpload('avatar-admin-dash');
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
+    document.getElementById('dash-digital-id-btn').addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('add-admin-btn').addEventListener('click', () => {
+      const box = document.getElementById('add-admin-box');
+      box.hidden = !box.hidden;
+      if (box.hidden) return;
+      box.innerHTML = `
+        <form id="add-admin-form" class="card" style="padding:20px; margin-bottom:18px;">
+          <div class="field"><label>Full name</label><input type="text" id="aa-name" required></div>
+          <div class="field"><label>Email</label><input type="email" id="aa-email" required></div>
+          <div class="field"><label>Phone number</label><input type="tel" id="aa-phone"></div>
+          <button class="btn btn-primary" type="submit">Add admin</button>
+        </form>
+      `;
+      document.getElementById('add-admin-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          const { user, tempPassword } = await api('/admin/admins', {
+            method: 'POST',
+            body: {
+              fullName: document.getElementById('aa-name').value.trim(),
+              email: document.getElementById('aa-email').value.trim(),
+              phone: document.getElementById('aa-phone').value.trim(),
+            },
+          });
+          alert(`${user.fullName} added as admin.\n\nTemporary password: ${tempPassword}\n\nThey log in with their email and this password (Settings > Change Password lets them set their own afterward).`);
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
+    view.querySelectorAll('[data-remove-admin]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Remove ${btn.dataset.name} as admin? They will no longer be able to log in.`)) return;
+        try {
+          await api(`/admin/admins/${btn.dataset.removeAdmin}/remove`, { method: 'POST' });
+          toast('Admin removed');
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
   }
 
   async function renderAdminDirectory() {

@@ -241,6 +241,42 @@ router.post('/students', async (req, res) => {
   res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
 });
 
+// ---- Admin management: a school can have more than one admin account (e.g. the
+// principal plus a vice-principal or registrar) -- this is how additional ones get
+// added, distinct from the single admin created automatically at school registration.
+// Admins log in with email+password only, same as non-academic staff -- no access code.
+router.get('/admins', async (req, res) => {
+  const admins = await prisma.user.findMany({
+    where: { schoolId: req.user.schoolId, role: 'ADMIN' },
+    orderBy: { createdAt: 'asc' },
+  });
+  res.json({ admins: admins.map(({ passwordHash, ...a }) => a) });
+});
+
+router.post('/admins', async (req, res) => {
+  const created = await createSchoolUser(req, res, { role: 'ADMIN', skipAccessCode: true });
+  if (!created) return;
+  const { passwordHash, ...safe } = created.user;
+  res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
+});
+
+// A status change (DISMISSED), not a hard delete -- an admin account can easily have
+// authored assessments, results, disciplinary records, etc., and deleting the row
+// outright would hit those foreign keys. This also matches how lecturer/staff removal
+// already works elsewhere. A school should never end up with zero *active* admins able
+// to log in, and can't remove the account you're currently logged in as -- both guards
+// are enforced server-side regardless of what the client checks.
+router.post('/admins/:id/remove', async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: "You can't remove your own admin account." });
+  const admin = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: 'ADMIN' } });
+  if (!admin) return res.status(404).json({ error: 'Admin not found' });
+  const activeAdminCount = await prisma.user.count({ where: { schoolId: req.user.schoolId, role: 'ADMIN', status: 'ACTIVE' } });
+  if (admin.status === 'ACTIVE' && activeAdminCount <= 1) return res.status(400).json({ error: 'A school must always have at least one active admin.' });
+  const updated = await prisma.user.update({ where: { id: admin.id }, data: { status: 'DISMISSED' } });
+  const { passwordHash, ...safe } = updated;
+  res.json({ user: safe });
+});
+
 router.post('/departments', async (req, res) => {
   const { name, code } = req.body;
   if (!name || !code) return res.status(400).json({ error: 'Name and code are required' });
