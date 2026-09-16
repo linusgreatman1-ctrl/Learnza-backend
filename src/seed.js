@@ -1,7 +1,9 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const prisma = require('./db');
 const { PLANS } = require('./config/plans');
+const gamification = require('./services/gamification.service');
 
 async function main() {
   const existing = await prisma.school.findFirst();
@@ -18,6 +20,7 @@ async function main() {
     await backfillPastQuestionsAndMocks();
     await backfillCourseSemesters();
     await backfillSubscriptionAiCredits();
+    await backfillDemoStudentActivity();
     return;
   }
 
@@ -663,6 +666,319 @@ async function backfillPastQuestionsAndMocks() {
     }
   }
   if (created) console.log(`Backfilled ${created} past-question/mock-exam set(s) across ${bank.length} courses`);
+}
+
+// The demo student account (Blessing Aigbogun) is what the user actually clicks
+// through to check every feature, so it needs to be fully populated everywhere --
+// results across every assessment type, marked assignments, attendance, formal
+// results, a study group with messages, an issued credential, and cleared
+// transcript/clearance/hostel requests -- rather than showing empty states. Every
+// piece here is idempotent (checked before created) like every other backfill.
+async function backfillDemoStudentActivity() {
+  const student = await prisma.user.findUnique({ where: { email: 'student@edocoe.edu.ng' } });
+  const lecturer = await prisma.user.findUnique({ where: { email: 'lecturer@edocoe.edu.ng' } });
+  if (!student || !lecturer) return;
+  const semester = await prisma.semester.findFirst({ where: { isCurrent: true } });
+  const school = await prisma.school.findFirst();
+  if (!school) return;
+
+  const mc = (text, options, correctIndex) => ({ text, options: JSON.stringify(options), correctIndex, questionType: 'OBJECTIVE' });
+
+  const courseData = [
+    {
+      code: 'CSC 101',
+      ca: [
+        mc('The device used to point and click on a computer screen is called a?', ['Keyboard', 'Mouse', 'Monitor', 'Printer'], 1),
+        mc('Which of these stores data permanently even when the computer is off?', ['RAM', 'Hard disk', 'Cache', 'Register'], 1),
+        mc('The full form of CPU is?', ['Central Processing Unit', 'Computer Processing Unit', 'Central Program Unit', 'Central Processor Utility'], 0),
+        mc('Which of these is system software?', ['Word processor', 'Operating system', 'Spreadsheet', 'Web browser'], 1),
+      ],
+      exam: [
+        mc('The binary number system uses only which digits?', ['0 and 1', '0 to 9', 'A to F', '1 and 2'], 0),
+        mc('Which part of the computer performs calculations?', ['ALU', 'Monitor', 'Keyboard', 'Printer'], 0),
+        mc('A computer virus is a type of?', ['Hardware', 'Malicious software', 'Input device', 'Network cable'], 1),
+        mc('The first computers were programmed using?', ['Machine language', 'Python', 'Java', 'HTML'], 0),
+      ],
+      assignmentTitle: 'Assignment 1: Computer Hardware Essay',
+      assignmentInstructions: 'Write a 300-word essay describing the four main hardware components of a computer and their functions.',
+    },
+    {
+      code: 'CSC 102',
+      ca: [
+        mc('Which of these is a valid variable declaration concept?', ['A named storage location for data', 'A printed document', 'A hardware chip', 'A monitor setting'], 0),
+        mc('What does "debugging" mean?', ['Writing new code', 'Finding and fixing errors', 'Deleting a program', 'Installing software'], 1),
+        mc('Which of these repeats a block of code a fixed number of times?', ['A for loop', 'An if statement', 'A print statement', 'A variable'], 0),
+        mc('A function in programming is used to?', ['Group reusable code together', 'Store a single number', 'Connect to the internet', 'Format text only'], 0),
+      ],
+      exam: [
+        mc("Which of these best describes an 'array'?", ['A single value', 'A collection of values stored together', 'A type of loop', 'A software license'], 1),
+        mc('What is the output of a program called?', ['Input', 'Output', 'Algorithm', 'Syntax'], 1),
+        mc('Which symbol commonly starts a comment in many programming languages?', ['//', '++', '%%', '&&'], 0),
+        mc("A compiler's main job is to?", ['Translate source code into machine code', 'Connect to the internet', 'Print documents', 'Play music'], 0),
+      ],
+      assignmentTitle: 'Assignment 1: Write an Algorithm',
+      assignmentInstructions: 'Write pseudocode and draw a flowchart for an algorithm that finds the largest of three numbers.',
+    },
+    {
+      code: 'MTH 101',
+      ca: [
+        mc('Solve: x + 7 = 12', ['x=3', 'x=5', 'x=19', 'x=7'], 1),
+        mc('Simplify: 4(x+2)', ['4x+2', '4x+8', 'x+8', '4x+6'], 1),
+        mc('What is 15% of 200?', ['15', '30', '45', '20'], 1),
+        mc('The value of x in 2x=10 is?', ['2', '5', '10', '20'], 1),
+      ],
+      exam: [
+        mc('What is the value of pi (π) approximately?', ['3.14', '2.71', '1.41', '4.13'], 0),
+        mc('Solve: x² - 4 = 0', ['x=2 or x=-2', 'x=4', 'x=0', 'x=-4'], 0),
+        mc('The perimeter of a square with side 5cm is?', ['10cm', '20cm', '25cm', '15cm'], 1),
+        mc('What is 7! (7 factorial) divided by 6!?', ['1', '7', '42', '6'], 1),
+      ],
+      assignmentTitle: 'Assignment 1: Algebra Problem Set',
+      assignmentInstructions: 'Solve the 10 linear and quadratic equations distributed in class and show all working.',
+    },
+    {
+      code: 'ENG 101',
+      ca: [
+        mc('Choose the correct form: "She ___ to school every day."', ['go', 'goes', 'going', 'gone'], 1),
+        mc('Identify the verb: "The dog barked loudly."', ['dog', 'barked', 'loudly', 'the'], 1),
+        mc('Which of these is a proper noun?', ['city', 'London', 'river', 'mountain'], 1),
+        mc('The plural of "mouse" (the animal) is?', ['Mouses', 'Mice', 'Mouse', 'Mices'], 1),
+      ],
+      exam: [
+        mc("Choose the synonym for 'rapid':", ['Slow', 'Quick', 'Quiet', 'Heavy'], 1),
+        mc('Identify the correctly spelled word.', ['Definately', 'Definitely', 'Definitly', 'Deffinitely'], 1),
+        mc('"Although it was raining, we went out." — "Although" is a?', ['Noun', 'Preposition', 'Conjunction', 'Adjective'], 2),
+        mc("The opposite of 'generous' is?", ['Kind', 'Stingy', 'Wealthy', 'Friendly'], 1),
+      ],
+      assignmentTitle: 'Assignment 1: Descriptive Essay',
+      assignmentInstructions: 'Write a 250-word descriptive essay on "My First Day on Campus", paying attention to grammar and structure.',
+    },
+    {
+      code: 'BIO 101',
+      ca: [
+        mc('Which of these is a producer in an ecosystem?', ['Lion', 'Grass', 'Eagle', 'Human'], 1),
+        mc('The human body system responsible for breathing is the?', ['Digestive system', 'Respiratory system', 'Skeletal system', 'Nervous system'], 1),
+        mc('Which organ pumps blood around the body?', ['Liver', 'Heart', 'Kidney', 'Lungs'], 1),
+        mc('Plants make their own food through a process called?', ['Respiration', 'Photosynthesis', 'Digestion', 'Excretion'], 1),
+      ],
+      exam: [
+        mc('Which of these is NOT a vertebrate?', ['Fish', 'Bird', 'Insect', 'Mammal'], 2),
+        mc('The powerhouse of the cell is the?', ['Nucleus', 'Mitochondrion', 'Ribosome', 'Vacuole'], 1),
+        mc('Which gas is essential for respiration in humans?', ['Carbon dioxide', 'Oxygen', 'Nitrogen', 'Hydrogen'], 1),
+        mc('A group of similar cells performing the same function is called a?', ['Organ', 'Tissue', 'System', 'Organism'], 1),
+      ],
+      assignmentTitle: 'Assignment 1: Ecosystem Report',
+      assignmentInstructions: 'Describe a local ecosystem, identifying at least 3 producers, 3 consumers and 1 decomposer.',
+    },
+    {
+      code: 'ECE 101',
+      ca: [
+        mc("The first three years of a child's life are best described as?", ['Adolescence', 'Early infancy/toddlerhood', 'Middle childhood', 'Puberty'], 1),
+        mc('Which of these promotes social development in young children?', ['Isolation', 'Group play', 'Silence', 'Long lectures'], 1),
+        mc("A 'milestone' in child development refers to?", ['A type of toy', 'A key stage of development reached at a typical age', 'A school building', 'A test score'], 1),
+        mc('Storytelling in early childhood helps develop?', ['Language skills', 'Physical strength only', 'Mathematical skills only', 'None of these'], 0),
+      ],
+      exam: [
+        mc('Who proposed the theory of psychosocial development?', ['Erik Erikson', 'Isaac Newton', 'Charles Darwin', 'Karl Marx'], 0),
+        mc('A low caregiver-to-child ratio (few children per caregiver) generally leads to?', ['Worse care', 'Better individual attention', 'No difference', 'Higher cost only'], 1),
+        mc('Which of these is an indoor gross motor activity?', ['Dancing', 'Reading silently', 'Painting', 'Puzzle solving'], 0),
+        mc('Early childhood education programs are best evaluated by?', ['Child outcomes and development', 'Building size only', 'Number of staff only', 'Number of toys only'], 0),
+      ],
+      assignmentTitle: 'Assignment 1: Observation Report',
+      assignmentInstructions: 'Observe a child aged 3-5 for 30 minutes and write a report describing their social, physical and language development.',
+    },
+    {
+      code: 'ECO 101',
+      ca: [
+        mc("Which of these best defines 'goods'?", ['Tangible items that satisfy wants', 'Only services', 'Government policies', 'Bank loans'], 0),
+        mc('A rise in the general price level over time is called?', ['Deflation', 'Inflation', 'Recession', 'Depreciation'], 1),
+        mc('Which of these is a need, not a want?', ['Food', 'Jewelry', 'Video games', 'Vacation'], 0),
+        mc('The study of individual markets and consumers is called?', ['Macroeconomics', 'Microeconomics', 'Public finance', 'International trade'], 1),
+      ],
+      exam: [
+        mc('GDP stands for?', ['Gross Domestic Product', 'General Development Plan', 'Global Domestic Price', 'Gross Direct Profit'], 0),
+        mc("Which of these best describes 'unemployment'?", ['People not seeking work at all', 'People able and willing to work but without a job', 'Retired persons', 'Students'], 1),
+        mc("A central bank's main tool for controlling money supply is?", ['Advertising', 'Monetary policy', 'Farming subsidies', 'Tourism'], 1),
+        mc('Which sector produces raw materials?', ['Primary sector', 'Secondary sector', 'Tertiary sector', 'Quaternary sector'], 0),
+      ],
+      assignmentTitle: 'Assignment 1: Demand and Supply',
+      assignmentInstructions: 'Draw and explain a demand-and-supply diagram for rice in Nigeria, showing what happens if the price of fertilizer rises.',
+    },
+  ];
+
+  let created = 0;
+  for (const entry of courseData) {
+    const course = await prisma.course.findFirst({ where: { code: entry.code } });
+    if (!course) continue;
+
+    await prisma.enrollment.upsert({
+      where: { studentId_courseId: { studentId: student.id, courseId: course.id } },
+      create: { studentId: student.id, courseId: course.id },
+      update: {},
+    });
+
+    for (const [type, questions, scoreOutOf4] of [['CA', entry.ca, 4], ['SEMESTER_EXAM', entry.exam, 3]]) {
+      const title = type === 'CA' ? `${entry.code} Continuous Assessment 1` : `${entry.code} Semester Exam`;
+      let assessment = await prisma.assessment.findFirst({ where: { courseId: course.id, title } });
+      if (!assessment) {
+        assessment = await prisma.assessment.create({
+          data: {
+            courseId: course.id, title, type, authorId: lecturer.id, durationMin: 20,
+            semesterId: semester ? semester.id : null,
+            questions: { create: questions.map((q, i) => ({ ...q, order: i })) },
+          },
+          include: { questions: true },
+        });
+        created++;
+      } else {
+        assessment = await prisma.assessment.findUnique({ where: { id: assessment.id }, include: { questions: true } });
+      }
+
+      const existingSub = await prisma.submission.findUnique({
+        where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: student.id } },
+      });
+      if (!existingSub || !existingSub.submittedAt) {
+        const qs = assessment.questions;
+        const numCorrect = Math.min(scoreOutOf4, qs.length);
+        const answers = qs.map((q, i) => ({ questionId: q.id, choice: i < numCorrect ? q.correctIndex : (q.correctIndex + 1) % 4 }));
+        await prisma.submission.upsert({
+          where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: student.id } },
+          create: { assessmentId: assessment.id, studentId: student.id, startedAt: new Date(), answers: JSON.stringify(answers), score: numCorrect, total: qs.length, submittedAt: new Date() },
+          update: { answers: JSON.stringify(answers), score: numCorrect, total: qs.length, submittedAt: new Date() },
+        });
+        await gamification.recordAssessmentCompletion(student.id, numCorrect, qs.length);
+        created++;
+      }
+    }
+
+    // Assignment + a marked submission with lecturer feedback.
+    let assignment = await prisma.assignment.findFirst({ where: { courseId: course.id, title: entry.assignmentTitle } });
+    if (!assignment) {
+      assignment = await prisma.assignment.create({
+        data: { courseId: course.id, title: entry.assignmentTitle, instructions: entry.assignmentInstructions, authorId: lecturer.id, semesterId: semester ? semester.id : null, dueAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
+      });
+      created++;
+    }
+    const existingAssignmentSub = await prisma.assignmentSubmission.findUnique({
+      where: { assignmentId_studentId: { assignmentId: assignment.id, studentId: student.id } },
+    });
+    if (!existingAssignmentSub) {
+      await prisma.assignmentSubmission.create({
+        data: {
+          assignmentId: assignment.id, studentId: student.id,
+          answerText: 'Submitted assignment (demo answer for illustration purposes).',
+          status: 'MARKED', score: 8, feedback: 'Well structured and on-topic — good work. Watch your referencing next time.',
+          markedAt: new Date(),
+        },
+      });
+      created++;
+    }
+
+    // Attendance: 5 recent class days, mostly present.
+    const attendanceCount = await prisma.classAttendanceRecord.count({ where: { courseId: course.id, studentId: student.id } });
+    if (attendanceCount === 0) {
+      const statuses = ['PRESENT', 'PRESENT', 'ABSENT', 'PRESENT', 'PRESENT'];
+      for (let i = 0; i < statuses.length; i++) {
+        const date = new Date(Date.now() - (statuses.length - i) * 7 * 24 * 60 * 60 * 1000);
+        date.setHours(0, 0, 0, 0);
+        await prisma.classAttendanceRecord.create({
+          data: { courseId: course.id, studentId: student.id, date, status: statuses[i], markedById: lecturer.id, semesterId: semester ? semester.id : null },
+        });
+      }
+      created++;
+    }
+
+    // Formal (lecturer-published) result.
+    const existingResult = await prisma.result.findFirst({ where: { courseId: course.id, studentId: student.id } });
+    if (!existingResult) {
+      await prisma.result.create({
+        data: {
+          courseId: course.id, studentId: student.id, authorId: lecturer.id,
+          term: semester ? semester.name : '1st Semester 2025/2026', semesterId: semester ? semester.id : null,
+          score: 78, grade: 'B', remark: 'Good performance, keep it up.',
+        },
+      });
+      created++;
+    }
+  }
+
+  // Study group with a few messages, in her first course.
+  const csc101 = await prisma.course.findFirst({ where: { code: 'CSC 101' } });
+  if (csc101) {
+    let group = await prisma.studyGroup.findFirst({ where: { courseId: csc101.id } });
+    if (!group) {
+      group = await prisma.studyGroup.create({ data: { courseId: csc101.id, name: 'CSC101 Study Buddies', creatorId: student.id } });
+      created++;
+    }
+    await prisma.groupMembership.upsert({
+      where: { groupId_studentId: { groupId: group.id, studentId: student.id } },
+      create: { groupId: group.id, studentId: student.id },
+      update: {},
+    });
+    const messageCount = await prisma.groupMessage.count({ where: { groupId: group.id } });
+    if (messageCount === 0) {
+      await prisma.groupMessage.createMany({
+        data: [
+          { groupId: group.id, senderId: student.id, body: 'Hi everyone! Does anyone have notes from Monday\'s class?' },
+          { groupId: group.id, senderId: student.id, body: 'I found the past questions for CSC101 in the e-Library — really helpful for revision.' },
+        ],
+      });
+      created++;
+    }
+  }
+
+  // Credential, transcript/clearance/hostel requests -- all in a fully-resolved state
+  // so every Digital ID row shows real, complete data rather than a pending button.
+  const existingCredential = await prisma.credential.findFirst({ where: { studentId: student.id } });
+  if (!existingCredential) {
+    await prisma.credential.create({
+      data: { studentId: student.id, title: "Dean's List Certificate — 1st Semester 2025/2026", verifyCode: crypto.randomBytes(6).toString('hex') },
+    });
+    created++;
+  }
+
+  const existingTranscript = await prisma.transcriptRequest.findFirst({ where: { studentId: student.id } });
+  if (!existingTranscript) {
+    await prisma.transcriptRequest.create({ data: { studentId: student.id, status: 'ISSUED', issuedAt: new Date() } });
+    created++;
+  } else if (existingTranscript.status !== 'ISSUED') {
+    await prisma.transcriptRequest.update({ where: { id: existingTranscript.id }, data: { status: 'ISSUED', issuedAt: new Date() } });
+    created++;
+  }
+
+  const existingClearance = await prisma.clearanceRequest.findFirst({ where: { studentId: student.id } });
+  if (!existingClearance) {
+    await prisma.clearanceRequest.create({ data: { studentId: student.id, status: 'CLEARED', decidedAt: new Date() } });
+    created++;
+  } else if (existingClearance.status === 'PENDING') {
+    await prisma.clearanceRequest.update({ where: { id: existingClearance.id }, data: { status: 'CLEARED', decidedAt: new Date() } });
+    created++;
+  }
+
+  const existingHostelApp = await prisma.hostelApplication.findFirst({ where: { studentId: student.id } });
+  if (!existingHostelApp || existingHostelApp.status !== 'APPROVED') {
+    const hostel = await prisma.hostel.findFirst({ where: { schoolId: school.id } });
+    if (existingHostelApp) {
+      await prisma.hostelApplication.update({ where: { id: existingHostelApp.id }, data: { status: 'APPROVED', hostelId: hostel ? hostel.id : null, roomAssigned: 'Room 14, Block B', decidedAt: new Date() } });
+    } else {
+      await prisma.hostelApplication.create({ data: { studentId: student.id, status: 'APPROVED', hostelId: hostel ? hostel.id : null, roomAssigned: 'Room 14, Block B', decidedAt: new Date() } });
+    }
+    created++;
+  }
+
+  // A couple of read/unread notifications so the dashboard's notification list isn't empty.
+  const notifCount = await prisma.notification.count({ where: { userId: student.id } });
+  if (notifCount === 0) {
+    await prisma.notification.createMany({
+      data: [
+        { userId: student.id, title: 'Assignment marked', body: 'Your CSC 101 assignment has been marked — score 8/10.', link: 'my-dashboard' },
+        { userId: student.id, title: 'Welcome to Learnza', body: 'Explore My Dashboard, e-Library and Study Groups to get started.', link: 'my-dashboard', read: true },
+      ],
+    });
+    created++;
+  }
+
+  if (created) console.log(`Backfilled ${created} demo-student activity item(s) for Blessing Aigbogun`);
 }
 
 if (require.main === module) {
