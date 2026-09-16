@@ -15,6 +15,7 @@ async function main() {
     await backfillHostels();
     await backfillLibraryTextbooks();
     await backfillPastQuestionsAndMocks();
+    await backfillCourseSemesters();
     return;
   }
 
@@ -348,6 +349,21 @@ async function backfillSemester() {
     await prisma.semester.create({ data: { schoolId: school.id, name: 'Second Semester 2025/2026', isCurrent: false } });
     console.log('Backfilled a second semester');
   }
+}
+
+// Courses created before the semester system existed (i.e. most of the real migrated
+// data, and the original seed's own courses from before this field was added) have
+// semesterId: null -- the new "Browse & enroll by semester" tabs filter by semesterId,
+// so an un-migrated course would silently disappear from every tab. Attach them to
+// the school's current semester rather than leaving them orphaned.
+async function backfillCourseSemesters() {
+  const current = await prisma.semester.findFirst({ where: { isCurrent: true } });
+  if (!current) return;
+  const result = await prisma.course.updateMany({
+    where: { semesterId: null, department: { schoolId: current.schoolId } },
+    data: { semesterId: current.id },
+  });
+  if (result.count) console.log(`Backfilled semesterId onto ${result.count} pre-existing course(s)`);
 }
 
 // Demo accounts seeded before phone/staffType existed get them filled in so the
