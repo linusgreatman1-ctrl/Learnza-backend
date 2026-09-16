@@ -40,6 +40,11 @@
   main.content { padding: 30px 34px; overflow-y: auto; min-width: 0; }
   .page-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
   .page-head h1 { font-size: 1.5rem; }
+  @media (min-width: 761px) {
+    /* Clear the fixed .notif-bell-desktop (top:16px right:22px, 40px wide) so it never
+       sits on top of a page-head's right-aligned back/action button. */
+    .page-head { padding-right: 56px; }
+  }
 
   .list-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); gap: 12px; }
   .list-row:last-child { border-bottom: none; }

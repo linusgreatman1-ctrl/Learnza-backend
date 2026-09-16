@@ -77,7 +77,10 @@ async function generateLessonPlan({ courseTitle, topic }) {
 async function answerInterrupt({ courseTitle, topic, sectionTitle, question }) {
   const userPrompt = `Course: ${courseTitle}\nLesson topic: ${topic}\nCurrent section: ${sectionTitle}\nStudent's question: ${question}`;
   const result = await ai.askForJson(INTERRUPT_SYSTEM, userPrompt);
-  return { ...result, boardActions: sanitizeBoardActions(result.boardActions) };
+  const boardActions = sanitizeBoardActions(result.boardActions);
+  // Every answer must land on the board, not just the chat log underneath it -- fall
+  // back to the plain-text answer itself if the model returned no usable board content.
+  return { ...result, boardActions: boardActions.length ? boardActions : [{ type: 'TEXT', content: result.answer || '' }] };
 }
 
 async function gradeCheckAnswer({ checkQuestion, studentAnswer }) {

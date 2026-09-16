@@ -83,7 +83,9 @@ router.post('/lab/:id/ask', requireAuth, requireActiveSubscription, async (req, 
   const systemPrompt = `You are the AI teacher guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
   try {
     const answer = await ai.askForText(systemPrompt, question.trim());
-    res.json({ answer });
+    // Structured the same way AI Teacher's interrupt answers are, so the frontend can
+    // always render the answer onto the board rather than only in the chat log.
+    res.json({ answer, boardActions: [{ type: 'TEXT', content: answer }] });
   } catch (err) {
     if (err.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: err.message, code: err.code });
     res.status(502).json({ error: 'Could not answer that right now. Please try again.' });

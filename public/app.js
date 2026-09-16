@@ -471,7 +471,10 @@
     if (state.view.screen === 'live-class' && screen !== 'live-class') teardownLive();
     if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
-    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    if (speechCtrl) {
+      if (speechCtrl.timer) clearInterval(speechCtrl.timer);
+      if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
+    }
     speechCtrl = null;
     if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopped */ } voiceRecognizer = null; }
     state.view = Object.assign({ screen }, params);
@@ -1028,10 +1031,16 @@
     ctrl.timer = setInterval(() => {
       if (ctrl.index >= ctrl.bytes.length) {
         clearInterval(ctrl.timer);
-        if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
-        const done = ctrl.onDone;
-        speechCtrl = null;
-        if (done) done();
+        // All bytes have been *sent* to Simli, but WebRTC/pipeline playback still has a
+        // little audio queued up -- firing onDone (which the lesson loop treats as "the
+        // teacher finished speaking") right here ends the session while the avatar is
+        // still audibly talking. A short buffer after the last chunk, matching PassNow's
+        // own reference implementation, lets actual playback catch up first.
+        ctrl.doneTimeout = setTimeout(() => {
+          if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
+          if (speechCtrl === ctrl) speechCtrl = null;
+          if (ctrl.onDone) ctrl.onDone();
+        }, 250);
         return;
       }
       simliAvatarClient.sendAudioData(ctrl.bytes.subarray(ctrl.index, ctrl.index + ctrl.chunkSize));
@@ -1045,7 +1054,10 @@
   // slice) so the SDK ingests it like a live feed rather than one giant blob dumped
   // instantly -- matches how PassNow's own working integration paces this.
   async function speakThroughAvatarOrTts(text, ringEl, onDone) {
-    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    if (speechCtrl) {
+      if (speechCtrl.timer) clearInterval(speechCtrl.timer);
+      if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
+    }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     speechCtrl = null;
     if (!simliAvatarClient) return speak(text, ringEl, onDone);
@@ -1076,8 +1088,10 @@
   function pauseSpeechForQuestion() {
     const ctrl = speechCtrl;
     if (!ctrl) return null;
-    if (ctrl.mode === 'avatar' && ctrl.timer) clearInterval(ctrl.timer);
-    else if (ctrl.mode === 'browser' && window.speechSynthesis) window.speechSynthesis.cancel();
+    if (ctrl.mode === 'avatar') {
+      if (ctrl.timer) clearInterval(ctrl.timer);
+      if (ctrl.doneTimeout) clearTimeout(ctrl.doneTimeout);
+    } else if (ctrl.mode === 'browser' && window.speechSynthesis) window.speechSynthesis.cancel();
     if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
     speechCtrl = null;
     return ctrl;
@@ -1155,13 +1169,20 @@
 
   async function renderAiTeacherSession() {
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
-    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    if (speechCtrl) {
+      if (speechCtrl.timer) clearInterval(speechCtrl.timer);
+      if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
+    }
     speechCtrl = null;
     const { session } = await api(`/ai-teacher/sessions/${state.view.sessionId}`);
     const plan = session.plan;
     let sectionIdx = session.sectionIdx;
     const { avatarConfigured, aiCredits } = await api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null }));
     let stopped = false;
+    // "Got a question" only becomes usable once the teacher has actually started
+    // speaking -- matches a real classroom, and avoids a question firing before there's
+    // any lesson state to pause/resume.
+    let teachingStarted = false;
 
     view.innerHTML = `
       <div class="page-head">
@@ -1196,11 +1217,11 @@
         </div>
 
         <div class="controls">
-          <button class="btn btn-ghost" id="ask-voice-btn">🎤 Ask a question</button>
+          <button class="btn btn-ghost" id="ask-voice-btn" disabled>🎤 Ask a question</button>
         </div>
 
-        <div class="got-question-toggle" id="got-question-toggle">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub">Learnza answers visually without leaving the lesson</div></div>
+        <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the teacher to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -1251,10 +1272,24 @@
     }
 
     document.getElementById('got-question-toggle').addEventListener('click', () => {
+      if (!teachingStarted) return;
       const panel = document.getElementById('got-question-panel');
       panel.hidden = !panel.hidden;
       document.getElementById('gq-arrow').textContent = panel.hidden ? '▼' : '▲';
     });
+
+    // Flips on once the teacher starts speaking the first section -- unlocks
+    // "Ask a question" / "Got a question" for the rest of the lesson, just like a real
+    // classroom where you can't raise your hand before class has started.
+    function markTeachingStarted() {
+      if (teachingStarted) return;
+      teachingStarted = true;
+      askVoiceBtn.disabled = false;
+      const toggle = document.getElementById('got-question-toggle');
+      toggle.style.opacity = '';
+      toggle.style.cursor = '';
+      document.getElementById('gq-sub').textContent = 'Learnza answers visually without leaving the lesson';
+    }
 
     // Shared by the typed "Ask" button and the voice-question flow. `pausedSnapshot`
     // (from pauseSpeechForQuestion()) is whatever the teacher was saying when the
@@ -1274,11 +1309,11 @@
           <div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>
         `);
         log.scrollTop = log.scrollHeight;
-        if (boardActions && boardActions.length) {
-          board.innerHTML = renderBoardActionsHtml(boardActions);
-          mountBoardActions(board, boardActions);
-          boardStatus.textContent = 'AI Teacher — answering your question';
-        }
+        // Every answer lands on the board itself, not just the chat log underneath it.
+        const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
+        board.innerHTML = renderBoardActionsHtml(answerBoardActions);
+        mountBoardActions(board, answerBoardActions);
+        boardStatus.textContent = 'AI Teacher — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         });
@@ -1290,6 +1325,7 @@
     }
 
     document.getElementById('interrupt-btn').addEventListener('click', () => {
+      if (!teachingStarted) return;
       const input = document.getElementById('interrupt-input');
       const question = input.value.trim();
       if (!question) return;
@@ -1315,6 +1351,7 @@
     // server-side); either way the explanation is spoken before the lesson resumes.
     async function runCheckQuestion(question) {
       boardStatus.textContent = 'AI Teacher — checking your understanding';
+      board.innerHTML = renderBoardActionsHtml([{ type: 'TEXT', content: question }]);
       await speakAsync(`Quick question to check you're following: ${question}`, avatarRing);
       if (stopped) return;
       const box = document.getElementById('check-question-box');
@@ -1362,6 +1399,7 @@
       try {
         const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
         boardStatus.textContent = result.correct ? 'AI Teacher — well done!' : 'AI Teacher — explaining';
+        board.innerHTML = renderBoardActionsHtml([{ type: 'TEXT', content: `${result.correct ? "Correct! " : 'Not quite — '}${result.feedback}` }]);
         await speakAsync(`${result.correct ? "That's correct! " : 'Not quite. '}${result.feedback}`, avatarRing);
       } catch (err) {
         toast(err.message || 'Could not grade that answer.');
@@ -1386,6 +1424,7 @@
       }
       while (!stopped) {
         const section = renderSection(sectionIdx);
+        markTeachingStarted();
         await speakAsync(section.speechText, avatarRing);
         if (stopped) return;
 
@@ -1938,9 +1977,13 @@
   // ---------- My Dashboard ----------
   // Aggregates every enrolled course's assignments, attendance and recent test scores
   // in one place, so a student never has to hunt through each course individually.
+  // Dashboard list sections (Assignments, Attendance, Results, Lessons, Notifications)
+  // all follow the same "show 3, View more reveals the rest" pattern.
+  const DASH_LIMIT = 3;
+
   async function renderMyDashboard() {
     const isIndividual = state.user.isIndividual;
-    const [{ assignments, attendance, recentResults }, { notifications }] = await Promise.all([
+    const [{ assignments, attendance, recentResults, lessons }, { notifications }] = await Promise.all([
       api('/students/me/dashboard'),
       api('/notifications'),
     ]);
@@ -1954,10 +1997,11 @@
       attendanceByCourse[a.course.code].total += 1;
       if (a.status === 'PRESENT') attendanceByCourse[a.course.code].present += 1;
     }
-    // Individual learners have no lecturer-set assignments/attendance at all (school-
-    // institutional concepts) -- only their own app-generated test/assignment results.
-    // Each tile links to the dashboard section (or dedicated screen) it summarizes,
-    // instead of being a static, unclickable number.
+    const attendanceRows = Object.values(attendanceByCourse);
+    // Individual learners have no lecturer-set assignments/attendance/lessons at all
+    // (school-institutional concepts) -- only their own app-generated test/assignment
+    // results. Each tile links to the dashboard section (or dedicated screen) it
+    // summarizes, instead of being a static, unclickable number.
     const statTiles = isIndividual
       ? [[avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'], [recentResults.length, 'Tests & assignments taken', '#dash-results']]
       : [
@@ -1966,20 +2010,8 @@
           [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'],
         ];
 
-    view.innerHTML = `
-      <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
-        <div class="id-avatar">${esc(initials(state.user.fullName))}</div>
-        <div>${profileLines().map((l) => `<div>${l}</div>`).join('')}</div>
-      </div>
-      <div class="grid-cards" style="margin-bottom:26px;">
-        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
-      </div>
-
-      ${isIndividual ? '' : `
-      <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
-      <div class="card" style="margin-bottom:26px;">
-        ${assignments.map((a) => `
+    function assignmentRowHtml(a) {
+      return `
           <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
             <div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:8px;">
               <div data-open-assignment="${a.id}" style="cursor:pointer;"><div style="font-weight:600;">${esc(a.title)} <span class="meta">(${esc(a.course.code)})</span>${a.kind === 'PROJECT' ? ' <span class="pill pill-muted">Project</span>' : ''}</div>${a.dueAt ? `<div class="meta">Due ${new Date(a.dueAt).toLocaleDateString()}</div>` : ''}</div>
@@ -1997,48 +2029,112 @@
                   <textarea class="submit-answer" placeholder="Write your answer…" required></textarea>
                   <button class="btn btn-primary btn-sm" type="submit" style="align-self:flex-start;">Submit answer</button>
                 </form>`}
-          </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
-      </div>
-
-      <h3 id="dash-attendance" style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
-      <div class="card" style="margin-bottom:26px;">
-        ${Object.values(attendanceByCourse).map((c) => `
+          </div>`;
+    }
+    function attendanceRowHtml(c) {
+      return `
           <div class="list-row">
             <div>${esc(c.courseCode)}</div>
             <div style="display:flex; align-items:center; gap:10px;">
               <span class="meta tabular">${c.present}/${c.total} present</span>
               <button class="btn btn-ghost btn-sm" data-view-attendance="${c.courseId}" data-code="${esc(c.courseCode)}">View history</button>
             </div>
-          </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No attendance recorded yet.</p>'}
-      </div>
-      `}
-
-      <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
-      <div class="card" style="margin-bottom:26px;">
-        ${recentResults.map((r) => `
+          </div>`;
+    }
+    function resultRowHtml(r) {
+      return `
           <div class="list-row clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
             <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course ? r.assessment.course.code : r.assessment.individualCourse.title)} · ${esc(r.assessment.type)}</div></div>
             <span class="tabular">${r.score}/${r.total}</span>
-          </div>
-        `).join('') || `<p class="muted" style="padding:16px;">No ${isIndividual ? 'tests or assignments' : 'test results'} yet.</p>`}
-      </div>
-
-      <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
-      <div class="card" style="margin-bottom:26px;">
-        ${notifications.slice(0, 8).map((n) => `
+          </div>`;
+    }
+    function lessonRowHtml(l) {
+      return `
+          <div class="list-row" data-open-lesson="${l.id}" data-course="${l.courseId}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(l.title)}</div><div class="meta">${esc(l.course.code)}${l.author ? ` · ${esc(l.author.fullName)}` : ''} · ${new Date(l.createdAt).toLocaleDateString()}</div></div>
+            <span class="pill pill-muted">▶ Watch</span>
+          </div>`;
+    }
+    function notificationRowHtml(n) {
+      return `
           <div class="list-row">
             <div><div style="font-weight:600;">${esc(n.title)}</div><div class="meta">${esc(n.body)}</div></div>
             <span class="meta tabular">${new Date(n.createdAt).toLocaleDateString()}</span>
-          </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No notifications yet.</p>'}
+          </div>`;
+    }
+
+    // Renders a section capped at DASH_LIMIT items with a "View more" button that,
+    // when clicked, swaps in the full list for that one section only.
+    const sectionFullRender = {};
+    function dashSection(key, items, renderRow, emptyText) {
+      sectionFullRender[key] = () => items.map(renderRow).join('') || `<p class="muted" style="padding:16px;">${emptyText}</p>`;
+      const shown = items.slice(0, DASH_LIMIT).map(renderRow).join('') || `<p class="muted" style="padding:16px;">${emptyText}</p>`;
+      const moreBtn = items.length > DASH_LIMIT
+        ? `<button class="btn btn-ghost btn-sm view-more-btn" data-target="dash-${key}-list" style="margin-top:10px;">View more (${items.length - DASH_LIMIT})</button>`
+        : '';
+      return `<div class="card" id="dash-${key}-list" style="margin-bottom:10px;">${shown}</div>${moreBtn ? `<div style="margin-bottom:26px;">${moreBtn}</div>` : '<div style="margin-bottom:16px;"></div>'}`;
+    }
+
+    view.innerHTML = `
+      <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+        <div class="id-avatar">${esc(initials(state.user.fullName))}</div>
+        <div>${profileLines().map((l) => `<div>${l}</div>`).join('')}</div>
       </div>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
+      </div>
+
+      ${isIndividual ? '' : `
+      <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
+      ${dashSection('assignments', assignments, assignmentRowHtml, 'No assignments posted yet.')}
+
+      <h3 id="dash-attendance" style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
+      ${dashSection('attendance', attendanceRows, attendanceRowHtml, 'No attendance recorded yet.')}
+
+      <h3 id="dash-lessons" style="margin-bottom:10px; font-size:1rem;">Lessons</h3>
+      ${dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lessons yet.')}
+      `}
+
+      <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
+      ${dashSection('results', recentResults, resultRowHtml, `No ${isIndividual ? 'tests or assignments' : 'test results'} yet.`)}
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
+      ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}
 
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         ${isIndividual ? '' : '<button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button><button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>'}
       </div>
     `;
+
+    // Item-level interactions live in one wiring pass, scoped to a container, so it can
+    // be re-run on just the newly-revealed rows after a "View more" expand instead of
+    // needing to rebuild the whole page.
+    function wireDashRows(container) {
+      container.querySelectorAll('[data-view-attendance]').forEach((btn) => {
+        btn.addEventListener('click', () => navigate('attendance-history', { courseId: btn.dataset.viewAttendance, courseCode: btn.dataset.code }));
+      });
+      container.querySelectorAll('[data-open-result]').forEach((row) => {
+        row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'my-dashboard' }));
+      });
+      container.querySelectorAll('[data-open-assignment]').forEach((el) => {
+        el.addEventListener('click', () => navigate('assignment-detail', { assignmentId: el.dataset.openAssignment }));
+      });
+      container.querySelectorAll('[data-open-lesson]').forEach((el) => {
+        el.addEventListener('click', () => navigate('lesson-player', { courseId: el.dataset.course, lessonId: el.dataset.openLesson }));
+      });
+      container.querySelectorAll('.submit-form').forEach((form) => {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          try {
+            await api(`/assignments/${form.dataset.assignment}/submit`, { method: 'POST', body: { answerText: form.querySelector('.submit-answer').value } });
+            toast('Answer submitted');
+            render();
+          } catch (err) { toast(err.message); }
+        });
+      });
+    }
+
     const leaderboardBtn = document.getElementById('dash-leaderboard-btn');
     if (leaderboardBtn) leaderboardBtn.addEventListener('click', () => navigate('leaderboard'));
     const profileBtn = document.getElementById('dash-profile-btn');
@@ -2050,25 +2146,16 @@
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
-    view.querySelectorAll('[data-view-attendance]').forEach((btn) => {
-      btn.addEventListener('click', () => navigate('attendance-history', { courseId: btn.dataset.viewAttendance, courseCode: btn.dataset.code }));
-    });
-    view.querySelectorAll('[data-open-result]').forEach((row) => {
-      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'my-dashboard' }));
-    });
-    view.querySelectorAll('[data-open-assignment]').forEach((el) => {
-      el.addEventListener('click', () => navigate('assignment-detail', { assignmentId: el.dataset.openAssignment }));
-    });
-    view.querySelectorAll('.submit-form').forEach((form) => {
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        try {
-          await api(`/assignments/${form.dataset.assignment}/submit`, { method: 'POST', body: { answerText: form.querySelector('.submit-answer').value } });
-          toast('Answer submitted');
-          render();
-        } catch (err) { toast(err.message); }
+    view.querySelectorAll('.view-more-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const container = document.getElementById(btn.dataset.target);
+        const key = btn.dataset.target.replace(/^dash-/, '').replace(/-list$/, '');
+        container.innerHTML = sectionFullRender[key]();
+        wireDashRows(container);
+        btn.remove();
       });
     });
+    wireDashRows(view);
   }
 
   async function renderStudentAttendanceHistory() {
@@ -2392,7 +2479,10 @@
   // since all of a practical's steps are already in hand from one fetch.
   async function renderLabTeach() {
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
-    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    if (speechCtrl) {
+      if (speechCtrl.timer) clearInterval(speechCtrl.timer);
+      if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
+    }
     speechCtrl = null;
     const { courseId, demoId } = state.view;
     const [{ demonstrations }, { avatarConfigured, aiCredits }] = await Promise.all([
@@ -2403,6 +2493,9 @@
     if (!demo) { view.innerHTML = '<p>Practical not found.</p>'; return; }
     let stepIdx = 0;
     let stopped = false;
+    // "Got a question" only becomes usable once the teacher has actually started
+    // speaking -- structured the same way as AI Teacher's session.
+    let teachingStarted = false;
 
     view.innerHTML = `
       <div class="page-head">
@@ -2428,11 +2521,11 @@
         <h3 style="margin:8px 0 12px;" id="step-title"></h3>
 
         <div class="controls">
-          <button class="btn btn-ghost" id="ask-voice-btn">🎤 Ask a question</button>
+          <button class="btn btn-ghost" id="ask-voice-btn" disabled>🎤 Ask a question</button>
         </div>
 
-        <div class="got-question-toggle" id="got-question-toggle">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub">Learnza answers visually without leaving the practical</div></div>
+        <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the teacher to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -2479,10 +2572,23 @@
     }
 
     document.getElementById('got-question-toggle').addEventListener('click', () => {
+      if (!teachingStarted) return;
       const panel = document.getElementById('got-question-panel');
       panel.hidden = !panel.hidden;
       document.getElementById('gq-arrow').textContent = panel.hidden ? '▼' : '▲';
     });
+
+    // Flips on once the teacher starts speaking the first step -- structured the same
+    // way as AI Teacher, so "got a question" only opens once teaching has actually begun.
+    function markTeachingStarted() {
+      if (teachingStarted) return;
+      teachingStarted = true;
+      askVoiceBtn.disabled = false;
+      const toggle = document.getElementById('got-question-toggle');
+      toggle.style.opacity = '';
+      toggle.style.cursor = '';
+      document.getElementById('gq-sub').textContent = 'Learnza answers visually without leaving the practical';
+    }
 
     async function askLabQuestion(question, pausedSnapshot) {
       const panel = document.getElementById('got-question-panel');
@@ -2490,13 +2596,17 @@
       document.getElementById('gq-arrow').textContent = '▲';
       boardStatus.textContent = 'AI Teacher — thinking…';
       try {
-        const { answer } = await api(`/lab/${demo.id}/ask`, { method: 'POST', body: { question } });
+        const { answer, boardActions } = await api(`/lab/${demo.id}/ask`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
         log.insertAdjacentHTML('beforeend', `
           <div class="chat-msg" style="max-width:100%; align-self:flex-end; background:var(--accent-soft);">${esc(question)}</div>
           <div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>
         `);
         log.scrollTop = log.scrollHeight;
+        // Every answer lands on the board itself, not just the chat log underneath it.
+        const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
+        board.innerHTML = renderBoardActionsHtml(answerBoardActions);
+        mountBoardActions(board, answerBoardActions);
         boardStatus.textContent = 'AI Teacher — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
@@ -2509,6 +2619,7 @@
     }
 
     document.getElementById('interrupt-btn').addEventListener('click', () => {
+      if (!teachingStarted) return;
       const input = document.getElementById('interrupt-input');
       const question = input.value.trim();
       if (!question) return;
@@ -2535,6 +2646,7 @@
       }
       while (!stopped) {
         const step = renderStep(stepIdx);
+        markTeachingStarted();
         await speakAsync(`${step.title}. ${step.instruction}`, avatarRing);
         if (stopped) return;
         if (stepIdx >= demo.steps.length - 1) {

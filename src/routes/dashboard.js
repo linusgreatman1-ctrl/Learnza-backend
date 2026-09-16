@@ -17,7 +17,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
   });
   const courseIds = enrollments.map((e) => e.courseId);
 
-  const [assignments, mySubs, attendance, recentResults] = await Promise.all([
+  const [assignments, mySubs, attendance, recentResults, lessons] = await Promise.all([
     courseIds.length
       ? prisma.assignment.findMany({
           where: { courseId: { in: courseIds } },
@@ -43,6 +43,17 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
       orderBy: { submittedAt: 'desc' },
       take: 10,
     }),
+    // Lecturer-recorded lessons (a real uploaded video, not the AI Teacher's own
+    // narrated-script lessons) across every enrolled course -- surfaced on the
+    // dashboard so a student sees new uploads without hunting through each course.
+    courseIds.length
+      ? prisma.lesson.findMany({
+          where: { courseId: { in: courseIds }, videoUrl: { not: null } },
+          include: { course: { select: { code: true } }, author: { select: { fullName: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        })
+      : [],
   ]);
   const subByAssignment = new Map(mySubs.map((s) => [s.assignmentId, s]));
   const presentCount = attendance.filter((a) => a.status === 'PRESENT').length;
@@ -51,6 +62,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
     assignments: assignments.map((a) => ({ ...a, mySubmission: subByAssignment.get(a.id) || null })),
     attendance: { recent: attendance, presentCount, totalCount: attendance.length },
     recentResults,
+    lessons,
   });
 });
 
