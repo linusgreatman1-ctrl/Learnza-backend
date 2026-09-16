@@ -284,7 +284,16 @@
   // jsDelivr's +esm build works as a real browser ES module regardless of how the
   // package itself is bundled, so this works without adding a build step to an
   // otherwise-plain-script app.
-  import { SimliClient } from 'https://cdn.jsdelivr.net/npm/simli-client@3.0.2/+esm';
+  //
+  // Pinned to 2.0.0, not latest (3.x): simli-client 3.x is a from-scratch rewrite
+  // around LiveKit rooms/WebSocket signaling with a completely different API
+  // (join_lk_room/connect/disconnect, no Initialize/start/sendAudioData/close) --
+  // AND jsDelivr's on-the-fly bundler currently fails outright on 3.0.2 ("failed to
+  // resolve an internal import"), which is why the avatar stopped displaying. 2.0.0
+  // is the newest release that still bundles cleanly and keeps the simple
+  // Initialize({apiKey,faceID,videoRef,audioRef})/start()/sendAudioData()/close()
+  // API this app is written against.
+  import { SimliClient } from 'https://cdn.jsdelivr.net/npm/simli-client@2.0.0/+esm';
   window.SimliClient = SimliClient;
 </script>
 <script src="app.js"></script>
