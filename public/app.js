@@ -458,7 +458,7 @@
     try {
       await dispatch();
     } catch (err) {
-      if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+      if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
       view.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
     } finally {
       clearTimeout(loadingTimer);
@@ -793,7 +793,7 @@
       const { session } = await api(path, { method: 'POST', body: { topic } });
       navigate('ai-teacher-session', { sessionId: session.id, isIndividual });
     } catch (err) {
-      if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+      if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
       toast(err.message);
     }
   }
@@ -819,7 +819,7 @@
     }
 
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
-    const { avatarConfigured, subscriptionEnforced } = await api('/config').catch(() => ({ avatarConfigured: false, subscriptionEnforced: true }));
+    const { avatarConfigured, subscriptionEnforced, aiCredits } = await api('/config').catch(() => ({ avatarConfigured: false, subscriptionEnforced: true, aiCredits: null }));
     const words = lesson.script.split(/(\s+)/);
     const scriptHtml = words.map((w, i) => `<span data-w="${i}">${esc(w)}</span>`).join('');
 
@@ -830,6 +830,7 @@
       </div>
       <div class="card lesson-player">
         <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Teacher — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
+        ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
         ${lesson.videoUrl ? `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>` : `
           <div class="ai-avatar-box" style="margin-top:14px;">
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
@@ -967,7 +968,7 @@
       if (labelEl) labelEl.textContent = 'AI Teacher — video avatar connected';
       return client;
     } catch (err) {
-      if (err.code === 'SUBSCRIPTION_REQUIRED') { renderUpgradePrompt(err.message); return null; }
+      if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') { renderUpgradePrompt(err.message); return null; }
       toast(err.message || 'Could not connect the video avatar.');
       return null;
     }
@@ -1044,11 +1045,11 @@
     const { session } = await api(`/ai-teacher/sessions/${state.view.sessionId}`);
     const section = session.plan.sections[session.sectionIdx];
     const isLast = session.sectionIdx >= session.plan.sections.length - 1;
-    const { avatarConfigured } = await api('/config').catch(() => ({ avatarConfigured: false }));
+    const { avatarConfigured, aiCredits } = await api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null }));
 
     view.innerHTML = `
       <div class="page-head">
-        <div><span class="pill pill-accent">AI Teacher — live session</span><h1 style="margin-top:8px;">${esc(session.plan.title)}</h1></div>
+        <div><span class="pill pill-accent">AI Teacher — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(session.plan.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
       </div>
       <div class="card lesson-player">
@@ -1108,7 +1109,7 @@
         if (done) toast('Lesson complete — nice work!');
         render();
       } catch (err) {
-        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
         toast(err.message);
       }
     });
@@ -1157,7 +1158,7 @@
         });
       } catch (err) {
         if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
-        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
         toast(err.message);
       }
     }
@@ -1932,7 +1933,7 @@
           const { answer } = await api(`/lab/${id}/ask`, { method: 'POST', body: { question } });
           log.insertAdjacentHTML('beforeend', `<div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>`);
         } catch (err) {
-          if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+          if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
           toast(err.message);
         }
       });
@@ -2009,7 +2010,7 @@
         toast('Practical ready');
         render();
       } catch (err) {
-        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
         toast(err.message);
         requestBtn.disabled = false;
         requestBtn.textContent = 'Generate practical';
@@ -2066,7 +2067,7 @@
         const { answer } = await api('/research-assistant/ask', { method: 'POST', body: { question } });
         answerBox.textContent = answer;
       } catch (err) {
-        if (err.code === 'SUBSCRIPTION_REQUIRED') return renderUpgradePrompt(err.message);
+        if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
         answerBox.innerHTML = `<span style="color:var(--danger);">${esc(err.message)}</span>`;
       }
     });
@@ -2088,11 +2089,16 @@
         <div class="card" style="padding:20px; margin-bottom:20px;">
           <span class="pill pill-pass">Active</span>
           <p style="margin-top:10px;">Your ${esc(subscription.plan === 'YEARLY' ? 'yearly' : 'monthly')} plan is active until <strong>${new Date(subscription.expiresAt).toLocaleDateString()}</strong>.</p>
+          <div style="margin-top:14px;">
+            <div class="meta" style="margin-bottom:4px;">Live AI Teacher minutes this cycle</div>
+            <div class="tabular" style="font-weight:600;">${Math.max(0, Math.floor((subscription.aiSecondsGranted - subscription.aiSecondsUsed) / 60))} / ${Math.floor(subscription.aiSecondsGranted / 60)} min left</div>
+            ${subscription.aiSecondsUsed >= subscription.aiSecondsGranted ? '<p class="muted" style="margin-top:6px;">You have used up this cycle\'s AI credit — subscribe again to top up.</p>' : ''}
+          </div>
         </div>
       ` : `
         <div class="card" style="padding:20px; margin-bottom:20px;">
           <span class="pill pill-muted">No active plan</span>
-          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Teacher lessons, recorded lectures and live classes. e-Library, study groups and CBT practice stay free either way.</p>
+          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Teacher lessons, recorded lectures and live classes — each plan includes a bank of live AI Teacher minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
         </div>
       `}
       ${noProvider ? `<div class="hint-box" style="background:var(--danger-soft); color:var(--danger);">Payments aren't configured on this server yet — checkout will be available once a payment provider is connected.</div>` : ''}

@@ -184,6 +184,8 @@ model Subscription {
   status        String    // PENDING | ACTIVE | EXPIRED | CANCELLED
   startedAt     DateTime?
   expiresAt     DateTime?
+  aiSecondsGranted Int    @default(0) // live AI Teacher (avatar/voice) time granted this billing cycle
+  aiSecondsUsed    Int    @default(0) // cumulative seconds of AI-generated speech played back so far
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   payments      Payment[]

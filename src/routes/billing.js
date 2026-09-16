@@ -96,10 +96,14 @@ async function activateSubscription(payment) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + planConfig.days * 24 * 60 * 60 * 1000);
 
+  // Every activation (first purchase or renewal) resets the AI credit bank to a full
+  // fresh allotment for the new cycle -- credits don't carry over, matching "once you
+  // finish your AI credit usage, you have to subscribe more."
+  const aiSecondsGranted = planConfig.aiMinutes * 60;
   const subscription = await prisma.subscription.upsert({
     where: { userId: payment.userId },
-    create: { userId: payment.userId, plan: payment.plan, status: 'ACTIVE', startedAt: now, expiresAt },
-    update: { plan: payment.plan, status: 'ACTIVE', startedAt: now, expiresAt },
+    create: { userId: payment.userId, plan: payment.plan, status: 'ACTIVE', startedAt: now, expiresAt, aiSecondsGranted, aiSecondsUsed: 0 },
+    update: { plan: payment.plan, status: 'ACTIVE', startedAt: now, expiresAt, aiSecondsGranted, aiSecondsUsed: 0 },
   });
   await prisma.payment.update({
     where: { id: payment.id },

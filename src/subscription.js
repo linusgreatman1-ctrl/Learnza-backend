@@ -31,4 +31,43 @@ async function requireActiveSubscription(req, res, next) {
   next();
 }
 
-module.exports = { getSubscriptionStatus, requireActiveSubscription, isEnforced };
+// Live AI Teacher (avatar/voice) usage draws down a per-cycle credit bank, separate
+// from the plain time-based active/expired check above -- so a student can be
+// time-active but still have run out of AI minutes for this cycle, and vice versa
+// while credits are simply untracked (no subscription row yet, e.g. during testing).
+async function getAiCreditStatus(userId) {
+  const sub = await prisma.subscription.findUnique({ where: { userId } });
+  if (!sub) return { tracked: false, secondsGranted: 0, secondsUsed: 0, secondsRemaining: Infinity, exhausted: false };
+  const secondsRemaining = Math.max(0, sub.aiSecondsGranted - sub.aiSecondsUsed);
+  return { tracked: true, secondsGranted: sub.aiSecondsGranted, secondsUsed: sub.aiSecondsUsed, secondsRemaining, exhausted: secondsRemaining <= 0 };
+}
+
+async function requireAiCredits(req, res, next) {
+  if (!isEnforced()) return next();
+  if (req.user.role !== 'STUDENT') return next();
+  const { tracked, exhausted } = await getAiCreditStatus(req.user.id);
+  if (tracked && exhausted) {
+    return res.status(402).json({
+      error: "You've used up this cycle's live AI Teacher minutes. Subscribe again to top up your credit.",
+      code: 'AI_CREDITS_EXHAUSTED',
+    });
+  }
+  next();
+}
+
+// Called after AI-generated speech is actually produced, so credit usage tracks real
+// audio duration rather than request count -- a 5-second answer costs less than a
+// 2-minute lesson section. No-ops when there's no subscription row to track against.
+async function recordAiUsage(userId, seconds) {
+  if (!seconds || seconds <= 0) return;
+  try {
+    await prisma.subscription.update({
+      where: { userId },
+      data: { aiSecondsUsed: { increment: Math.round(seconds) } },
+    });
+  } catch {
+    // No subscription row (free/testing user) -- nothing to track against.
+  }
+}
+
+module.exports = { getSubscriptionStatus, requireActiveSubscription, isEnforced, getAiCreditStatus, requireAiCredits, recordAiUsage };

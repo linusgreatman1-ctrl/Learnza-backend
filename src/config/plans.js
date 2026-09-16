@@ -1,9 +1,12 @@
 // Server-side source of truth for plan pricing. The frontend only ever sends a
 // plan name ("MONTHLY" | "YEARLY") -- never an amount -- so a tampered client
 // request can never change what gets charged.
+// aiMinutes is the live AI Teacher (avatar/voice) time credited on activation --
+// YEARLY grants 12 months' worth up front rather than a single month's allowance,
+// since it's paid for a full year at once.
 const PLANS = {
-  MONTHLY: { label: 'Monthly', amountNaira: 10000, amountKobo: 1000000, days: 30 },
-  YEARLY: { label: 'Yearly', amountNaira: 105000, amountKobo: 10500000, days: 365 },
+  MONTHLY: { label: 'Monthly', amountNaira: 10000, amountKobo: 1000000, days: 30, aiMinutes: 300 },
+  YEARLY: { label: 'Yearly', amountNaira: 105000, amountKobo: 10500000, days: 365, aiMinutes: 3600 },
 };
 
 function getPlan(plan) {
