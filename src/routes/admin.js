@@ -186,11 +186,11 @@ router.post('/non-academic-staff', async (req, res) => {
 });
 
 router.post('/students', async (req, res) => {
-  const { matricNumber, departmentId } = req.body;
+  const { matricNumber, departmentId, yearOfStudy } = req.body;
   return createSchoolUser(req, res, {
     role: 'STUDENT',
     requiredFields: ['matricNumber', 'departmentId'],
-    extraFields: { matricNumber, departmentId },
+    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null },
   });
 });
 

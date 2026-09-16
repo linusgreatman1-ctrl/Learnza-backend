@@ -106,6 +106,7 @@ model User {
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
+  yearOfStudy    Int?      // school students only, e.g. 1, 2, 3 -- set by admin at registration
   createdAt      DateTime  @default(now())
 
   enrollments    Enrollment[]

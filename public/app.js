@@ -223,8 +223,14 @@
     }
   }
 
+  // Cosmetic only -- semester names are free text ("First Semester 2025/2026"), but
+  // every screen that displays one should read "1st/2nd Semester" consistently.
+  function semesterLabel(name) {
+    return String(name || '').replace(/^First\b/i, '1st').replace(/^Second\b/i, '2nd').replace(/^Third\b/i, '3rd');
+  }
+
   function defaultScreenFor(role) {
-    if (role === 'STUDENT') return state.user.isIndividual ? 'individual-courses' : 'courses';
+    if (role === 'STUDENT') return 'my-dashboard';
     if (role === 'LECTURER') return 'lect-courses';
     return 'admin-directory';
   }
@@ -281,7 +287,10 @@
     ],
   };
 
-  function buildSidebar() {
+  // Builds the "name / school / department" identity lines shown as a profile card
+  // on the homepage (My Dashboard, or the admin/lecturer landing screen) instead of
+  // the sidebar -- the sidebar stays nav-only.
+  function profileLines() {
     const u = state.user;
     const roleLabel = u.isIndividual ? 'Independent learner' : u.role.charAt(0) + u.role.slice(1).toLowerCase();
     const lines = [`${esc(u.fullName)} · ${esc(roleLabel)}`];
@@ -291,9 +300,14 @@
     } else if (state.school) {
       const schoolLine = [state.school.name, state.school.location].filter(Boolean).map(esc).join(', ');
       lines.push(schoolLine);
-      if (state.department) lines.push(esc(state.department.name));
+      const deptBits = [state.department && state.department.name, u.yearOfStudy ? `Year ${u.yearOfStudy}` : null].filter(Boolean).map(esc);
+      if (deptBits.length) lines.push(deptBits.join(' · '));
     }
-    document.getElementById('who-box').innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+    return lines;
+  }
+
+  function buildSidebar() {
+    const u = state.user;
 
     const semesterBox = document.getElementById('semester-box');
     if (state.school && state.semesters && state.semesters.length) {
@@ -301,7 +315,7 @@
       if (u.role === 'ADMIN') {
         semesterBox.innerHTML = `
           <select id="semester-select" class="nav-item" style="font-weight:600;">
-            ${state.semesters.map((s) => `<option value="${s.id}" ${s.isCurrent ? 'selected' : ''}>${esc(s.name)}${s.isCurrent ? ' (current)' : ''}</option>`).join('')}
+            ${state.semesters.map((s) => `<option value="${s.id}" ${s.isCurrent ? 'selected' : ''}>${esc(semesterLabel(s.name))}${s.isCurrent ? ' (current)' : ''}</option>`).join('')}
           </select>
           <button class="nav-item" id="new-semester-btn" style="font-weight:500; font-size:0.82rem;">+ New semester</button>
         `;
@@ -321,7 +335,7 @@
           toast('Semester created and set as current');
         });
       } else {
-        semesterBox.innerHTML = current ? `<div class="who" style="padding-bottom:8px;">📅 ${esc(current.name)}</div>` : '';
+        semesterBox.innerHTML = current ? `<div class="who" style="padding-bottom:8px;">📅 ${esc(semesterLabel(current.name))}</div>` : '';
       }
     } else {
       semesterBox.innerHTML = '';
@@ -626,6 +640,9 @@
 
   // ================= STUDENT =================
 
+  // state.view.semesterId picks which semester's courses "Browse & enroll" shows,
+  // defaulting to the school's current semester -- matches Course.semesterId, so
+  // switching the tab is a pure client-side filter, no extra request.
   async function renderStudentCourses() {
     const [{ courses: mine }, { departments }] = await Promise.all([
       api('/students/me/courses'),
@@ -636,23 +653,36 @@
       deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
     }
     const mineIds = new Set(mine.map((c) => c.id));
+    const semesters = state.semesters || [];
+    const activeSemesterId = state.view.semesterId || (semesters.find((s) => s.isCurrent) || semesters[0] || {}).id;
 
     view.innerHTML = `
       <div class="page-head"><h1>My Courses</h1></div>
       ${mine.length ? `<div class="grid-cards" style="margin-bottom:30px;">
         ${mine.map(courseCardHtml).join('')}
-      </div>` : '<p class="muted" style="margin-bottom:24px;">You are not enrolled in any course yet — pick from your department below.</p>'}
-      <div class="page-head"><h1 style="font-size:1.15rem;">Browse &amp; enroll by department</h1></div>
-      ${departments.map((d) => `
-        <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(d.name)}</div>
+      </div>` : '<p class="muted" style="margin-bottom:24px;">You are not enrolled in any course yet — pick a semester below to see what is on offer.</p>'}
+      <div class="page-head"><h1 style="font-size:1.15rem;">Browse &amp; enroll by semester</h1></div>
+      ${semesters.length ? `
+        <div class="tabs" style="max-width:420px;">
+          ${semesters.map((s) => `<button class="tab-btn ${s.id === activeSemesterId ? 'active' : ''}" data-semester-tab="${s.id}">${esc(semesterLabel(s.name))}</button>`).join('')}
+        </div>
+      ` : ''}
+      ${departments.map((d) => {
+        const courses = activeSemesterId ? deptCourses[d.id].filter((c) => c.semesterId === activeSemesterId) : deptCourses[d.id];
+        return `
+        <div style="margin-bottom:22px; margin-top:18px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(d.name)}${d.id === state.department?.id ? ' <span class="pill pill-accent">Your department</span>' : ''}</div>
           <div class="grid-cards">
-            ${deptCourses[d.id].map((c) => enrollCardHtml(c, mineIds.has(c.id))).join('') || '<p class="muted">No courses yet.</p>'}
+            ${courses.map((c) => enrollCardHtml(c, mineIds.has(c.id))).join('') || '<p class="muted">No courses for this semester yet.</p>'}
           </div>
         </div>
-      `).join('')}
+      `;
+      }).join('')}
     `;
 
+    view.querySelectorAll('[data-semester-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('courses', { semesterId: btn.dataset.semesterTab }));
+    });
     view.querySelectorAll('[data-open-course]').forEach((el) => {
       el.addEventListener('click', () => navigate('course-detail', { courseId: el.dataset.openCourse }));
     });
@@ -1456,7 +1486,7 @@
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
       <div class="id-card" style="margin-bottom:28px;">
-        <div class="id-top"><span>Learnza · Edo College of Education</span><span>Student</span></div>
+        <div class="id-top"><span>Learnza${state.school ? ` · ${esc(state.school.name)}` : ''}</span><span>Student</span></div>
         <div class="id-row">
           <div class="id-avatar">${esc(initials(u.fullName))}</div>
           <div>
@@ -1465,6 +1495,8 @@
           </div>
         </div>
         <div class="id-grid">
+          <div><div class="id-field">Department</div><div>${state.department ? esc(state.department.name) : '—'}</div></div>
+          <div><div class="id-field">Year of study</div><div>${u.yearOfStudy ? `Year ${u.yearOfStudy}` : '—'}</div></div>
           <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
           <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
         </div>
@@ -1472,9 +1504,9 @@
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Digital credentials</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
-        <li><span>Course registration</span><span class="pill pill-pass">${courses.length} course${courses.length === 1 ? '' : 's'}</span></li>
-        <li><span>Subscription</span><span class="pill ${active ? 'pill-pass' : 'pill-muted'}">${active ? `Active until ${new Date(subscription.expiresAt).toLocaleDateString()}` : 'No active plan'}</span></li>
-        <li><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
+        <li class="clickable" id="cred-courses" style="cursor:pointer;"><span>Course registration</span><span class="pill pill-pass">${courses.length} course${courses.length === 1 ? '' : 's'}</span></li>
+        <li class="clickable" id="cred-subscription" style="cursor:pointer;"><span>Subscription</span><span class="pill ${active ? 'pill-pass' : 'pill-muted'}">${active ? `Active until ${new Date(subscription.expiresAt).toLocaleDateString()}` : 'No active plan'}</span></li>
+        <li class="clickable" id="cred-library" style="cursor:pointer;"><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
         <li>
           <span>Transcript</span>
           ${transcriptReq
@@ -1499,13 +1531,15 @@
             : '<span class="pill pill-accent">Pending admin review</span>'
             : `<button class="btn btn-ghost btn-sm" id="request-hostel-btn">Apply for hostel</button>`}
         </li>
-        <li><span>Certificates &amp; graduation records</span><span class="pill ${credentials.length ? 'pill-pass' : 'pill-muted'}">${credentials.length ? `${credentials.length} issued` : 'None issued yet'}</span></li>
+        <li class="clickable" id="cred-certificates" style="cursor:pointer;"><span>Certificates &amp; graduation records</span><span class="pill ${credentials.length ? 'pill-pass' : 'pill-muted'}">${credentials.length ? `${credentials.length} issued` : 'None issued yet'}</span></li>
       </ul>
+      <div id="certificates-section">
       ${credentials.length ? `
         <div class="card" style="margin-bottom:28px;">
           ${credentials.map((c) => `<div class="list-row"><div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">Issued ${new Date(c.issuedAt).toLocaleDateString()} · verification code <span class="tabular">${esc(c.verifyCode)}</span></div></div><a class="btn btn-ghost btn-sm" href="verify.html?code=${esc(c.verifyCode)}" target="_blank" rel="noopener">Verify link</a></div>`).join('')}
         </div>
       ` : ''}
+      </div>
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Results</h3>
       <div class="card" style="overflow-x:auto;">
@@ -1545,6 +1579,13 @@
       </div>
     `;
 
+    document.getElementById('cred-courses').addEventListener('click', () => navigate(state.user.isIndividual ? 'individual-courses' : 'courses'));
+    document.getElementById('cred-subscription').addEventListener('click', () => navigate('billing'));
+    document.getElementById('cred-library').addEventListener('click', () => navigate('library'));
+    document.getElementById('cred-certificates').addEventListener('click', () => {
+      if (!credentials.length) return toast('No certificates issued yet — your school issues these on graduation.');
+      document.getElementById('certificates-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     const reqTranscriptBtn = document.getElementById('request-transcript-btn');
     if (reqTranscriptBtn) reqTranscriptBtn.addEventListener('click', async () => { await api('/students/me/transcript-request', { method: 'POST' }); toast('Transcript requested'); render(); });
     const viewTranscriptBtn = document.getElementById('view-transcript-btn');
@@ -1612,22 +1653,28 @@
     }
     // Individual learners have no lecturer-set assignments/attendance at all (school-
     // institutional concepts) -- only their own app-generated test/assignment results.
+    // Each tile links to the dashboard section (or dedicated screen) it summarizes,
+    // instead of being a static, unclickable number.
     const statTiles = isIndividual
-      ? [[avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average'], [recentResults.length, 'Tests & assignments taken']]
+      ? [[avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'], [recentResults.length, 'Tests & assignments taken', '#dash-results']]
       : [
-          [assignments.filter((a) => !a.mySubmission).length, 'Assignments pending'],
-          [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate'],
-          [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average'],
+          [assignments.filter((a) => !a.mySubmission).length, 'Assignments pending', '#dash-assignments'],
+          [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate', '#dash-attendance'],
+          [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'],
         ];
 
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+        <div class="id-avatar">${esc(initials(state.user.fullName))}</div>
+        <div>${profileLines().map((l) => `<div>${l}</div>`).join('')}</div>
+      </div>
       <div class="grid-cards" style="margin-bottom:26px;">
-        ${statTiles.map(([value, label]) => `<div class="card course-card"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
+        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
       </div>
 
       ${isIndividual ? '' : `
-      <h3 style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
+      <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
       <div class="card" style="margin-bottom:26px;">
         ${assignments.map((a) => `
           <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:10px;">
@@ -1651,7 +1698,7 @@
         `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
       </div>
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
+      <h3 id="dash-attendance" style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
       <div class="card" style="margin-bottom:26px;">
         ${Object.values(attendanceByCourse).map((c) => `
           <div class="list-row">
@@ -1665,7 +1712,7 @@
       </div>
       `}
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
+      <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
       <div class="card" style="margin-bottom:26px;">
         ${recentResults.map((r) => `
           <div class="list-row">
@@ -1693,6 +1740,13 @@
     if (leaderboardBtn) leaderboardBtn.addEventListener('click', () => navigate('leaderboard'));
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
+    view.querySelectorAll('[data-jump]').forEach((tile) => {
+      tile.addEventListener('click', () => {
+        const target = view.querySelector(tile.dataset.jump);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
     view.querySelectorAll('[data-view-attendance]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('attendance-history', { courseId: btn.dataset.viewAttendance, courseCode: btn.dataset.code }));
     });
@@ -2787,7 +2841,7 @@
         <h3 style="margin-bottom:12px; font-size:1rem;">Publish a result</h3>
         <form id="result-form">
           <div class="field"><label>Student</label><select id="res-student">${roster.map((r) => `<option value="${r.student.id}">${esc(r.student.fullName)} (${esc(r.student.matricNumber || '—')})</option>`).join('')}</select></div>
-          <div class="field"><label>Term</label><input type="text" id="res-term" placeholder="e.g. First Semester 2025/2026" required></div>
+          <div class="field"><label>Term</label><input type="text" id="res-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
           <div class="field"><label>Score</label><input type="number" id="res-score" required></div>
           <div class="field"><label>Grade (optional)</label><input type="text" id="res-grade" placeholder="e.g. A"></div>
           <div class="field"><label>Remark (optional)</label><input type="text" id="res-remark"></div>
@@ -3141,6 +3195,7 @@
         { key: 'fullName', label: 'Full name', required: true },
         { key: 'matricNumber', label: 'Matric number', required: true },
         { key: 'departmentId', label: 'Department', type: 'department', required: true },
+        { key: 'yearOfStudy', label: 'Year of study', type: 'year', required: true },
         { key: 'email', label: 'Email', type: 'email', required: true },
         { key: 'phone', label: 'Phone number', type: 'tel' },
       ],
@@ -3200,6 +3255,10 @@
         if (f.type === 'department') {
           return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">${f.required ? 'Select…' : 'None'}</option>${await departmentOptionsHtml()}</select></div>`;
         }
+        if (f.type === 'year') {
+          const opts = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">Year ${n}</option>`).join('');
+          return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">Select…</option>${opts}</select></div>`;
+        }
         return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="add-${f.key}" ${f.required ? 'required' : ''}></div>`;
       }));
       box.innerHTML = `<form id="add-form" class="card" style="padding:20px; margin-bottom:18px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">Add & generate access code</button></form>`;
@@ -3226,6 +3285,7 @@
         <div class="id-grid" style="margin-bottom:8px;">
           <div><div class="meta">${cfg.idLabel}</div><div>${esc(u[cfg.idField] || '—')}</div></div>
           <div><div class="meta">Department</div><div>${esc(u.department ? u.department.name : '—')}</div></div>
+          ${state.view.directoryType === 'STUDENT' ? `<div><div class="meta">Year of study</div><div>${u.yearOfStudy ? `Year ${u.yearOfStudy}` : '—'}</div></div>` : ''}
           <div><div class="meta">${cfg.extraLabel}</div><div>${esc(cfg.extraValue(u))}</div></div>
           <div><div class="meta">Status</div><div>${statusPillHtml(u.status)}</div></div>
           <div><div class="meta">Email</div><div>${esc(u.email)}</div></div>

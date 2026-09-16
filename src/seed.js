@@ -14,6 +14,7 @@ async function main() {
     await backfillDemoContactDetails();
     await backfillHostels();
     await backfillLibraryTextbooks();
+    await backfillPastQuestionsAndMocks();
     return;
   }
 
@@ -335,9 +336,18 @@ async function backfillSemester() {
   const school = await prisma.school.findFirst();
   if (!school) return;
   const existing = await prisma.semester.findFirst({ where: { schoolId: school.id } });
-  if (existing) return;
-  await prisma.semester.create({ data: { schoolId: school.id, name: 'First Semester 2025/2026', isCurrent: true } });
-  console.log('Backfilled an initial semester');
+  if (!existing) {
+    await prisma.semester.create({ data: { schoolId: school.id, name: 'First Semester 2025/2026', isCurrent: true } });
+    console.log('Backfilled an initial semester');
+  }
+  // A school with only one semester can't show the 1st/2nd Semester tab pair on the
+  // course browse screen -- every school should have both, even before it's time to
+  // activate the second one.
+  const second = await prisma.semester.findFirst({ where: { schoolId: school.id, name: { contains: 'Second' } } });
+  if (!second) {
+    await prisma.semester.create({ data: { schoolId: school.id, name: 'Second Semester 2025/2026', isCurrent: false } });
+    console.log('Backfilled a second semester');
+  }
 }
 
 // Demo accounts seeded before phone/staffType existed get them filled in so the
@@ -415,6 +425,210 @@ async function backfillLibraryTextbooks() {
     added++;
   }
   if (added) console.log(`Backfilled ${added} textbook(s) into the e-Library`);
+}
+
+// A big bank of real past-question and mock-exam sets across every seeded course, so
+// the Past Questions and CBT Mock Exam Practice hubs have real content to practice
+// with instead of being empty. Idempotent by (courseCode, title).
+async function backfillPastQuestionsAndMocks() {
+  const lecturer = await prisma.user.findUnique({ where: { email: 'lecturer@edocoe.edu.ng' } });
+  if (!lecturer) return;
+  const semester = await prisma.semester.findFirst({ where: { isCurrent: true } });
+
+  const mc = (text, options, correctIndex) => ({ text, options: JSON.stringify(options), correctIndex, questionType: 'OBJECTIVE' });
+
+  const bank = [
+    {
+      code: 'CSC 101',
+      pastQuestions: [
+        mc('What is a computer?', ['A device for typing only', 'An electronic device that accepts, processes and outputs data', 'A type of calculator only', 'A device that only stores files'], 1),
+        mc('Which of the following is an input device?', ['Keyboard', 'Monitor', 'Printer', 'Speaker'], 0),
+        mc('RAM stands for?', ['Random Access Memory', 'Read Access Memory', 'Random Application Memory', 'Read Application Module'], 0),
+        mc('Which generation of computers introduced the microprocessor?', ['First', 'Second', 'Third', 'Fourth'], 3),
+        mc('The CPU is often referred to as the ____ of the computer.', ['brain', 'heart', 'eye', 'hand'], 0),
+        mc('Which of these is an output device?', ['Mouse', 'Scanner', 'Monitor', 'Keyboard'], 2),
+        mc('Software that manages computer hardware and provides services for programs is called?', ['Operating system', 'Compiler', 'Browser', 'Antivirus'], 0),
+        mc('One byte is equal to how many bits?', ['4', '8', '16', '2'], 1),
+      ],
+      mock: [
+        mc('The physical components of a computer are called?', ['Software', 'Hardware', 'Firmware', 'Wetware'], 1),
+        mc('Which storage device is non-volatile?', ['RAM', 'Cache', 'Hard disk', 'Register'], 2),
+        mc('ALU stands for?', ['Arithmetic Logic Unit', 'Array Logic Unit', 'Automatic Logic Unit', 'Arithmetic Language Unit'], 0),
+        mc('Which of these is a secondary storage device?', ['RAM', 'Hard disk drive', 'Cache memory', 'Register'], 1),
+        mc('The first generation of computers used?', ['Transistors', 'Vacuum tubes', 'Integrated circuits', 'Microprocessors'], 1),
+        mc('A set of instructions that tells a computer what to do is called?', ['Hardware', 'Data', 'Program', 'Network'], 2),
+        mc("Which of the following best describes 'data'?", ['Processed information', 'Raw unprocessed facts', 'A type of software', 'A computer virus'], 1),
+        mc('The smallest unit of data in a computer is?', ['Byte', 'Nibble', 'Bit', 'Word'], 2),
+      ],
+    },
+    {
+      code: 'CSC 102',
+      pastQuestions: [
+        mc('An algorithm is best described as?', ['A programming language', 'A step-by-step procedure for solving a problem', 'A type of computer', 'A flowchart symbol'], 1),
+        mc('Which of these is a graphical representation of an algorithm?', ['Pseudocode', 'Flowchart', 'Syntax', 'Variable'], 1),
+        mc('In programming, a variable is used to?', ['Store a value that can change', 'Print text only', 'Draw shapes', 'Connect to the internet'], 0),
+        mc('Which symbol in a flowchart represents a decision?', ['Rectangle', 'Oval', 'Diamond', 'Circle'], 2),
+        mc('Pseudocode is?', ['Actual program code', 'An informal way of describing an algorithm using plain language', 'A type of computer virus', 'A hardware component'], 1),
+        mc('A loop in programming is used to?', ['Repeat a set of instructions', 'Store data permanently', 'Delete a program', 'Connect two computers'], 0),
+        mc('Which of the following is NOT a programming language?', ['Python', 'Java', 'C++', 'Microsoft Word'], 3),
+        mc('The process of finding and fixing errors in a program is called?', ['Compiling', 'Debugging', 'Coding', 'Formatting'], 1),
+      ],
+      mock: [
+        mc('A flowchart terminal symbol (oval) represents?', ['Start or End', 'A decision', 'An input', 'A process'], 0),
+        mc("Which of these best defines a 'constant' in programming?", ['A value that can change during execution', 'A value that does not change during execution', 'A type of loop', 'A syntax error'], 1),
+        mc('The three basic control structures in programming are sequence, selection and?', ['Iteration', 'Compilation', 'Declaration', 'Variable'], 0),
+        mc('Which of the following is an arithmetic operator?', ['AND', '+', 'IF', 'WHILE'], 1),
+        mc('A syntax error occurs when?', ['The logic of a program is wrong', 'The rules of the programming language are broken', 'The computer is switched off', 'The program runs too slowly'], 1),
+        mc("What does 'IDE' stand for in programming?", ['Integrated Development Environment', 'Internal Data Exchange', 'Interactive Design Element', 'Instructional Data Engine'], 0),
+        mc('Which control structure allows a program to make a choice?', ['Sequence', 'Iteration', 'Selection', 'Assignment'], 2),
+        mc('A program written in a high-level language must be translated by a?', ['Compiler or interpreter', 'Mouse', 'Monitor', 'Modem'], 0),
+      ],
+    },
+    {
+      code: 'MTH 101',
+      pastQuestions: [
+        mc('Simplify: 3x + 5x', ['8x', '15x', '8x²', '2x'], 0),
+        mc('Solve for x: 2x + 4 = 10', ['x=2', 'x=3', 'x=6', 'x=7'], 1),
+        mc('What is the value of sin 90°?', ['0', '1', '-1', '0.5'], 1),
+        mc('Factorize: x² - 9', ['(x-3)(x+3)', '(x-9)(x+1)', '(x-3)²', '(x+9)(x-1)'], 0),
+        mc('What is the value of cos 0°?', ['0', '1', '-1', 'undefined'], 1),
+        mc('The sum of angles in a triangle is?', ['90°', '180°', '270°', '360°'], 1),
+        mc('Solve: x² = 16', ['x = 4 only', 'x = ±4', 'x = 8', 'x = 2'], 1),
+        mc('What is the value of tan 45°?', ['0', '1', 'undefined', '-1'], 1),
+      ],
+      mock: [
+        mc('Simplify: 7y - 2y + 3y', ['8y', '12y', '2y', '8y²'], 0),
+        mc('Solve: 5x - 3 = 2x + 9', ['x=2', 'x=3', 'x=4', 'x=6'], 2),
+        mc('What is the Pythagoras theorem used for?', ['Finding angles only', 'Relating the sides of a right-angled triangle', 'Solving quadratic equations', 'Calculating area of a circle'], 1),
+        mc('Expand: (x + 2)(x + 3)', ['x²+5x+6', 'x²+6x+5', 'x²+5x+5', 'x²+6'], 0),
+        mc('What is sin 30°?', ['0.5', '1', '0', '0.866'], 0),
+        mc('The gradient of a straight line y = mx + c is represented by?', ['c', 'm', 'x', 'y'], 1),
+        mc('Solve: 3(x - 2) = 9', ['x=3', 'x=5', 'x=6', 'x=2'], 1),
+        mc('Which of these is a quadratic equation?', ['x + 2 = 0', 'x² + 2x + 1 = 0', '2x = 4', 'x/2 = 3'], 1),
+      ],
+    },
+    {
+      code: 'ENG 101',
+      pastQuestions: [
+        mc('Choose the correct spelling.', ['Accomodate', 'Acommodate', 'Accommodate', 'Acomodate'], 2),
+        mc('Identify the noun in the sentence: "The teacher praised the diligent student."', ['praised', 'diligent', 'student', 'the'], 2),
+        mc('A word that describes a noun is called a/an?', ['Verb', 'Adjective', 'Adverb', 'Pronoun'], 1),
+        mc("Choose the correct synonym for 'happy'.", ['Sad', 'Joyful', 'Angry', 'Tired'], 1),
+        mc('Which sentence is grammatically correct?', ['She go to school every day.', 'She goes to school every day.', 'She going to school every day.', 'She gone to school every day.'], 1),
+        mc("The antonym of 'ancient' is?", ['Old', 'Modern', 'Ageless', 'Historic'], 1),
+        mc('Identify the part of speech of the underlined word: "She sang beautifully."', ['Noun', 'Verb', 'Adverb', 'Adjective'], 2),
+        mc('Choose the correctly punctuated sentence.', ['Its a beautiful day.', "It's a beautiful day.", "Its' a beautiful day.", "It is' a beautiful day."], 1),
+      ],
+      mock: [
+        mc("Choose the plural form of 'child'.", ['Childs', 'Childes', 'Children', 'Childrens'], 2),
+        mc('Which of these is a preposition?', ['Run', 'Quickly', 'Under', 'Happy'], 2),
+        mc('Identify the correctly spelled word.', ['Recieve', 'Receive', 'Receeve', 'Receve'], 1),
+        mc("What is the past tense of 'go'?", ['Goed', 'Gone', 'Went', 'Going'], 2),
+        mc('Choose the correct sentence.', ['Neither of the boys were present.', 'Neither of the boys was present.', 'Neither of the boys is present.', 'Neither of the boys be present.'], 1),
+        mc("The synonym of 'begin' is?", ['End', 'Commence', 'Stop', 'Finish'], 1),
+        mc('Identify the conjunction in: "I wanted to go, but it was raining."', ['wanted', 'but', 'raining', 'go'], 1),
+        mc('Which word is an abstract noun?', ['Table', 'Honesty', 'Chair', 'Book'], 1),
+      ],
+    },
+    {
+      code: 'BIO 101',
+      pastQuestions: [
+        mc('The basic unit of life is the?', ['Tissue', 'Cell', 'Organ', 'Organism'], 1),
+        mc('Which organelle is known as the powerhouse of the cell?', ['Nucleus', 'Ribosome', 'Mitochondrion', 'Golgi body'], 2),
+        mc('Photosynthesis occurs mainly in the?', ['Roots', 'Leaves', 'Stem', 'Flower'], 1),
+        mc('Which of these is a characteristic of living things?', ['Rusting', 'Reproduction', 'Melting', 'Dissolving'], 1),
+        mc('The process by which plants lose water vapor through their leaves is called?', ['Respiration', 'Transpiration', 'Photosynthesis', 'Excretion'], 1),
+        mc('DNA is found mainly in the?', ['Cytoplasm', 'Cell wall', 'Nucleus', 'Cell membrane'], 2),
+        mc('Which of these is NOT a kingdom in classification?', ['Animalia', 'Plantae', 'Fungi', 'Mineralia'], 3),
+        mc('The green pigment found in plants that absorbs light for photosynthesis is called?', ['Melanin', 'Chlorophyll', 'Hemoglobin', 'Keratin'], 1),
+      ],
+      mock: [
+        mc('Which structure controls what enters and leaves a cell?', ['Cell wall', 'Cell membrane', 'Nucleus', 'Vacuole'], 1),
+        mc('The process of cell division for growth and repair is called?', ['Meiosis', 'Mitosis', 'Fertilization', 'Osmosis'], 1),
+        mc('Which gas do plants absorb during photosynthesis?', ['Oxygen', 'Nitrogen', 'Carbon dioxide', 'Hydrogen'], 2),
+        mc('The study of living organisms is called?', ['Chemistry', 'Physics', 'Biology', 'Geology'], 2),
+        mc('Which of these is an example of asexual reproduction?', ['Binary fission', 'Fertilization', 'Pollination', 'Mating'], 0),
+        mc('Enzymes are mainly composed of?', ['Carbohydrates', 'Proteins', 'Lipids', 'Water'], 1),
+        mc('Which blood cells help fight infection?', ['Red blood cells', 'White blood cells', 'Platelets', 'Plasma'], 1),
+        mc('The movement of water molecules from a region of high concentration to low concentration through a semi-permeable membrane is called?', ['Diffusion', 'Osmosis', 'Active transport', 'Filtration'], 1),
+      ],
+    },
+    {
+      code: 'ECE 101',
+      pastQuestions: [
+        mc('Early childhood education generally covers children within the age range of?', ['0-8 years', '10-15 years', '15-18 years', '18-25 years'], 0),
+        mc('Who is regarded as the father of Kindergarten education?', ['John Dewey', 'Friedrich Froebel', 'Jean Piaget', 'Maria Montessori'], 1),
+        mc('Play in early childhood education is important mainly because it?', ['Wastes time', 'Aids physical, social and cognitive development', 'Has no educational value', 'Is only for entertainment'], 1),
+        mc('Which theorist is known for the stages of cognitive development?', ['Lev Vygotsky', 'Jean Piaget', 'B.F. Skinner', 'Sigmund Freud'], 1),
+        mc('A conducive learning environment for young children should be?', ['Safe, stimulating and child-friendly', 'Strict and silent at all times', 'Free of toys and play materials', 'Restricted to indoor activities only'], 0),
+        mc('The Montessori method of education emphasizes?', ['Rote memorization', 'Child-directed, hands-on learning', 'Large class lectures', 'Standardized testing only'], 1),
+        mc("Which domain of development refers to a child's ability to interact with others?", ['Physical', 'Cognitive', 'Social-emotional', 'Language'], 2),
+        mc('The National Policy on Education in Nigeria recognizes early childhood education as beginning at what age?', ['0-3 years', '3-5 years', '6-8 years', '9-11 years'], 1),
+      ],
+      mock: [
+        mc("Which of these best describes 'readiness' in early childhood education?", ['A child\'s ability to read fluently', "A child's developmental preparedness to learn a new skill", "A teacher's lesson plan", 'A type of classroom furniture'], 1),
+        mc('Vygotsky\'s concept of the "Zone of Proximal Development" refers to?', ['Tasks a child can do alone', 'Tasks a child can do with guidance but not alone yet', 'Tasks a child cannot do at all', 'A physical classroom zone'], 1),
+        mc('Which of these is a fine motor skill?', ['Running', 'Jumping', 'Holding a pencil', 'Climbing stairs'], 2),
+        mc('A good early childhood curriculum should be?', ['Rigid and exam-focused', 'Play-based and developmentally appropriate', 'Focused only on writing', 'Designed only for gifted children'], 1),
+        mc("The main caregiver's role in a child's early years includes?", ['Providing nurture, safety and stimulation', "Ignoring the child's needs", 'Enforcing strict silence', 'Preventing all play'], 0),
+        mc('Which of these is an example of gross motor skill development?', ['Buttoning a shirt', 'Running and jumping', 'Cutting with scissors', 'Drawing a straight line'], 1),
+        mc('Language development in early childhood is best supported by?', ['Talking, reading and singing with the child', "Limiting the child's exposure to speech", 'Only using flashcards', 'Discouraging questions'], 0),
+        mc('What is the primary aim of early childhood education?', ['Preparing children for formal examinations only', 'Holistic development of the child', 'Teaching only academic subjects', 'Reducing the number of caregivers needed'], 1),
+      ],
+    },
+    {
+      code: 'ECO 101',
+      pastQuestions: [
+        mc('Economics is best defined as the study of?', ['How to make money quickly', 'How society allocates scarce resources', 'Government spending only', 'Business advertising'], 1),
+        mc('The basic economic problem is caused by?', ['Too much money in circulation', 'Scarcity of resources relative to unlimited wants', 'Too many banks', 'Excess production'], 1),
+        mc('Demand refers to?', ['The desire to own a good', 'The quantity of a good buyers are willing and able to buy at a given price', 'The total goods produced', 'The price of a good'], 1),
+        mc('According to the law of demand, as price increases, quantity demanded generally?', ['Increases', 'Decreases', 'Stays the same', 'Doubles'], 1),
+        mc('Which of these is a factor of production?', ['Advertising', 'Land', 'Profit', 'Demand'], 1),
+        mc('Opportunity cost refers to?', ['The total cost of production', 'The value of the next best alternative forgone', 'The price of a good', 'Government tax on goods'], 1),
+        mc('A market where goods are bought and sold is an example of?', ['Production', 'Exchange', 'Consumption', 'Distribution'], 1),
+        mc("Which of these best describes 'supply'?", ['The desire to buy goods', 'The quantity of a good producers are willing and able to sell at a given price', 'The demand for a good', 'Government spending'], 1),
+      ],
+      mock: [
+        mc('The law of supply states that as price increases, quantity supplied generally?', ['Decreases', 'Increases', 'Stays constant', 'Becomes zero'], 1),
+        mc('Which economic system is characterized by government ownership of resources?', ['Capitalism', 'Socialism', 'Mixed economy', 'Barter economy'], 1),
+        mc('The point where the supply and demand curves intersect is called?', ['Equilibrium point', 'Break-even point', 'Saturation point', 'Peak point'], 0),
+        mc('Which of these is NOT a factor of production?', ['Land', 'Labour', 'Capital', 'Advertising'], 3),
+        mc('Inflation refers to?', ['A general and sustained rise in price level', 'A fall in the price of goods', 'An increase in the value of money', 'A decrease in government spending'], 0),
+        mc("Which of the following best describes a 'mixed economy'?", ['An economy run entirely by government', 'An economy run entirely by private individuals', 'An economy combining both private and government control', 'An economy with no trade'], 2),
+        mc('Gross Domestic Product (GDP) measures?', ['The total value of goods and services produced in a country within a period', 'The population of a country', 'The total taxes collected', 'The exchange rate of a currency'], 0),
+        mc('Which of these is an example of indirect tax?', ['Income tax', 'Value Added Tax (VAT)', 'Company tax', 'Property tax'], 1),
+      ],
+    },
+  ];
+
+  let created = 0;
+  for (const entry of bank) {
+    const course = await prisma.course.findFirst({ where: { code: entry.code } });
+    if (!course) continue;
+    const pqTitle = `${entry.code} Past Questions 2022-2024`;
+    if (!(await prisma.assessment.findFirst({ where: { courseId: course.id, title: pqTitle } }))) {
+      await prisma.assessment.create({
+        data: {
+          courseId: course.id, title: pqTitle, type: 'PAST_QUESTION', authorId: lecturer.id,
+          durationMin: 20, semesterId: semester ? semester.id : null,
+          questions: { create: entry.pastQuestions.map((q, i) => ({ ...q, order: i })) },
+        },
+      });
+      created++;
+    }
+    const mockTitle = `${entry.code} Mock Exam`;
+    if (!(await prisma.assessment.findFirst({ where: { courseId: course.id, title: mockTitle } }))) {
+      await prisma.assessment.create({
+        data: {
+          courseId: course.id, title: mockTitle, type: 'Mock', authorId: lecturer.id,
+          durationMin: 20, semesterId: semester ? semester.id : null,
+          questions: { create: entry.mock.map((q, i) => ({ ...q, order: i })) },
+        },
+      });
+      created++;
+    }
+  }
+  if (created) console.log(`Backfilled ${created} past-question/mock-exam set(s) across ${bank.length} courses`);
 }
 
 if (require.main === module) {
