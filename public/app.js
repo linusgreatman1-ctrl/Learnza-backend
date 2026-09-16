@@ -1,9 +1,16 @@
 (function () {
   'use strict';
 
+  // The logged-in session lives in sessionStorage, not localStorage -- localStorage is
+  // shared across every tab of this origin, so logging into a second account in
+  // another tab would silently overwrite the first tab's session too, and refreshing
+  // it would then load "whichever account logged in last" instead of its own.
+  // sessionStorage is per-tab, so each tab keeps its own account independently (this
+  // also matters for real users sharing one browser, e.g. a school's shared/cyber-cafe
+  // computer, not just for testing multiple roles side by side).
   const state = {
-    token: localStorage.getItem('vp_token') || null,
-    user: JSON.parse(localStorage.getItem('vp_user') || 'null'),
+    token: sessionStorage.getItem('vp_token') || null,
+    user: JSON.parse(sessionStorage.getItem('vp_user') || 'null'),
     schoolId: null,
     view: { screen: 'home', courseId: null, groupId: null, assessmentId: null },
   };
@@ -215,8 +222,8 @@
   });
 
   document.getElementById('signout-btn').addEventListener('click', () => {
-    localStorage.removeItem('vp_token');
-    localStorage.removeItem('vp_user');
+    sessionStorage.removeItem('vp_token');
+    sessionStorage.removeItem('vp_user');
     window.speechSynthesis && window.speechSynthesis.cancel();
     window.location.href = 'index.html';
   });
@@ -224,8 +231,8 @@
   async function onAuthed(token, user) {
     state.token = token;
     state.user = user;
-    localStorage.setItem('vp_token', token);
-    localStorage.setItem('vp_user', JSON.stringify(user));
+    sessionStorage.setItem('vp_token', token);
+    sessionStorage.setItem('vp_user', JSON.stringify(user));
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     await loadHeaderContext();
@@ -240,11 +247,11 @@
   async function loadHeaderContext() {
     try {
       const { user, school, department } = await api('/auth/me');
-      // Refresh state.user (and its localStorage copy) too, not just school/department --
-      // otherwise a server-side change to the student's own record (level, admission
+      // Refresh state.user (and its sessionStorage copy) too, not just school/department
+      // -- otherwise a server-side change to the student's own record (level, admission
       // details, etc.) never reaches an already-logged-in browser until they log out and
       // back in, since state.user was only ever set once at login time.
-      if (user) { state.user = user; localStorage.setItem('vp_user', JSON.stringify(user)); }
+      if (user) { state.user = user; sessionStorage.setItem('vp_user', JSON.stringify(user)); }
       state.school = school;
       state.department = department;
     } catch { state.school = null; state.department = null; }
@@ -1913,7 +1920,7 @@
         try {
           const { user } = await api('/auth/me/avatar', { method: 'POST', body: fd });
           state.user = user;
-          localStorage.setItem('vp_user', JSON.stringify(user));
+          sessionStorage.setItem('vp_user', JSON.stringify(user));
           toast('Photo updated');
           render();
         } catch (err) { toast(err.message); }
@@ -2185,7 +2192,7 @@
           try {
             const { user } = await api('/auth/me/notifications', { method: 'PATCH', body: { muted: nextMuted } });
             state.user = user;
-            localStorage.setItem('vp_user', JSON.stringify(user));
+            sessionStorage.setItem('vp_user', JSON.stringify(user));
             render();
           } catch (err) { toast(err.message); }
         }
@@ -2265,7 +2272,7 @@
       try {
         const { user } = await api('/auth/me', { method: 'PATCH', body });
         state.user = user;
-        localStorage.setItem('vp_user', JSON.stringify(user));
+        sessionStorage.setItem('vp_user', JSON.stringify(user));
         toast('Profile updated');
         navigate('settings');
       } catch (err) { toast(err.message); }
@@ -2482,7 +2489,6 @@
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button>
         <button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>
-        ${isIndividual ? '<button class="btn btn-accent" id="dash-new-group-btn">+ Create new group</button>' : ''}
       </div>
     `;
 
@@ -2518,8 +2524,6 @@
     if (leaderboardBtn) leaderboardBtn.addEventListener('click', () => navigate('leaderboard'));
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
-    const newGroupBtn = document.getElementById('dash-new-group-btn');
-    if (newGroupBtn) newGroupBtn.addEventListener('click', () => navigate('groups'));
     document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
     wireSelfAvatarUpload('avatar-student-dash');
     view.querySelectorAll('[data-jump]').forEach((tile) => {
@@ -3474,8 +3478,15 @@
       ...courses.map(async (c) => ({ course: c, isIndividual: false, groups: (await api(`/courses/${c.id}/groups`)).groups })),
       ...individualCourses.map(async (c) => ({ course: c, isIndividual: true, groups: (await api(`/individual-courses/${c.id}/groups`)).groups })),
     ]);
+    const allGroupCourses = [
+      ...courses.map((c) => ({ course: c, isIndividual: false })),
+      ...individualCourses.map((c) => ({ course: c, isIndividual: true })),
+    ];
     view.innerHTML = `
-      <div class="page-head"><h1>Study Groups</h1></div>
+      <div class="page-head">
+        <h1>Study Groups</h1>
+        ${allGroupCourses.length ? '<button class="btn btn-accent btn-sm" id="new-group-top-btn">+ Create new group</button>' : ''}
+      </div>
       <p class="muted" style="margin-bottom:20px;">Peer discussion spaces for your courses — no scores, no leaderboard.</p>
       ${groupsByCourse.map(({ course, isIndividual, groups }) => `
         <div style="margin-bottom:22px;">
@@ -3497,19 +3508,48 @@
         </div>
       `).join('') || '<p class="muted">Enroll in (or create) a course first to join its study group.</p>'}
     `;
+    async function createGroup(courseId, isIndividualCourse) {
+      const name = prompt('Name your study group:');
+      if (!name) return;
+      const base = isIndividualCourse ? '/individual-courses' : '/courses';
+      await api(`${base}/${courseId}/groups`, { method: 'POST', body: { name } });
+      render();
+    }
     view.querySelectorAll('[data-new-group]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const name = prompt('Name your study group:');
-        if (!name) return;
-        const base = btn.dataset.newGroupIndividual === 'true' ? '/individual-courses' : '/courses';
-        await api(`${base}/${btn.dataset.newGroup}/groups`, { method: 'POST', body: { name } });
-        render();
-      });
+      btn.addEventListener('click', () => createGroup(btn.dataset.newGroup, btn.dataset.newGroupIndividual === 'true'));
     });
     view.querySelectorAll('[data-open-group]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         await api(`/groups/${btn.dataset.openGroup}/join`, { method: 'POST' });
         navigate('group-chat', { groupId: btn.dataset.openGroup });
+      });
+    });
+    const topBtn = document.getElementById('new-group-top-btn');
+    if (topBtn) topBtn.addEventListener('click', () => {
+      if (allGroupCourses.length === 1) {
+        return createGroup(allGroupCourses[0].course.id, allGroupCourses[0].isIndividual);
+      }
+      const container = document.createElement('div');
+      container.className = 'card';
+      container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(420px,92vw); height:fit-content; padding:24px; z-index:200;';
+      container.innerHTML = `
+        <h3 style="margin-bottom:14px;">Create a group for which course?</h3>
+        <div class="field"><select id="ng-course">${allGroupCourses.map(({ course, isIndividual: ic }, i) => `<option value="${i}">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</option>`).join('')}</select></div>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button class="btn btn-primary" id="ng-go">Continue</button>
+          <button class="btn btn-ghost" id="ng-cancel">Cancel</button>
+        </div>
+      `;
+      const backdrop = document.createElement('div');
+      backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+      document.body.appendChild(backdrop);
+      document.body.appendChild(container);
+      container.querySelector('#ng-cancel').addEventListener('click', () => { backdrop.remove(); container.remove(); });
+      container.querySelector('#ng-go').addEventListener('click', () => {
+        const picked = allGroupCourses[Number(container.querySelector('#ng-course').value)];
+        backdrop.remove();
+        container.remove();
+        createGroup(picked.course.id, picked.isIndividual);
       });
     });
   }
