@@ -150,6 +150,7 @@ model User {
   resultsReceived Result[]    @relation("ResultStudent")
   notifications  Notification[]
   coursesAssigned CourseLecturer[]
+  labAttempts    LabAttempt[]
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -475,6 +476,22 @@ model LabDemonstration {
   author      User?    @relation("LabDemoAuthor", fields: [authorId], references: [id])
   authorId    String?
   createdAt   DateTime @default(now())
+  attempts    LabAttempt[]
+}
+
+// Which students actually did a practical, and when -- one row per student per demo
+// (re-doing it just updates startedAt) so admin's Digital Lab view can show, per
+// practical, exactly who's engaged with it. Deliberately minimal: no score/report
+// field -- Digital Lab is a guided walkthrough, not a graded assessment.
+model LabAttempt {
+  id        String           @id @default(cuid())
+  demo      LabDemonstration @relation(fields: [demoId], references: [id])
+  demoId    String
+  student   User             @relation(fields: [studentId], references: [id])
+  studentId String
+  startedAt DateTime         @default(now())
+
+  @@unique([demoId, studentId])
 }
 
 // Admissions pipeline: application -> screening -> acceptance -> registration.

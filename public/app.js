@@ -2980,6 +2980,11 @@
       toggle.style.opacity = '';
       toggle.style.cursor = '';
       document.getElementById('gq-sub').textContent = 'Learnza answers visually without leaving the practical';
+      // Logs "this student did this practical" for admin's Digital Lab view -- fired
+      // once per session start, not awaited (never worth blocking/interrupting the
+      // lesson over), and only individual-course practicals never reach an admin view
+      // anyway so this is harmless there too.
+      if (state.user.role === 'STUDENT') api(`/lab/${demo.id}/attempt`, { method: 'POST' }).catch(() => {});
     }
 
     async function askLabQuestion(question, pausedSnapshot) {
@@ -3207,6 +3212,14 @@
           <ol style="margin:14px 0 0; padding-left:20px; display:flex; flex-direction:column; gap:6px;">
             ${d.steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
           </ol>
+          <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
+            <div class="meta" style="margin-bottom:8px;">Students who did this practical (${d.attempts.length})</div>
+            ${d.attempts.length ? `
+              <div style="display:flex; flex-direction:column; gap:4px;">
+                ${d.attempts.map((a) => `<div class="meta">${esc(a.student.fullName)}${a.student.matricNumber ? ` (${esc(a.student.matricNumber)})` : ''} · ${new Date(a.startedAt).toLocaleDateString()}</div>`).join('')}
+              </div>
+            ` : '<div class="meta">No one yet.</div>'}
+          </div>
         </div>
       `).join('') || '<p class="muted">No lab activity yet.</p>'}
     `;

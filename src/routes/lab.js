@@ -92,12 +92,35 @@ router.post('/lab/:id/ask', requireAuth, requireActiveSubscription, async (req, 
   }
 });
 
+// Logged once a student actually starts a guided practical (renderLabTeach calls this
+// right when narration begins, same moment "Got a question" unlocks) -- re-doing the
+// same practical just refreshes startedAt rather than piling up duplicate rows, so
+// admin's view always shows one row per student per practical: who did it, and when.
+router.post('/lab/:id/attempt', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const demo = await prisma.labDemonstration.findUnique({ where: { id: req.params.id } });
+  if (!demo) return res.status(404).json({ error: 'Practical not found' });
+  await prisma.labAttempt.upsert({
+    where: { demoId_studentId: { demoId: demo.id, studentId: req.user.id } },
+    create: { demoId: demo.id, studentId: req.user.id },
+    update: { startedAt: new Date() },
+  });
+  res.json({ ok: true });
+});
+
 // Read-only records of all lab activity for the school -- there's no approval step
-// to action here any more, just visibility into what's been curated vs AI-generated.
+// to action here any more, just visibility into what's been curated vs AI-generated,
+// plus which students actually did each practical.
 router.get('/admin/lab', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const demos = await prisma.labDemonstration.findMany({
     where: { course: { department: { schoolId: req.user.schoolId } } },
-    include: { course: { select: { code: true, title: true } }, author: { select: { fullName: true } } },
+    include: {
+      course: { select: { code: true, title: true } },
+      author: { select: { fullName: true } },
+      attempts: {
+        include: { student: { select: { fullName: true, matricNumber: true } } },
+        orderBy: { startedAt: 'desc' },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
   res.json({ demonstrations: demos.map(shape) });
