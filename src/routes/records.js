@@ -288,3 +288,7 @@ router.post('/admin/students/:id/admission-details', requireAuth, requireRole('A
 });
 
 module.exports = router;
+// Exported so lecturer-facing routes (academics.js "My Students" detail) can reuse the
+// exact same comprehensive-details computation the student/admin Admission Status
+// screens use, instead of building a second copy of the same aggregation.
+module.exports.computeAdmissionStatus = computeAdmissionStatus;

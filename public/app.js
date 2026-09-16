@@ -287,7 +287,7 @@
 
   function defaultScreenFor(role) {
     if (role === 'STUDENT') return 'my-dashboard';
-    if (role === 'LECTURER') return 'lect-courses';
+    if (role === 'LECTURER') return 'lect-dashboard';
     return 'admin-directory';
   }
 
@@ -335,12 +335,19 @@
       ['settings', 'Settings'],
     ],
     LECTURER: [
+      ['lect-dashboard', 'My Dashboard'],
       ['lect-courses', 'My Courses'],
+      ['lect-students', 'My Students'],
       ['lect-library', 'e-Library'],
-      ['lect-assessments', 'Assessments'],
+      ['lect-attendance-hub', 'Class Attendance'],
+      ['lect-tests', 'Tests'],
       ['lect-semester-exam', 'Semester Exam'],
+      ['lect-assignments-hub', 'Assignments'],
+      ['lect-results-hub', 'Student Results'],
       ['research', 'AI Research Assistant'],
       ['staff-profile', 'My Staff Profile'],
+      ['digital-id', 'Digital ID'],
+      ['settings', 'Settings'],
     ],
     ADMIN: [
       ['admin-directory', 'Staff & Student Directory'],
@@ -573,16 +580,23 @@
         case 'practice-take': return renderPracticeTake();
         case 'semester-exam-hub': return renderSemesterExamHub();
 
+        case 'lect-dashboard': return renderLecturerDashboard();
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
-        case 'lect-assessments': return renderAssessments(true);
+        case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM'], allowedTypes: ['CA', 'Test', 'Mock', 'PAST_QUESTION'] });
         case 'lect-semester-exam': return renderLecturerSemesterExam();
         case 'lect-assessment-results': return renderAssessmentResults();
+        case 'lect-attendance-hub': return renderLecturerAttendanceHub();
         case 'lect-attendance': return renderLecturerAttendance();
+        case 'lect-assignments-hub': return renderLecturerAssignmentsHub();
         case 'lect-assignments': return renderLecturerAssignments();
         case 'lect-assignment-submissions': return renderAssignmentSubmissions();
+        case 'lect-results-hub': return renderLecturerResultsHub();
         case 'lect-results': return renderLecturerResults();
+        case 'lect-students': return renderLecturerStudentsHub();
+        case 'lect-class-roster': return renderLecturerClassRoster();
+        case 'lect-student-detail': return renderLecturerStudentDetail();
         case 'staff-profile': return renderStaffProfile();
 
         case 'admin-directory': return renderAdminDirectory();
@@ -1904,6 +1918,7 @@
   }
 
   async function renderDigitalId() {
+    if (state.user.role === 'LECTURER') return renderLecturerDigitalId();
     if (state.user.isIndividual) return renderIndividualDigitalId();
     const [{ courses }, { results }, { results: formalResults }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
       api('/students/me/courses'),
@@ -3506,7 +3521,7 @@
   // except PAST_QUESTION and SEMESTER_EXAM (those have their own dedicated pages) and
   // lecturers see everything they've created.
   async function renderAssessments(isLecturer, opts = {}) {
-    const { heading, typeFilter, defaultType } = opts;
+    const { heading, typeFilter, defaultType, excludeTypes } = opts;
     const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
     // Individual (non-school) learners have IndividualCourse rows instead of enrolled
     // Courses -- their app-generated assessments live under /individual-courses/:id
@@ -3518,10 +3533,18 @@
     ]);
     const defaultExclude = ['PAST_QUESTION', 'SEMESTER_EXAM'];
     view.innerHTML = `
-      <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Assessments' : 'CBT Mock Exam Practice'))}</h1></div>
+      <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Tests' : 'CBT Mock Exam Practice'))}</h1></div>
       ${isLecturer ? `<button class="btn btn-accent btn-sm" id="new-assessment-btn" style="margin-bottom:18px;">+ New assessment</button>` : ''}
       ${rows.map(({ course, assessments: allAssessments }) => {
-        const assessments = allAssessments.filter((a) => typeFilter ? typeFilter.includes(a.type) : (isLecturer || !defaultExclude.includes(a.type)));
+        // typeFilter is an inclusive allow-list (e.g. only SEMESTER_EXAM); excludeTypes
+        // is a deny-list (e.g. everything except SEMESTER_EXAM) -- kept as two separate
+        // options because "Tests" and "Semester Exam" need to be disjoint, not just two
+        // different views of the same "everything" list the way they used to be.
+        const assessments = allAssessments.filter((a) => {
+          if (typeFilter) return typeFilter.includes(a.type);
+          if (excludeTypes) return !excludeTypes.includes(a.type);
+          return isLecturer || !defaultExclude.includes(a.type);
+        });
         return `
         <div style="margin-bottom:22px;">
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
@@ -3549,12 +3572,12 @@
       btn.addEventListener('click', () => navigate('lect-assessment-results', { assessmentId: btn.dataset.results }));
     });
     if (isLecturer) {
-      document.getElementById('new-assessment-btn').addEventListener('click', () => openNewAssessmentDialog(courses, { defaultType }));
+      document.getElementById('new-assessment-btn').addEventListener('click', () => openNewAssessmentDialog(courses, { defaultType, allowedTypes: opts.allowedTypes }));
     }
   }
 
   function renderLecturerSemesterExam() {
-    return renderAssessments(true, { heading: 'Semester Exam', typeFilter: ['SEMESTER_EXAM'], defaultType: 'SEMESTER_EXAM' });
+    return renderAssessments(true, { heading: 'Semester Exam', typeFilter: ['SEMESTER_EXAM'], defaultType: 'SEMESTER_EXAM', allowedTypes: ['SEMESTER_EXAM'] });
   }
 
   function renderSemesterExamHub() {
@@ -4080,6 +4103,407 @@
     });
   }
 
+  // ================= LECTURER: DASHBOARD, MY STUDENTS, ATTENDANCE/ASSIGNMENTS/RESULTS HUBS =================
+
+  async function renderLecturerDashboard() {
+    const { department, courses } = await ensureLectCourses();
+    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
+    const totalStudents = counts.reduce((sum, c) => sum + c.count, 0);
+    const u = state.user;
+    view.innerHTML = `
+      <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+        <div class="id-avatar">${esc(initials(u.fullName))}</div>
+        <div>
+          <div>${esc(u.fullName)} · Lecturer</div>
+          <div>${state.school ? [state.school.name, state.school.location].filter(Boolean).map(esc).join(', ') : ''}</div>
+          <div>${[department && department.name, u.staffId].filter(Boolean).map(esc).join(' · ')}</div>
+        </div>
+      </div>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        <div class="card course-card" data-jump-nav="lect-courses" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
+        <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">${totalStudents}</div><div class="meta">Students</div></div>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
+        <button class="btn btn-ghost" id="dash-staff-profile-btn">👤 My Staff Profile</button>
+      </div>
+    `;
+    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
+    document.getElementById('dash-digital-id-btn').addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('dash-staff-profile-btn').addEventListener('click', () => navigate('staff-profile'));
+  }
+
+  async function renderLecturerDigitalId() {
+    const { department, courses } = await ensureLectCourses();
+    const u = state.user;
+    view.innerHTML = `
+      <div class="page-head"><h1>Digital ID</h1></div>
+      <div class="id-card" style="margin-bottom:28px;">
+        <div class="id-top"><span>Learnza${state.school ? ` · ${esc(state.school.name)}` : ''}</span><span>Lecturer</span></div>
+        <div class="id-row">
+          <div class="id-avatar">${esc(initials(u.fullName))}</div>
+          <div>
+            <div class="id-value">${esc(u.fullName)}</div>
+            <div class="id-field tabular" style="margin-top:4px;">${esc(u.staffId || 'Staff ID pending')}</div>
+          </div>
+        </div>
+        <div class="id-grid">
+          <div><div class="id-field">Department</div><div>${department ? esc(department.name) : '—'}</div></div>
+          <div><div class="id-field">Courses taught</div><div>${courses.length}</div></div>
+          <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="id-field">Phone</div><div>${esc(u.phone || '—')}</div></div>
+          <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
+          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
+        </div>
+      </div>
+    `;
+  }
+
+  // "My Students" -- banner per class (course), matching My Courses -- clicking one
+  // shows only that class's roster, and creating a test/assignment/exam always requires
+  // picking a class too (openNewAssessmentDialog/openNewAssignmentDialog), so a
+  // student only ever sees what their own class received.
+  async function renderLecturerStudentsHub() {
+    const { courses } = await ensureLectCourses();
+    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
+    view.innerHTML = `
+      <div class="page-head"><h1>My Students</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Pick a class to see its students.</p>
+      <div class="grid-cards">
+        ${courses.map((c, i) => `
+          <div class="card course-card" data-open="${c.id}" data-title="${esc(c.title)}" data-code="${esc(c.code)}" style="cursor:pointer;">
+            <div class="code tabular">${esc(c.code)}</div>
+            <div style="margin:4px 0 8px;">${esc(c.title)}</div>
+            <span class="pill">${counts[i].count} student${counts[i].count === 1 ? '' : 's'}</span>
+          </div>
+        `).join('') || '<p class="muted">No courses yet.</p>'}
+      </div>
+    `;
+    view.querySelectorAll('[data-open]').forEach((el) => {
+      el.addEventListener('click', () => navigate('lect-class-roster', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
+    });
+  }
+
+  async function renderLecturerClassRoster() {
+    const { courseId, courseTitle, courseCode } = state.view;
+    const { students } = await api(`/courses/${courseId}/roster`);
+    view.innerHTML = `
+      <div class="page-head">
+        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>${esc(courseTitle || 'Class')}</h1></div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-accent btn-sm" id="add-student-btn">+ Add student</button>
+          <button class="btn btn-ghost btn-sm" id="back-btn">← Back to My Students</button>
+        </div>
+      </div>
+      <div class="card">
+        ${students.map((s) => `
+          <div class="list-row clickable" data-open-student="${s.id}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${esc(s.matricNumber || '—')}</div></div>
+            ${statusPillHtml(s.status)}
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">No students in this class yet — add one above.</p>'}
+      </div>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-students'));
+    view.querySelectorAll('[data-open-student]').forEach((row) => {
+      row.addEventListener('click', () => navigate('lect-student-detail', { studentId: row.dataset.openStudent, courseId, courseTitle, courseCode }));
+    });
+    document.getElementById('add-student-btn').addEventListener('click', () => openAddStudentDialog(courseId, courseTitle));
+  }
+
+  function openAddStudentDialog(courseId, courseTitle) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(420px,92vw); height:fit-content; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:14px;">Add student to ${esc(courseTitle || 'this class')}</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">Enter the matric number of a student who already has a Learnza account. To create a brand-new account, use the admin's Staff &amp; Student Directory.</p>
+      <div class="field"><label>Matric number</label><input type="text" id="as-matric" required placeholder="e.g. ECOE/23/CSC/041"></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="as-save">Add student</button>
+        <button class="btn btn-ghost" id="as-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#as-cancel').addEventListener('click', close);
+    container.querySelector('#as-save').addEventListener('click', async () => {
+      const matricNumber = container.querySelector('#as-matric').value.trim();
+      if (!matricNumber) return toast('Enter a matric number.');
+      try {
+        const { student } = await api(`/courses/${courseId}/enroll-student`, { method: 'POST', body: { matricNumber } });
+        toast(`${student.fullName} added to the class`);
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  // Comprehensive detail for one student in the lecturer's class -- reuses the exact
+  // same computation as the student/admin Admission Status screens.
+  async function renderLecturerStudentDetail() {
+    const { studentId, courseId, courseTitle, courseCode } = state.view;
+    const data = await api(`/lect/students/${studentId}`);
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(data.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to class</button></div>
+      <div class="card" style="padding:24px; max-width:640px; margin-bottom:22px;">
+        <div class="id-grid">
+          <div><div class="meta">Matric No.</div><div class="tabular">${esc(data.matricNumber || '—')}</div></div>
+          <div><div class="meta">Department</div><div>${esc(data.department || '—')}</div></div>
+          <div><div class="meta">Level</div><div>${esc(data.level || '—')}</div></div>
+          <div><div class="meta">Status</div><div>${statusPillHtml(data.status)}</div></div>
+          <div><div class="meta">Email</div><div>${esc(data.email)}</div></div>
+          <div><div class="meta">Phone</div><div>${esc(data.phone || '—')}</div></div>
+          <div><div class="meta">Year of admission</div><div>${data.yearOfAdmission || '—'}</div></div>
+          <div><div class="meta">Expected graduation</div><div>${data.expectedGraduationYear || '—'}</div></div>
+          <div><div class="meta">CGPA</div><div>${data.cgpa ?? '—'}</div></div>
+          <div><div class="meta">Class position</div><div>${esc(data.classPosition || '—')}</div></div>
+        </div>
+      </div>
+      <div class="grid-cards" style="margin-bottom:22px;">
+        <div class="card course-card"><div class="code">${data.exams.done}/${data.exams.total}</div><div class="meta">Exams done</div></div>
+        <div class="card course-card"><div class="code">${data.tests.done}/${data.tests.total}</div><div class="meta">Tests done</div></div>
+        <div class="card course-card"><div class="code">${data.assignments.done}/${data.assignments.total}</div><div class="meta">Assignments done</div></div>
+        <div class="card course-card"><div class="code">${data.disciplinaryIssueCount}</div><div class="meta">Disciplinary issues</div></div>
+      </div>
+      ${data.disciplinaryRecords.length ? `
+        <h3 style="margin-bottom:10px; font-size:1rem;">Disciplinary records</h3>
+        <div class="card" style="margin-bottom:22px;">
+          ${data.disciplinaryRecords.map((r) => `<div class="list-row"><div><div style="font-weight:600;">${esc(r.title)}</div><div class="meta">${esc(r.description || '')}</div></div><span class="pill ${r.status === 'RESOLVED' ? 'pill-pass' : 'pill-accent'}">${esc(r.status)}</span></div>`).join('')}
+        </div>
+      ` : ''}
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-class-roster', { courseId, courseTitle, courseCode }));
+  }
+
+  // Attendance stays a per-class, per-day marking workflow (unchanged) -- this hub is
+  // just the cross-course entry point the sidebar needed, a class picker in front of it.
+  async function renderLecturerAttendanceHub() {
+    const { courses } = await ensureLectCourses();
+    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
+    view.innerHTML = `
+      <div class="page-head"><h1>Class Attendance</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Pick a class to mark today's (or a past) attendance.</p>
+      <div class="grid-cards">
+        ${courses.map((c, i) => `
+          <div class="card course-card" data-open="${c.id}" data-title="${esc(c.title)}" data-code="${esc(c.code)}" style="cursor:pointer;">
+            <div class="code tabular">${esc(c.code)}</div>
+            <div style="margin:4px 0 8px;">${esc(c.title)}</div>
+            <span class="pill">${counts[i].count} enrolled</span>
+          </div>
+        `).join('') || '<p class="muted">No courses yet.</p>'}
+      </div>
+    `;
+    view.querySelectorAll('[data-open]').forEach((el) => {
+      el.addEventListener('click', () => navigate('lect-attendance', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
+    });
+  }
+
+  // Every assignment/project across every class in one page, labeled per class --
+  // posting one always requires picking which class receives it (openNewAssignmentDialog).
+  async function renderLecturerAssignmentsHub() {
+    const { courses } = await ensureLectCourses();
+    const rows = await Promise.all(courses.map(async (c) => ({ course: c, assignments: (await api(`/courses/${c.id}/assignments`)).assignments })));
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>Assignments</h1>
+        <button class="btn btn-accent btn-sm" id="new-assignment-btn">+ Post assignment</button>
+      </div>
+      ${rows.map(({ course, assignments }) => `
+        <div style="margin-bottom:22px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="card">
+            ${assignments.map((a) => `
+              <div class="list-row" data-open="${a.id}" data-course="${course.id}" data-course-title="${esc(course.title)}" data-course-code="${esc(course.code)}" style="cursor:pointer;">
+                <div><div style="font-weight:600;">${esc(a.title)} ${a.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-left:6px;">Project</span>' : ''}</div><div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div></div>
+                <span class="pill pill-accent">View submissions</span>
+              </div>
+            `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
+          </div>
+        </div>
+      `).join('') || '<p class="muted">No courses yet.</p>'}
+    `;
+    view.querySelectorAll('[data-open]').forEach((el) => {
+      el.addEventListener('click', () => navigate('lect-assignment-submissions', {
+        assignmentId: el.dataset.open, courseId: el.dataset.course, courseTitle: el.dataset.courseTitle, courseCode: el.dataset.courseCode,
+      }));
+    });
+    document.getElementById('new-assignment-btn').addEventListener('click', () => openNewAssignmentDialog(courses));
+  }
+
+  // Assignment/Project creation gets the same theory/objective question-drafting body
+  // as a test/exam (openNewAssessmentDialog) -- compiled into the assignment's
+  // instructions as one numbered body, since a student still submits one holistic
+  // written answer (Assignment has no per-question submission model, unlike Assessment).
+  function openNewAssignmentDialog(courses) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    let qCount = 1;
+    function questionBlock(i) {
+      return `<div class="field" data-aq-block="${i}">
+        <label>Question ${i + 1}</label>
+        <select class="aq-type" style="margin-bottom:6px;">
+          <option value="OBJECTIVE">Objective (multiple choice)</option>
+          <option value="THEORY">Theory (free response)</option>
+        </select>
+        <input type="text" class="aq-text" placeholder="Question text" required>
+        <div class="aq-objective-fields">
+          <input type="text" class="aq-opt" placeholder="Option A" style="margin-top:6px;">
+          <input type="text" class="aq-opt" placeholder="Option B" style="margin-top:6px;">
+          <input type="text" class="aq-opt" placeholder="Option C" style="margin-top:6px;">
+          <input type="text" class="aq-opt" placeholder="Option D" style="margin-top:6px;">
+        </div>
+      </div>`;
+    }
+    function wireToggle(block) {
+      const typeSelect = block.querySelector('.aq-type');
+      const objectiveFields = block.querySelector('.aq-objective-fields');
+      typeSelect.addEventListener('change', () => { objectiveFields.hidden = typeSelect.value === 'THEORY'; });
+    }
+    container.innerHTML = `
+      <h3 style="margin-bottom:14px;">Post a new assignment</h3>
+      <div class="field"><label>Class (course)</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+      <div class="field"><label>Kind</label><select id="na-kind"><option value="ASSIGNMENT">Assignment</option><option value="PROJECT">Project</option></select></div>
+      <div class="field"><label>Title</label><input type="text" id="na-title" required></div>
+      <div class="field"><label>Due date (optional)</label><input type="date" id="na-due"></div>
+      <p class="meta" style="margin-bottom:10px;">Draft the questions the same way a test/exam is drafted — objective or theory, one or more. They're compiled into the body students see, answered as one written submission.</p>
+      <div id="na-questions">${questionBlock(0)}</div>
+      <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-primary" id="na-save">Post</button>
+        <button class="btn btn-ghost" id="na-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    wireToggle(container.querySelector('[data-aq-block="0"]'));
+    container.querySelector('#na-add-q').addEventListener('click', () => {
+      const div = document.createElement('div');
+      div.innerHTML = questionBlock(qCount++);
+      const block = div.firstElementChild;
+      container.querySelector('#na-questions').appendChild(block);
+      wireToggle(block);
+    });
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#na-cancel').addEventListener('click', close);
+    container.querySelector('#na-save').addEventListener('click', async () => {
+      const blocks = container.querySelectorAll('[data-aq-block]');
+      const bodyParts = Array.from(blocks).map((b, i) => {
+        const type = b.querySelector('.aq-type').value;
+        const text = b.querySelector('.aq-text').value.trim();
+        if (!text) return null;
+        if (type === 'OBJECTIVE') {
+          const opts = Array.from(b.querySelectorAll('.aq-opt')).map((el) => el.value.trim()).filter(Boolean);
+          const lettered = opts.map((o, idx) => `   ${OPTION_LABELS[idx]}) ${o}`).join('\n');
+          return `${i + 1}. ${text}${lettered ? `\n${lettered}` : ''}`;
+        }
+        return `${i + 1}. ${text}`;
+      }).filter(Boolean);
+      if (!bodyParts.length) return toast('Add at least one question.');
+      const title = container.querySelector('#na-title').value.trim();
+      if (!title) return toast('Give it a title.');
+      try {
+        await api(`/courses/${container.querySelector('#na-course').value}/assignments`, {
+          method: 'POST',
+          body: {
+            title,
+            instructions: bodyParts.join('\n\n'),
+            dueAt: container.querySelector('#na-due').value || null,
+            kind: container.querySelector('#na-kind').value,
+          },
+        });
+        toast('Posted');
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  // Every published result across every class in one page, labeled per class.
+  async function renderLecturerResultsHub() {
+    const { courses } = await ensureLectCourses();
+    const rows = await Promise.all(courses.map(async (c) => ({ course: c, results: (await api(`/courses/${c.id}/results`)).results })));
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>Student Results</h1>
+        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Publish result</button>
+      </div>
+      ${rows.map(({ course, results }) => `
+        <div style="margin-bottom:22px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="card" style="overflow-x:auto;">
+            <table class="data-table">
+              <thead><tr><th>Student</th><th>Term</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+              <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results published yet.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `).join('') || '<p class="muted">No courses yet.</p>'}
+    `;
+    document.getElementById('new-result-btn').addEventListener('click', () => openPublishResultDialog(courses));
+  }
+
+  function openPublishResultDialog(courses) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:14px;">Publish a result</h3>
+      <div class="field"><label>Class (course)</label><select id="pr-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+      <div class="field"><label>Student</label><select id="pr-student"><option value="">Loading students…</option></select></div>
+      <div class="field"><label>Term</label><input type="text" id="pr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
+      <div class="field"><label>Score</label><input type="number" id="pr-score" required></div>
+      <div class="field"><label>Grade (optional)</label><input type="text" id="pr-grade" placeholder="e.g. A"></div>
+      <div class="field"><label>Remark (optional)</label><input type="text" id="pr-remark"></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="pr-save">Publish</button>
+        <button class="btn btn-ghost" id="pr-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    async function loadStudents(courseId) {
+      const studentSelect = container.querySelector('#pr-student');
+      if (!courseId) { studentSelect.innerHTML = '<option value="">No class selected</option>'; return; }
+      const { students } = await api(`/courses/${courseId}/roster`);
+      studentSelect.innerHTML = students.map((s) => `<option value="${s.id}">${esc(s.fullName)} (${esc(s.matricNumber || '—')})</option>`).join('') || '<option value="">No students enrolled</option>';
+    }
+    loadStudents(courses[0] && courses[0].id);
+    container.querySelector('#pr-course').addEventListener('change', (e) => loadStudents(e.target.value));
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#pr-cancel').addEventListener('click', close);
+    container.querySelector('#pr-save').addEventListener('click', async () => {
+      const courseId = container.querySelector('#pr-course').value;
+      const studentId = container.querySelector('#pr-student').value;
+      if (!studentId) return toast('No student to publish for.');
+      try {
+        await api(`/courses/${courseId}/results`, {
+          method: 'POST',
+          body: {
+            studentId,
+            term: container.querySelector('#pr-term').value.trim(),
+            score: container.querySelector('#pr-score').value,
+            grade: container.querySelector('#pr-grade').value.trim() || null,
+            remark: container.querySelector('#pr-remark').value.trim() || null,
+          },
+        });
+        toast('Result published');
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
   function openNewAssessmentDialog(courses, opts = {}) {
     const container = document.createElement('div');
     container.className = 'card';
@@ -4116,18 +4540,22 @@
         modelAnswer.hidden = !isTheory;
       });
     }
+    // Which types the dropdown offers depends on where this dialog was opened from --
+    // Tests and Semester Exam are separate, disjoint sidebar pages now (they used to
+    // share one "everything" list, which read as the same screen twice), so the type
+    // choices offered here mirror that split instead of listing every type always.
+    // "Assignment" was removed entirely -- that's the real Assignment/Project model
+    // and its own screen (free-text instructions + manual marking), not an Assessment.
+    const TYPE_LABELS = { CA: 'CA', Test: 'Test', Mock: 'Mock', SEMESTER_EXAM: 'Semester Exam', PAST_QUESTION: 'Past Question (practice)' };
+    const allowedTypes = opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION'];
+    const typeFieldHtml = allowedTypes.length === 1
+      ? `<div class="field"><label>Type</label><div style="padding:10px 0; font-weight:600;">${esc(TYPE_LABELS[allowedTypes[0]])}</div><input type="hidden" id="na-type" value="${allowedTypes[0]}"></div>`
+      : `<div class="field"><label>Type</label><select id="na-type">${allowedTypes.map((t) => `<option value="${t}" ${opts.defaultType === t ? 'selected' : ''}>${esc(TYPE_LABELS[t])}</option>`).join('')}</select></div>`;
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">New assessment</h3>
-      <div class="field"><label>Course</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)}</option>`).join('')}</select></div>
+      <h3 style="margin-bottom:14px;">New ${allowedTypes.length === 1 && allowedTypes[0] === 'SEMESTER_EXAM' ? 'semester exam' : 'assessment'}</h3>
+      <div class="field"><label>Class (course)</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
       <div class="field"><label>Title</label><input type="text" id="na-title" required></div>
-      <div class="field"><label>Type</label><select id="na-type">
-        <option value="CA" ${opts.defaultType === 'CA' ? 'selected' : ''}>CA</option>
-        <option value="Test" ${opts.defaultType === 'Test' ? 'selected' : ''}>Test</option>
-        <option value="Mock" ${opts.defaultType === 'Mock' ? 'selected' : ''}>Mock</option>
-        <option value="Assignment" ${opts.defaultType === 'Assignment' ? 'selected' : ''}>Assignment</option>
-        <option value="SEMESTER_EXAM" ${opts.defaultType === 'SEMESTER_EXAM' ? 'selected' : ''}>Semester Exam</option>
-        <option value="PAST_QUESTION" ${opts.defaultType === 'PAST_QUESTION' ? 'selected' : ''}>Past Question (practice)</option>
-      </select></div>
+      ${typeFieldHtml}
       <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
       <p class="meta" style="margin-bottom:14px;">Students get 1 minute per question automatically — no need to set a duration.</p>
       <div id="na-questions">${questionBlock(0)}</div>
@@ -4210,7 +4638,7 @@
         </table>
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'lect-assessments'));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'lect-tests'));
   }
 
   // Read-only, school-wide view of every semester exam set by any lecturer -- admin
