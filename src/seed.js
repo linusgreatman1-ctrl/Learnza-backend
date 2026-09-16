@@ -1,6 +1,7 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const prisma = require('./db');
+const { PLANS } = require('./config/plans');
 
 async function main() {
   const existing = await prisma.school.findFirst();
@@ -16,6 +17,7 @@ async function main() {
     await backfillLibraryTextbooks();
     await backfillPastQuestionsAndMocks();
     await backfillCourseSemesters();
+    await backfillSubscriptionAiCredits();
     return;
   }
 
@@ -288,6 +290,7 @@ async function backfillDemoSubscription() {
       status: 'ACTIVE',
       startedAt: new Date(),
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      aiSecondsGranted: 3600 * 60,
     },
     update: {
       status: 'ACTIVE',
@@ -296,6 +299,21 @@ async function backfillDemoSubscription() {
     },
   });
   console.log('Backfilled an active demo subscription for student@edocoe.edu.ng');
+}
+
+// Subscriptions created before AI credit metering existed (including the demo
+// student's, upserted above -- but that upsert's own `update` branch is skipped
+// whenever the row is already active, which it always is here) have
+// aiSecondsGranted: 0, which would read as "no minutes left" the moment enforcement
+// is ever turned on. Grant each of them their plan's allotment once.
+async function backfillSubscriptionAiCredits() {
+  const stale = await prisma.subscription.findMany({ where: { status: 'ACTIVE', aiSecondsGranted: 0 } });
+  for (const sub of stale) {
+    const planConfig = PLANS[sub.plan];
+    if (!planConfig) continue;
+    await prisma.subscription.update({ where: { id: sub.id }, data: { aiSecondsGranted: planConfig.aiMinutes * 60 } });
+  }
+  if (stale.length) console.log(`Backfilled AI credit allotment onto ${stale.length} pre-existing active subscription(s)`);
 }
 
 async function backfillSchoolLicense() {
