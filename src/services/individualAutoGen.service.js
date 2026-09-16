@@ -17,7 +17,19 @@ function startOfToday() {
   return d;
 }
 
+// A failed generation attempt (AI provider quota/rate-limit hit, most likely) must not
+// be retried on every single dashboard/course reload -- that would hammer the provider
+// with the exact same request over and over and make an existing quota problem worse.
+// This in-memory cooldown (per process, reset on redeploy) is enough to bound retries
+// to a sane rate without needing a persisted "last attempted" column.
+const RETRY_COOLDOWN_MS = 15 * 60 * 1000;
+const lastAttemptAt = new Map();
+
 async function generateOne(course, studentId, type) {
+  const cooldownKey = `${course.id}:${type}`;
+  const lastTry = lastAttemptAt.get(cooldownKey);
+  if (lastTry && Date.now() - lastTry < RETRY_COOLDOWN_MS) return;
+  lastAttemptAt.set(cooldownKey, Date.now());
   try {
     if (type === 'ASSIGNMENT') {
       const draft = await quizGen.generateAssignment({ courseTitle: course.title, topic: course.title });

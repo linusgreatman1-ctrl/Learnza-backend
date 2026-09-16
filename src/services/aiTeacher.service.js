@@ -39,16 +39,16 @@ const LESSON_PLAN_SYSTEM = `You are an expert lecturer creating an interactive l
   ]
 }
 Rules:
-- 4 to 6 sections, each covering one sub-topic.
+- Exactly 3 sections, each covering one sub-topic. Keep every field concise -- this is generated live while a student waits, so a shorter response that arrives quickly beats a longer one that's slow.
 - "boardText" is short bullet-style text a whiteboard would show (plain text, use "\\n" for line breaks, no markdown symbols) -- kept for backward compatibility, still fill it in.
-- "speechText" is what the teacher says aloud for that section, in a warm, clear, conversational tone -- longer and more explanatory than boardText.
-- "checkQuestion" is a short open-ended comprehension question for about half the sections (null for the rest), checking the student understood that section.
-- "boardActions" is what actually renders on the whiteboard, 1 to 4 items per section, richer than boardText where the topic calls for it:
+- "speechText" is what the teacher says aloud for that section, in a warm, clear, conversational tone -- 3 to 5 sentences, not a lecture transcript.
+- "checkQuestion" is a short open-ended comprehension question for exactly one section (null for the other two), checking the student understood that section.
+- "boardActions" is what actually renders on the whiteboard, 1 to 2 items per section, richer than boardText where the topic calls for it:
   - "TEXT": short plain-text bullet points (like boardText).
   - "EQUATION": a single LaTeX expression as "content" (no $ delimiters), only when the topic is genuinely mathematical/scientific.
   - "DIAGRAM": a small, valid, self-contained inline SVG string as "content" (include a viewBox, keep it simple -- boxes, arrows, circles, labels), only when a labeled diagram would clarify the concept (e.g. a process flow, a labeled structure).
   - "GRAPH": "content" is a JSON string (not an object) of the shape {"type":"bar"|"line","labels":["A","B"],"values":[1,2]}, only when the topic involves comparing or trending numeric data.
-  - Every section should have at least one TEXT action; only add EQUATION/DIAGRAM/GRAPH when they genuinely help (most sections will be TEXT-only, and that's fine).
+  - Every section should have at least one TEXT action; only add EQUATION/DIAGRAM/GRAPH when they genuinely help, and never more than one non-TEXT action per section.
 Return JSON only, no prose before or after.`;
 
 const INTERRUPT_SYSTEM = `You are an interactive AI lecturer mid-lesson. A student just interrupted with a question. Reply with JSON only:

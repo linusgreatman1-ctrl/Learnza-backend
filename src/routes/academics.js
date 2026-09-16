@@ -101,6 +101,7 @@ router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (re
 router.get('/courses/:id/lessons', requireAuth, async (req, res) => {
   const lessons = await prisma.lesson.findMany({
     where: { courseId: req.params.id },
+    include: { author: { select: { fullName: true } } },
     orderBy: { order: 'asc' },
   });
 
@@ -116,9 +117,14 @@ router.get('/courses/:id/lessons', requireAuth, async (req, res) => {
 });
 
 // Video, when provided, is always a direct device upload (multipart file) -- never a
-// pasted link -- same policy as the e-library.
+// pasted link -- same policy as the e-library. This is the lecturer's own recorded
+// lesson -- a direct video/script they authored -- and has nothing to do with the AI
+// Teacher's live avatar sessions, so it's always stored isAiTeacher: false. (A prior
+// version of this route defaulted isAiTeacher to true whenever the field was omitted,
+// and no frontend form ever sent it, so every lecturer-uploaded lesson was silently
+// mislabeled as "AI Teacher" content.)
 router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'), upload.single('video'), async (req, res) => {
-  const { title, script, order, isAiTeacher } = req.body;
+  const { title, script, order } = req.body;
   if (!title || !script) return res.status(400).json({ error: 'Title and script are required' });
 
   let videoUrl = null;
@@ -138,7 +144,7 @@ router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'
       script,
       videoUrl,
       order: order ? Number(order) : 0,
-      isAiTeacher: isAiTeacher !== 'false',
+      isAiTeacher: false,
       authorId: req.user.id,
     },
   });

@@ -63,6 +63,18 @@
     setTimeout(() => t.remove(), 3200);
   }
 
+  // The AI provider's raw error text ("You exceeded your current quota, please check
+  // your plan and billing details.") is a real upstream rate/quota limit, not a bug in
+  // the app -- surfaced as a friendlier, less alarming message than passing that raw
+  // text straight through everywhere an AI call can fail.
+  function aiErrorMessage(err) {
+    const msg = (err && err.message) || '';
+    if (/quota|rate.?limit|resource.?exhausted|too many requests/i.test(msg)) {
+      return "The AI Teacher is getting a lot of use right now and has hit its provider limit — please try again in a few minutes.";
+    }
+    return msg || 'Something went wrong. Please try again.';
+  }
+
   // ---------- Auth screen ----------
   const authScreen = document.getElementById('auth-screen');
   const appScreen = document.getElementById('app-screen');
@@ -814,13 +826,23 @@
 
   async function startAiTeacherSession(courseId, topic, isIndividual) {
     const path = isIndividual ? `/individual-courses/${courseId}/ai-teacher/sessions` : `/courses/${courseId}/ai-teacher/sessions`;
-    toast('Preparing your lesson…');
+    // A full-view loading state (not just a toast that can scroll out of sight) so the
+    // few real seconds of LLM generation don't read as the app having done nothing.
+    const previousView = view.innerHTML;
+    view.innerHTML = `
+      <div class="card" style="padding:48px 24px; text-align:center;">
+        <div class="ai-avatar-ring" style="margin:0 auto 18px; animation: avatar-pulse 1.4s ease-in-out infinite;">✨</div>
+        <h3 style="margin-bottom:8px;">Preparing your lesson on "${esc(topic)}"…</h3>
+        <p class="muted">The AI Teacher is drafting it now — this takes a few seconds.</p>
+      </div>
+    `;
     try {
       const { session } = await api(path, { method: 'POST', body: { topic } });
       navigate('ai-teacher-session', { sessionId: session.id, isIndividual });
     } catch (err) {
+      view.innerHTML = previousView;
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-      toast(err.message);
+      toast(aiErrorMessage(err));
     }
   }
 
@@ -855,9 +877,14 @@
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
       </div>
       <div class="card lesson-player">
-        <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Teacher — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
-        ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
-        ${lesson.videoUrl ? `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>` : `
+        ${lesson.videoUrl ? `
+          <span class="pill pill-muted">Recorded lesson${lesson.author ? ` — ${esc(lesson.author.fullName)}` : ''}</span>
+          <div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>
+          <h3 style="margin:18px 0 8px; font-size:0.95rem;">Lesson notes</h3>
+          <p style="white-space:pre-wrap;">${esc(lesson.script)}</p>
+        ` : `
+          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Teacher — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
+          ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
           <div class="ai-avatar-box" style="margin-top:14px;">
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
@@ -865,16 +892,17 @@
             <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
             ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
           </div>
+          <div class="controls">
+            <button class="btn btn-primary" id="play-btn">▶ Play AI narration</button>
+            <button class="btn btn-ghost" id="pause-btn">Pause</button>
+            <button class="btn btn-ghost" id="stop-btn">Stop</button>
+          </div>
+          <div class="smart-board"><div class="board-action board-text" id="script-text">${scriptHtml}</div></div>
         `}
-        <div class="controls">
-          <button class="btn btn-primary" id="play-btn">▶ Play AI narration</button>
-          <button class="btn btn-ghost" id="pause-btn">Pause</button>
-          <button class="btn btn-ghost" id="stop-btn">Stop</button>
-        </div>
-        <div class="smart-board"><div class="board-action board-text" id="script-text">${scriptHtml}</div></div>
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: state.view.courseId }));
+    if (lesson.videoUrl) return;
 
     const synth = window.speechSynthesis;
     const scriptEl = document.getElementById('script-text');
@@ -1313,7 +1341,7 @@
       } catch (err) {
         if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-        toast(err.message);
+        toast(aiErrorMessage(err));
       }
     }
 
@@ -1395,7 +1423,7 @@
         board.innerHTML = renderBoardActionsHtml([{ type: 'TEXT', content: `${result.correct ? "Correct! " : 'Not quite — '}${result.feedback}` }]);
         await speakAsync(`${result.correct ? "That's correct! " : 'Not quite. '}${result.feedback}`, avatarRing);
       } catch (err) {
-        toast(err.message || 'Could not grade that answer.');
+        toast(aiErrorMessage(err));
       }
     }
 
@@ -2470,7 +2498,7 @@
           log.insertAdjacentHTML('beforeend', `<div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>`);
         } catch (err) {
           if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-          toast(err.message);
+          toast(aiErrorMessage(err));
         }
       });
     });
@@ -2628,7 +2656,7 @@
       } catch (err) {
         if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-        toast(err.message);
+        toast(aiErrorMessage(err));
       }
     }
 
@@ -2750,7 +2778,7 @@
         render();
       } catch (err) {
         if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-        toast(err.message);
+        toast(aiErrorMessage(err));
         requestBtn.disabled = false;
         requestBtn.textContent = 'Generate practical';
       }
@@ -2832,7 +2860,7 @@
         answerBox.textContent = answer;
       } catch (err) {
         if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-        answerBox.innerHTML = `<span style="color:var(--danger);">${esc(err.message)}</span>`;
+        answerBox.innerHTML = `<span style="color:var(--danger);">${esc(aiErrorMessage(err))}</span>`;
       }
     });
   }
