@@ -14,16 +14,31 @@ router.get('/school', async (req, res) => {
   res.json({ school });
 });
 
-// Distinct courses a lecturer/staff member has actually taught (authored a lesson
-// for) -- there's no direct "assigned courses" relation, so this is derived from real
-// teaching activity, same signal already used for workload (staff.js).
+// Courses a lecturer teaches -- explicit CourseLecturer assignments (set by admin when
+// adding/editing the lecturer) merged with the indirect "authored a lesson for this
+// course" signal (same one workload already uses in staff.js), so the directory shows
+// a course the instant admin assigns it, not only once the lecturer publishes something.
 async function coursesTaughtBy(userId) {
-  const lessons = await prisma.lesson.findMany({
-    where: { authorId: userId },
-    distinct: ['courseId'],
-    select: { course: { select: { id: true, code: true, title: true } } },
-  });
-  return lessons.map((l) => l.course);
+  const [assigned, lessons] = await Promise.all([
+    prisma.courseLecturer.findMany({ where: { lecturerId: userId }, select: { course: { select: { id: true, code: true, title: true } } } }),
+    prisma.lesson.findMany({ where: { authorId: userId }, distinct: ['courseId'], select: { course: { select: { id: true, code: true, title: true } } } }),
+  ]);
+  const byId = new Map();
+  for (const { course } of [...assigned, ...lessons]) byId.set(course.id, course);
+  return Array.from(byId.values());
+}
+
+// Replaces a lecturer's course assignments with exactly this list -- used by both the
+// "add lecturer" and "edit lecturer" flows so course selection behaves identically.
+async function setLecturerCourses(lecturerId, courseIds) {
+  if (!Array.isArray(courseIds)) return;
+  await prisma.courseLecturer.deleteMany({ where: { lecturerId } });
+  if (courseIds.length) {
+    await prisma.courseLecturer.createMany({
+      data: courseIds.map((courseId) => ({ lecturerId, courseId })),
+      skipDuplicates: true,
+    });
+  }
 }
 
 async function coursesEnrolledBy(studentId) {
@@ -146,52 +161,84 @@ router.get('/student-activity', async (req, res) => {
   res.json({ submissions, assignmentSubmissions: assignmentSubs, results, attendance });
 });
 
-// Shared by every "admin directly adds a user" flow -- always auto-generates the
-// access code and a temp password, never accepts either as input.
-async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [] }) {
+// Shared by every "admin directly adds a user" flow -- always auto-generates a temp
+// password, and an access code too unless skipAccessCode is set (non-academic staff
+// log in with email+password only -- an access code is a school-issued shortcut for
+// roles that need one, not a requirement of every account). Returns the created user,
+// or null after sending an error response itself, so callers can do post-creation work
+// (attaching courses) before sending their own final response.
+async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [], skipAccessCode = false }) {
   const { fullName, email, phone } = req.body;
   if (!fullName || !email || requiredFields.some((f) => !req.body[f])) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    res.status(400).json({ error: 'Missing required fields' });
+    return null;
   }
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return res.status(409).json({ error: 'An account with that email already exists' });
+  if (existing) {
+    res.status(409).json({ error: 'An account with that email already exists' });
+    return null;
+  }
   const tempPassword = generateAccessCode(8);
   const passwordHash = await bcrypt.hash(tempPassword, 10);
-  let accessCode = generateAccessCode();
-  while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
+  let accessCode = null;
+  if (!skipAccessCode) {
+    accessCode = generateAccessCode();
+    while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
+  }
 
   const user = await prisma.user.create({
     data: { fullName, email, phone: phone || null, passwordHash, schoolId: req.user.schoolId, role, accessCode, ...extraFields },
   });
-  const { passwordHash: _, ...safe } = user;
-  return res.json({ user: safe, accessCode, tempPassword });
+  return { user, accessCode, tempPassword };
+}
+
+function parseCourseIds(body) {
+  if (Array.isArray(body.courseIds)) return body.courseIds.filter(Boolean);
+  if (typeof body.courseIds === 'string' && body.courseIds.trim()) return body.courseIds.split(',').map((s) => s.trim()).filter(Boolean);
+  return [];
 }
 
 router.post('/lecturers', async (req, res) => {
   const { staffId, departmentId } = req.body;
-  return createSchoolUser(req, res, {
+  const created = await createSchoolUser(req, res, {
     role: 'LECTURER',
     requiredFields: ['departmentId'],
     extraFields: { staffId: staffId || null, departmentId, staffType: 'ACADEMIC' },
   });
+  if (!created) return;
+  const courseIds = parseCourseIds(req.body);
+  if (courseIds.length) await setLecturerCourses(created.user.id, courseIds);
+  const { passwordHash, ...safe } = created.user;
+  res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
 });
 
 router.post('/non-academic-staff', async (req, res) => {
   const { staffId, position, departmentId } = req.body;
-  return createSchoolUser(req, res, {
+  const created = await createSchoolUser(req, res, {
     role: 'STAFF',
     requiredFields: ['position'],
     extraFields: { staffId: staffId || null, position, departmentId: departmentId || null, staffType: 'NON_ACADEMIC' },
+    skipAccessCode: true,
   });
+  if (!created) return;
+  const { passwordHash, ...safe } = created.user;
+  res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
 });
 
 router.post('/students', async (req, res) => {
   const { matricNumber, departmentId, yearOfStudy } = req.body;
-  return createSchoolUser(req, res, {
+  const created = await createSchoolUser(req, res, {
     role: 'STUDENT',
     requiredFields: ['matricNumber', 'departmentId'],
     extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null },
   });
+  if (!created) return;
+  const courseIds = parseCourseIds(req.body);
+  if (courseIds.length) {
+    await prisma.enrollment.createMany({ data: courseIds.map((courseId) => ({ studentId: created.user.id, courseId })), skipDuplicates: true });
+  }
+  const { passwordHash, ...safe } = created.user;
+  res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
 });
 
 router.post('/departments', async (req, res) => {
@@ -211,6 +258,77 @@ router.post('/courses', async (req, res) => {
     data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First', semesterId },
   });
   res.json({ course });
+});
+
+// ---- Editing: department, course, and every directory user type ----
+
+router.patch('/departments/:id', async (req, res) => {
+  const department = await prisma.department.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
+  if (!department) return res.status(404).json({ error: 'Department not found' });
+  const { name, code } = req.body;
+  const updated = await prisma.department.update({
+    where: { id: department.id },
+    data: { name: name !== undefined ? name : department.name, code: code !== undefined ? code : department.code },
+  });
+  res.json({ department: updated });
+});
+
+router.patch('/courses/:id', async (req, res) => {
+  const course = await prisma.course.findFirst({ where: { id: req.params.id, department: { schoolId: req.user.schoolId } } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const { code, title, level, semester, departmentId } = req.body;
+  const updated = await prisma.course.update({
+    where: { id: course.id },
+    data: {
+      code: code !== undefined ? code : course.code,
+      title: title !== undefined ? title : course.title,
+      level: level !== undefined ? level : course.level,
+      semester: semester !== undefined ? semester : course.semester,
+      departmentId: departmentId || course.departmentId,
+    },
+  });
+  res.json({ course: updated });
+});
+
+// Shared by the lecturer/staff/student edit forms -- each accepts the fields relevant
+// to that role and leaves the rest untouched (undefined means "not submitted", not
+// "clear it"). Course assignment/enrollment (courseIds) is handled per-role below since
+// lecturers use CourseLecturer and students use Enrollment.
+async function updateSchoolUser(req, res, role, fields) {
+  const user = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role } });
+  if (!user) return null;
+  const data = {};
+  for (const key of fields) if (req.body[key] !== undefined) data[key] = req.body[key] || null;
+  const updated = await prisma.user.update({ where: { id: user.id }, data });
+  return updated;
+}
+
+router.patch('/lecturers/:id', async (req, res) => {
+  const updated = await updateSchoolUser(req, res, 'LECTURER', ['fullName', 'email', 'phone', 'staffId', 'departmentId']);
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  const courseIds = parseCourseIds(req.body);
+  if (req.body.courseIds !== undefined) await setLecturerCourses(updated.id, courseIds);
+  const { passwordHash, ...safe } = updated;
+  res.json({ user: { ...safe, courses: await coursesTaughtBy(updated.id) } });
+});
+
+router.patch('/non-academic-staff/:id', async (req, res) => {
+  const updated = await updateSchoolUser(req, res, 'STAFF', ['fullName', 'email', 'phone', 'staffId', 'position', 'departmentId']);
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  const { passwordHash, ...safe } = updated;
+  res.json({ user: safe });
+});
+
+router.patch('/students/:id', async (req, res) => {
+  const updated = await updateSchoolUser(req, res, 'STUDENT', ['fullName', 'email', 'phone', 'matricNumber', 'departmentId', 'yearOfStudy']);
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  if (req.body.courseIds !== undefined) {
+    const courseIds = parseCourseIds(req.body);
+    await prisma.enrollment.deleteMany({ where: { studentId: updated.id } });
+    if (courseIds.length) await prisma.enrollment.createMany({ data: courseIds.map((courseId) => ({ studentId: updated.id, courseId })), skipDuplicates: true });
+  }
+  const { passwordHash, ...safe } = updated;
+  res.json({ user: { ...safe, courses: await coursesEnrolledBy(updated.id) } });
 });
 
 // ---- Lecturer status: suspend / lift / dismiss ----
@@ -288,6 +406,37 @@ router.get('/hostels/:id/allocations', async (req, res) => {
     orderBy: { decidedAt: 'desc' },
   });
   res.json({ allocations });
+});
+
+// Admin-initiated allocation -- directly assigns a student to a hostel/room without
+// requiring them to have submitted their own application first (the existing approve/
+// reject flow at /admin/hostel-applications/:id/approve still handles applications a
+// student submitted themselves; this is the "+ Add student to hostel" shortcut).
+router.post('/hostels/:id/allocate', async (req, res) => {
+  const { studentId, roomAssigned } = req.body;
+  if (!studentId) return res.status(400).json({ error: 'Choose a student.' });
+  const hostel = await prisma.hostel.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
+  if (!hostel) return res.status(404).json({ error: 'Hostel not found' });
+  const student = await prisma.user.findFirst({ where: { id: studentId, schoolId: req.user.schoolId, role: 'STUDENT' } });
+  if (!student) return res.status(404).json({ error: 'Student not found' });
+  const existing = await prisma.hostelApplication.findFirst({ where: { studentId, status: 'APPROVED' } });
+  const application = existing
+    ? await prisma.hostelApplication.update({ where: { id: existing.id }, data: { hostelId: hostel.id, roomAssigned: roomAssigned || 'To be confirmed', decidedAt: new Date() } })
+    : await prisma.hostelApplication.create({ data: { studentId, hostelId: hostel.id, roomAssigned: roomAssigned || 'To be confirmed', status: 'APPROVED', decidedAt: new Date() } });
+  await notify(studentId, 'Hostel allocated', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'digital-id');
+  res.json({ application });
+});
+
+// A flat, school-wide course list (with department name) -- powers the course
+// multi-select on the add/edit lecturer and add/edit student forms, so admin doesn't
+// have to pick a department first just to see which courses exist.
+router.get('/courses', async (req, res) => {
+  const courses = await prisma.course.findMany({
+    where: { department: { schoolId: req.user.schoolId } },
+    include: { department: { select: { name: true } } },
+    orderBy: [{ department: { name: 'asc' } }, { code: 'asc' }],
+  });
+  res.json({ courses });
 });
 
 module.exports = router;

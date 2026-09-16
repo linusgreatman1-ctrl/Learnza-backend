@@ -10,12 +10,13 @@ const upload = memoryUpload(25);
 // caller is enrolled in or teaches) -- the e-Library is meant to be a shared campus
 // catalog, matching how the department/course browse screen already works. Individual
 // (non-school) learners have no school/department/course to browse by at all -- they
-// see only resources uploaded with no course attached (?global=true), a catalog
-// Learnza itself stocks directly rather than through any one school.
+// see the platform's whole catalog instead (?global=true, every resource regardless of
+// which school/course uploaded it), the same real textbooks a school student sees, not
+// just whatever happens to have no course attached.
 router.get('/library', requireAuth, async (req, res) => {
   const { courseId, departmentId, schoolId, global } = req.query;
   let where;
-  if (global === 'true') where = { courseId: null };
+  if (global === 'true') where = undefined;
   else if (courseId) where = { courseId };
   else if (departmentId) where = { course: { departmentId } };
   else if (schoolId) where = { course: { department: { schoolId } } };

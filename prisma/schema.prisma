@@ -109,8 +109,9 @@ model User {
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
-  yearOfStudy    Int?      // school students only, e.g. 1, 2, 3 -- set by admin at registration
+  yearOfStudy    Int?      // school students' level (1,2,3 -> 100L/200L/300L); individual learners set their own at registration too
   notificationsMuted Boolean @default(false) // Settings: "Mute notifications" -- suppresses new in-app notifications, doesn't delete existing ones
+  avatarUrl      String?   // Settings/Digital ID: profile picture, uploaded from device -- replaces the initials circle when set
   createdAt      DateTime  @default(now())
 
   disciplinaryRecords DisciplinaryRecord[] @relation("DisciplinaryStudent")
@@ -148,6 +149,7 @@ model User {
   resultsMade    Result[]     @relation("ResultAuthor")
   resultsReceived Result[]    @relation("ResultStudent")
   notifications  Notification[]
+  coursesAssigned CourseLecturer[]
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -247,8 +249,24 @@ model Course {
   classAttendance ClassAttendanceRecord[]
   assignments  Assignment[]
   results      Result[]
+  lecturers    CourseLecturer[]
 
   @@unique([departmentId, code])
+}
+
+// Explicit "this lecturer teaches this course" assignment, set by admin when adding a
+// lecturer (or editing one afterward) -- distinct from the indirect "courses taught"
+// signal derived from lesson authorship (coursesTaughtBy in admin.js), which only
+// populates once a lecturer has actually published something.
+model CourseLecturer {
+  id         String   @id @default(cuid())
+  course     Course   @relation(fields: [courseId], references: [id])
+  courseId   String
+  lecturer   User     @relation(fields: [lecturerId], references: [id])
+  lecturerId String
+  createdAt  DateTime @default(now())
+
+  @@unique([courseId, lecturerId])
 }
 
 model Enrollment {

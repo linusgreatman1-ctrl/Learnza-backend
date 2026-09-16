@@ -3,8 +3,10 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const prisma = require('../db');
 const { signToken, requireAuth, logActivity } = require('../auth');
+const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 
 const router = express.Router();
+const avatarUpload = memoryUpload(5); // a profile picture, not a lecture video -- keep it small
 
 const STATUS_MESSAGE = {
   SUSPENDED: 'This account has been suspended. Contact your school administrator.',
@@ -35,7 +37,7 @@ function checkStatus(res, user) {
 const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
 
 router.post('/register-individual', async (req, res) => {
-  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType } = req.body;
+  const { fullName, email, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, yearOfStudy } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email and password are required.' });
   }
@@ -54,6 +56,7 @@ router.post('/register-individual', async (req, res) => {
       attendedDepartment: attendedDepartment || null,
       courseOfStudy: courseOfStudy || null,
       institutionType,
+      yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null,
     },
   });
   res.json({ token: signToken(user), user: publicUser(user) });
@@ -140,16 +143,39 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // Edit Profile -- only the fields every role can safely self-edit; anything
 // role-specific (matric number, access code, department, etc.) is admin-managed.
+// Self-editable fields, every role: name, phone, and -- for individual learners only,
+// since there's no admin managing these for them -- their real institution details and
+// level. School-affiliated identity fields (matric number, staff ID, department) stay
+// admin-managed (Staff & Student Directory), same as before.
 router.patch('/me', requireAuth, async (req, res) => {
-  const { fullName, phone } = req.body;
+  const { fullName, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, yearOfStudy } = req.body;
   const data = {};
   if (fullName !== undefined) {
     if (!fullName.trim()) return res.status(400).json({ error: 'Name cannot be empty.' });
     data.fullName = fullName.trim();
   }
   if (phone !== undefined) data.phone = phone || null;
+  if (req.user.isIndividual) {
+    if (attendedSchoolName !== undefined) data.attendedSchoolName = attendedSchoolName || null;
+    if (attendedDepartment !== undefined) data.attendedDepartment = attendedDepartment || null;
+    if (courseOfStudy !== undefined) data.courseOfStudy = courseOfStudy || null;
+    if (institutionType !== undefined && INSTITUTION_TYPES.includes(institutionType)) data.institutionType = institutionType;
+    if (yearOfStudy !== undefined) data.yearOfStudy = yearOfStudy ? parseInt(yearOfStudy, 10) : null;
+  }
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
   res.json({ user: publicUser(user) });
+});
+
+router.post('/me/avatar', requireAuth, avatarUpload.single('avatar'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an image first.' });
+  let avatarUrl, storage;
+  try {
+    ({ url: avatarUrl, storage } = await saveUpload(req.file));
+  } catch {
+    return res.status(502).json({ error: 'Upload failed. Please try again.' });
+  }
+  const user = await prisma.user.update({ where: { id: req.user.id }, data: { avatarUrl } });
+  res.json({ user: publicUser(user), storage });
 });
 
 router.post('/change-password', requireAuth, async (req, res) => {

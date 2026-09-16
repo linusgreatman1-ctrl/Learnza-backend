@@ -5,6 +5,7 @@ const { getSubscriptionStatus, isEnforced } = require('../subscription');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const { getCurrentSemesterId } = require('../semester');
 const { computeAdmissionStatus } = require('./records');
+const { notifyMany } = require('../services/notification.service');
 
 const router = express.Router();
 const upload = memoryUpload(80); // videos run larger than library documents
@@ -123,6 +124,16 @@ router.get('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (re
   const student = await prisma.user.findUnique({ where: { id: req.params.id }, include: { department: true } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
   res.json(await computeAdmissionStatus(student));
+});
+
+// A quick broadcast to everyone enrolled in one class -- a regular in-app
+// notification, so a muted student's own Settings preference is still respected.
+router.post('/courses/:id/announce', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const { title, body } = req.body;
+  if (!title || !title.trim() || !body || !body.trim()) return res.status(400).json({ error: 'Title and message are required.' });
+  const enrollments = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
+  await notifyMany(enrollments.map((e) => e.studentId), title.trim(), body.trim(), 'my-dashboard');
+  res.json({ ok: true, count: enrollments.length });
 });
 
 // Lecturers can add courses within their own department; admins can add to any.
