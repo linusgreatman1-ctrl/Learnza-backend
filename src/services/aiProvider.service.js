@@ -98,7 +98,27 @@ async function synthesizeSpeech(text) {
   }
   const part = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
   if (!part?.data) throw new Error('Speech synthesis returned no audio');
-  return { data: part.data, mimeType: part.mimeType || 'audio/pcm' };
+  return { data: part.data, mimeType: part.mimeType || 'audio/pcm', sampleRate: 24000 };
+}
+
+// Gemini TTS always returns 24kHz PCM16, but Simli's avatar SDK expects 16kHz PCM16
+// input for lip-sync -- linear-interpolation downsample, cheap and good enough for
+// speech (no resampling library needed for a 24000->16000 ratio).
+function resamplePcm16(buffer, fromRate, toRate) {
+  if (fromRate === toRate) return buffer;
+  const inSamples = buffer.length / 2;
+  const outSamples = Math.max(1, Math.round((inSamples * toRate) / fromRate));
+  const out = Buffer.alloc(outSamples * 2);
+  for (let i = 0; i < outSamples; i++) {
+    const srcPos = (i * fromRate) / toRate;
+    const srcIdx = Math.floor(srcPos);
+    const frac = srcPos - srcIdx;
+    const s0 = buffer.readInt16LE(Math.min(srcIdx, inSamples - 1) * 2);
+    const s1 = buffer.readInt16LE(Math.min(srcIdx + 1, inSamples - 1) * 2);
+    const sample = Math.round(s0 + (s1 - s0) * frac);
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, sample)), i * 2);
+  }
+  return out;
 }
 
 function requireProvider() {
@@ -136,4 +156,4 @@ function extractJson(text) {
   return (fenced ? fenced[1] : text).trim();
 }
 
-module.exports = { isConfigured, activeProvider, askForJson, askForText, synthesizeSpeech };
+module.exports = { isConfigured, activeProvider, askForJson, askForText, synthesizeSpeech, resamplePcm16 };

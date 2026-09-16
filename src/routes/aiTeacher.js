@@ -143,30 +143,34 @@ router.post('/ai-teacher/sessions/:id/check-answer', requireAuth, requireRole('S
   }
 });
 
-// Not session-scoped -- it's the same subscription-gated Simli config regardless of
+// Not session-scoped -- it's the same subscription-gated Simli session regardless of
 // whether the avatar is being connected for a live session or a pre-recorded lesson.
 // Also gated on AI credits: connecting the avatar is the entry point to using it, so
 // a student with zero minutes left this cycle shouldn't even be able to open it.
-router.post('/ai-teacher/avatar-config', requireAuth, requireRole('STUDENT'), requireActiveSubscription, requireAiCredits, (req, res) => {
+// Mints a fresh short-lived Simli session token per connect -- the raw Simli API key
+// never reaches the browser.
+router.post('/ai-teacher/avatar-config', requireAuth, requireRole('STUDENT'), requireActiveSubscription, requireAiCredits, async (req, res) => {
   try {
-    res.json(simli.getClientConfig());
+    const sessionToken = await simli.createSessionToken();
+    res.json({ sessionToken });
   } catch (err) {
     handleAiError(res, err);
   }
 });
 
-// Text -> speech for the avatar to lip-sync to. Returns base64 PCM16 audio the
-// browser feeds straight into SimliClient.sendAudioData() in chunks. The generated
-// audio's own duration (24kHz, 16-bit mono PCM => 48000 bytes/sec) is what actually
-// debits the AI credit bank -- usage tracks real speech produced, not request count.
+// Text -> speech for the avatar to lip-sync to. Returns base64 PCM16 audio (resampled
+// to the 16kHz Simli's SDK expects) the browser feeds into SimliClient.sendAudioData()
+// in chunks. The generated audio's own duration is what actually debits the AI credit
+// bank -- usage tracks real speech produced, not request count.
 router.post('/ai-teacher/tts', requireAuth, requireRole('STUDENT'), requireActiveSubscription, requireAiCredits, async (req, res) => {
   const { text } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'No text to speak.' });
   try {
     const audio = await aiTeacher.synthesizeSpeech(text);
-    const seconds = Buffer.from(audio.data, 'base64').length / (24000 * 2);
+    const resampled = aiTeacher.resamplePcm16(Buffer.from(audio.data, 'base64'), audio.sampleRate || 24000, 16000);
+    const seconds = resampled.length / (16000 * 2);
     await recordAiUsage(req.user.id, seconds);
-    res.json(audio);
+    res.json({ data: resampled.toString('base64'), mimeType: audio.mimeType, sampleRate: 16000 });
   } catch (err) {
     handleAiError(res, err);
   }

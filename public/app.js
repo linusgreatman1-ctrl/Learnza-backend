@@ -789,6 +789,7 @@
 
   async function startAiTeacherSession(courseId, topic, isIndividual) {
     const path = isIndividual ? `/individual-courses/${courseId}/ai-teacher/sessions` : `/courses/${courseId}/ai-teacher/sessions`;
+    toast('Preparing your lesson…');
     try {
       const { session } = await api(path, { method: 'POST', body: { topic } });
       navigate('ai-teacher-session', { sessionId: session.id, isIndividual });
@@ -954,22 +955,29 @@
   }
 
   // Connects the video avatar and returns the SimliClient, or null (with a toast) on
-  // failure -- config comes from the backend so the raw Simli API key only ever
-  // reaches an authenticated, subscribed student, never an anonymous visitor.
+  // failure -- the backend mints a short-lived session token per connect (never
+  // exposing the raw Simli API key to the browser), and the SDK itself is dynamically
+  // imported at connect time straight from its dist/client.js file rather than the
+  // package's barrel export -- jsDelivr's on-the-fly bundler can resolve client.js's
+  // own imports (it pulls in livekit-client cleanly) but fails outright bundling the
+  // barrel index.js, which is what silently broke the avatar before.
   async function connectAvatar(videoEl, audioEl, ringEl, labelEl) {
-    if (!window.SimliClient) { toast('Video avatar library failed to load.'); return null; }
     try {
-      const config = await api(`/ai-teacher/avatar-config`, { method: 'POST' });
-      const client = new window.SimliClient();
-      client.Initialize({ apiKey: config.apiKey, faceID: config.faceID, handleSilence: true, videoRef: videoEl, audioRef: audioEl });
+      const { sessionToken } = await api('/ai-teacher/avatar-config', { method: 'POST' });
+      const mod = await import('https://cdn.jsdelivr.net/npm/simli-client@3.0.2/dist/client.js/+esm');
+      const iceServers = await mod.generateIceServers();
+      const client = new mod.SimliClient(sessionToken, videoEl, audioEl, iceServers, mod.LogLevel ? mod.LogLevel.INFO : undefined, 'p2p');
       await client.start();
       videoEl.hidden = false;
+      videoEl.play?.().catch(() => {});
+      audioEl.play?.().catch(() => {});
       ringEl.style.display = 'none';
       if (labelEl) labelEl.textContent = 'AI Teacher — video avatar connected';
       return client;
     } catch (err) {
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') { renderUpgradePrompt(err.message); return null; }
-      toast(err.message || 'Could not connect the video avatar.');
+      console.error('Video avatar connection failed:', err);
+      toast(err.message || 'Could not connect the video avatar — continuing with voice only.');
       return null;
     }
   }
@@ -994,21 +1002,25 @@
       }
       simliAvatarClient.sendAudioData(ctrl.bytes.subarray(ctrl.index, ctrl.index + ctrl.chunkSize));
       ctrl.index += ctrl.chunkSize;
-    }, 130);
+    }, 20);
   }
 
   // Speaks through the connected avatar (server TTS -> PCM16 -> Simli lip-sync),
   // falling back to the browser's own speech synthesis when no avatar is connected.
+  // Chunked in ~20ms slices at Simli's expected 16kHz mono PCM16 rate (640 bytes per
+  // slice) so the SDK ingests it like a live feed rather than one giant blob dumped
+  // instantly -- matches how PassNow's own working integration paces this.
   async function speakThroughAvatarOrTts(text, ringEl, onDone) {
     if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     speechCtrl = null;
     if (!simliAvatarClient) return speak(text, ringEl, onDone);
     try {
-      const { data } = await api(`/ai-teacher/tts`, { method: 'POST', body: { text } });
+      const { data, sampleRate } = await api(`/ai-teacher/tts`, { method: 'POST', body: { text } });
       const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
       if (ringEl) ringEl.classList.add('speaking');
-      speechCtrl = { mode: 'avatar', bytes, index: 0, chunkSize: 6400, ringEl, onDone };
+      const chunkSize = Math.round((sampleRate || 16000) * 0.02) * 2;
+      speechCtrl = { mode: 'avatar', bytes, index: 0, chunkSize, ringEl, onDone };
       avatarPlaybackTick();
     } catch (err) {
       toast(err.message || 'The AI Teacher had trouble speaking that.');
@@ -1040,42 +1052,115 @@
     }
   }
 
+  // Resolves once speakThroughAvatarOrTts finishes (or is skipped) -- lets the
+  // continuous lesson loop below just `await` speech instead of nesting callbacks.
+  function speakAsync(text, ringEl) {
+    return new Promise((resolve) => speakThroughAvatarOrTts(text, ringEl, resolve));
+  }
+
+  function wordCount(text) {
+    return (text || '').trim().split(/\s+/).filter(Boolean).length;
+  }
+
+  // Roughly how many spoken words correspond to 3-4 minutes of teaching at a natural
+  // pace (~130-150 wpm) -- crossing this after a section with a checkQuestion is what
+  // triggers a comprehension check; resets to 0 once one is answered.
+  const CHECK_QUESTION_WORD_THRESHOLD = 450;
+
+  // A SpeechRecognition capture with a hard 60-second cutoff, toggling shared UI state
+  // on the given button/avatar ring/label while listening. Shared by the general
+  // "ask a question" mic and the comprehension-check answer mic.
+  function startVoiceCapture({ button, ringEl, labelEl, onTranscript, onCancelled }) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      toast('Voice answers need Chrome or Edge on this device — type instead.');
+      if (onCancelled) onCancelled();
+      return null;
+    }
+    const recognizer = new SR();
+    recognizer.lang = 'en-US';
+    recognizer.interimResults = false;
+    recognizer.maxAlternatives = 1;
+    let heardSomething = false;
+    const originalButtonText = button.textContent;
+    const originalLabelText = labelEl ? labelEl.textContent : '';
+
+    button.textContent = '🛑 Listening… tap to cancel';
+    button.classList.add('listening');
+    if (ringEl) ringEl.classList.add('listening');
+    if (labelEl) { labelEl.textContent = 'Listening…'; labelEl.classList.add('listening-label'); }
+
+    // Hard cutoff: "should last for 1 minute before disappearing" even if the browser
+    // never fires its own end-of-speech event.
+    const timeout = setTimeout(() => { try { recognizer.stop(); } catch { /* already stopping */ } }, 60000);
+
+    recognizer.onresult = (e) => {
+      heardSomething = true;
+      const transcript = (e.results[0][0].transcript || '').trim();
+      if (transcript) onTranscript(transcript);
+      else if (onCancelled) onCancelled();
+    };
+    recognizer.onerror = () => {
+      if (!heardSomething) toast("Didn't catch that — try again, or type instead.");
+    };
+    recognizer.onend = () => {
+      clearTimeout(timeout);
+      button.textContent = originalButtonText;
+      button.classList.remove('listening');
+      if (ringEl) ringEl.classList.remove('listening');
+      if (labelEl) {
+        labelEl.classList.remove('listening-label');
+        labelEl.textContent = simliAvatarClient ? 'AI Teacher — video avatar connected' : originalLabelText;
+      }
+      if (!heardSomething && onCancelled) onCancelled();
+    };
+    try { recognizer.start(); } catch { toast('Could not start the microphone.'); recognizer.onend(); return null; }
+    return recognizer;
+  }
+
   async function renderAiTeacherSession() {
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
+    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    speechCtrl = null;
     const { session } = await api(`/ai-teacher/sessions/${state.view.sessionId}`);
-    const section = session.plan.sections[session.sectionIdx];
-    const isLast = session.sectionIdx >= session.plan.sections.length - 1;
+    const plan = session.plan;
+    let sectionIdx = session.sectionIdx;
     const { avatarConfigured, aiCredits } = await api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null }));
+    let stopped = false;
+    let wordsSinceCheck = 0;
 
     view.innerHTML = `
       <div class="page-head">
-        <div><span class="pill pill-accent">AI Teacher — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(session.plan.title)}</h1></div>
+        <div><span class="pill pill-accent">AI Teacher — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(plan.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
       </div>
       <div class="card lesson-player">
         <div class="ai-avatar-box">
-          <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(session.plan.title || 'AI'))}</div>
+          <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(plan.title || 'AI'))}</div>
           <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
           <audio id="avatar-audio" autoplay hidden></audio>
-          <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
-          ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
+          <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Teacher'}</div>
         </div>
-        <div class="smart-board" id="smart-board">${renderBoardActionsHtml(section.boardActions)}</div>
-        <div class="meta" style="margin-top:12px;">Section ${session.sectionIdx + 1} of ${session.plan.sections.length}${session.status === 'COMPLETED' ? ' · Completed' : ''}</div>
-        <h3 style="margin:8px 0 12px;">${esc(section.title)}</h3>
-        <div class="controls">
-          <button class="btn btn-primary" id="play-btn">▶ Hear the teacher</button>
-          <button class="btn btn-ghost" id="ask-voice-btn">🎤 Ask a question</button>
-          ${session.status !== 'COMPLETED' ? `<button class="btn btn-accent" id="next-btn">${isLast ? 'Finish lesson' : 'Next section →'}</button>` : ''}
+        <div class="smart-board-wrap">
+          <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">AI Teacher — writing on the board</div></div>
+          <div class="smart-board" id="smart-board"></div>
+          <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
+        </div>
+        <div class="meta" style="margin-top:12px;" id="section-meta"></div>
+        <h3 style="margin:8px 0 12px;" id="section-title"></h3>
+
+        <div id="check-question-box" hidden style="margin:14px 0; padding:14px; border-radius:10px; background:var(--accent-soft);">
+          <div style="font-weight:600; margin-bottom:8px;" id="check-question-text"></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <input type="text" id="check-answer-input" placeholder="Type your answer…" style="flex:1; min-width:160px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+            <button class="btn btn-ghost btn-sm" id="check-answer-voice-btn">🎤 Answer by voice</button>
+            <button class="btn btn-primary btn-sm" id="check-answer-btn">Submit</button>
+          </div>
         </div>
 
-        ${section.checkQuestion && session.status !== 'COMPLETED' ? `
-          <div class="hr"></div>
-          <div style="font-weight:600; margin-bottom:8px;">Quick check: ${esc(section.checkQuestion)}</div>
-          <div class="field"><textarea id="check-answer-input" placeholder="Type your answer…"></textarea></div>
-          <button class="btn btn-ghost btn-sm" id="check-answer-btn">Submit answer</button>
-          <div id="check-feedback" style="margin-top:10px;"></div>
-        ` : ''}
+        <div class="controls">
+          <button class="btn btn-ghost" id="ask-voice-btn">🎤 Ask a question</button>
+        </div>
 
         <div class="got-question-toggle" id="got-question-toggle">
           <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub">Learnza answers visually without leaving the lesson</div></div>
@@ -1094,37 +1179,30 @@
         </div>
       </div>
     `;
-    mountBoardActions(document.getElementById('smart-board'), section.boardActions);
+
+    const avatarRing = document.getElementById('ai-avatar-ring');
+    const avatarLabel = document.getElementById('ai-avatar-label');
+    const boardStatus = document.getElementById('board-status');
+    const board = document.getElementById('smart-board');
+    const sectionMeta = document.getElementById('section-meta');
+    const sectionTitleEl = document.getElementById('section-title');
+    const askVoiceBtn = document.getElementById('ask-voice-btn');
 
     document.getElementById('back-btn').addEventListener('click', () => {
+      stopped = true;
       if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
       else navigate('course-detail', { courseId: session.courseId });
     });
-    document.getElementById('play-btn').addEventListener('click', () => speakThroughAvatarOrTts(section.speechText, document.getElementById('ai-avatar-ring')));
 
-    const nextBtn = document.getElementById('next-btn');
-    if (nextBtn) nextBtn.addEventListener('click', async () => {
-      try {
-        const { done } = await api(`/ai-teacher/sessions/${session.id}/next`, { method: 'POST' });
-        if (done) toast('Lesson complete — nice work!');
-        render();
-      } catch (err) {
-        if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-        toast(err.message);
-      }
-    });
-
-    const checkBtn = document.getElementById('check-answer-btn');
-    if (checkBtn) checkBtn.addEventListener('click', async () => {
-      const answer = document.getElementById('check-answer-input').value.trim();
-      if (!answer) return;
-      try {
-        const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
-        document.getElementById('check-feedback').innerHTML = `<div class="pill ${result.correct ? 'pill-pass' : 'pill-danger'}">${result.correct ? 'Correct' : 'Not quite'}</div><p class="muted" style="margin-top:6px;">${esc(result.feedback)}</p>`;
-      } catch (err) {
-        toast(err.message);
-      }
-    });
+    function renderSection(idx) {
+      const section = plan.sections[idx];
+      sectionMeta.textContent = `Section ${idx + 1} of ${plan.sections.length}`;
+      sectionTitleEl.textContent = section.title;
+      board.innerHTML = renderBoardActionsHtml(section.boardActions);
+      mountBoardActions(board, section.boardActions);
+      boardStatus.textContent = 'AI Teacher — writing on the board';
+      return section;
+    }
 
     document.getElementById('got-question-toggle').addEventListener('click', () => {
       const panel = document.getElementById('got-question-panel');
@@ -1132,10 +1210,11 @@
       document.getElementById('gq-arrow').textContent = panel.hidden ? '▼' : '▲';
     });
 
-    // Shared by both the typed "Ask" button and the voice-question flow below.
-    // `pausedSnapshot` (from pauseSpeechForQuestion()) is whatever the teacher was
-    // saying when the question came in -- once the answer finishes playing, the
-    // lesson picks back up from that exact spot instead of restarting the section.
+    // Shared by the typed "Ask" button and the voice-question flow. `pausedSnapshot`
+    // (from pauseSpeechForQuestion()) is whatever the teacher was saying when the
+    // question came in -- speaking the answer's onDone resumes that paused narration
+    // from its exact spot, which naturally un-blocks the continuous lesson loop's
+    // `await speakAsync(...)` below rather than restarting the section.
     async function askInterruptQuestion(question, pausedSnapshot) {
       const panel = document.getElementById('got-question-panel');
       panel.hidden = false;
@@ -1149,11 +1228,11 @@
         `);
         log.scrollTop = log.scrollHeight;
         if (boardActions && boardActions.length) {
-          const board = document.getElementById('smart-board');
           board.innerHTML = renderBoardActionsHtml(boardActions);
           mountBoardActions(board, boardActions);
+          boardStatus.textContent = 'AI Teacher — answering your question';
         }
-        speakThroughAvatarOrTts(answer, document.getElementById('ai-avatar-ring'), () => {
+        speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         });
       } catch (err) {
@@ -1171,75 +1250,121 @@
       askInterruptQuestion(question, pauseSpeechForQuestion());
     });
 
-    const voiceBtn = document.getElementById('ask-voice-btn');
-    const avatarRing = document.getElementById('ai-avatar-ring');
-    const avatarLabel = document.getElementById('ai-avatar-label');
-    const originalLabelText = avatarLabel ? avatarLabel.textContent : '';
-    voiceBtn.addEventListener('click', () => {
+    askVoiceBtn.addEventListener('click', () => {
       if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopping */ } return; }
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        toast('Voice questions need Chrome or Edge on this device — type your question below instead.');
-        document.getElementById('got-question-panel').hidden = false;
-        document.getElementById('gq-arrow').textContent = '▲';
-        document.getElementById('interrupt-input').focus();
-        return;
-      }
       const pausedSnapshot = pauseSpeechForQuestion();
-      const recognizer = new SR();
-      voiceRecognizer = recognizer;
-      recognizer.lang = 'en-US';
-      recognizer.interimResults = false;
-      recognizer.maxAlternatives = 1;
-      let heardSomething = false;
+      voiceRecognizer = startVoiceCapture({
+        button: askVoiceBtn,
+        ringEl: avatarRing,
+        labelEl: avatarLabel,
+        onTranscript: (question) => { voiceRecognizer = null; askInterruptQuestion(question, pausedSnapshot); },
+        onCancelled: () => { voiceRecognizer = null; if (pausedSnapshot) resumePausedSpeech(pausedSnapshot); },
+      });
+    });
 
-      voiceBtn.textContent = '🛑 Listening… tap to cancel';
-      voiceBtn.classList.add('listening');
-      avatarRing.classList.add('listening');
-      if (avatarLabel) { avatarLabel.textContent = 'Listening for your question…'; avatarLabel.classList.add('listening-label'); }
+    // Speaks the comprehension-check question first; only once that finishes does the
+    // answer box (mic + text) appear on screen. Grading reuses the existing
+    // check-answer endpoint (graded against whatever section is still current
+    // server-side); either way the explanation is spoken before the lesson resumes.
+    async function runCheckQuestion(question) {
+      boardStatus.textContent = 'AI Teacher — checking your understanding';
+      await speakAsync(`Quick question to check you're following: ${question}`, avatarRing);
+      if (stopped) return;
+      const box = document.getElementById('check-question-box');
+      const textEl = document.getElementById('check-question-text');
+      const input = document.getElementById('check-answer-input');
+      const submitBtn = document.getElementById('check-answer-btn');
+      const voiceBtn = document.getElementById('check-answer-voice-btn');
+      textEl.textContent = question;
+      input.value = '';
+      box.hidden = false;
+      askVoiceBtn.disabled = true;
 
-      recognizer.onresult = (e) => {
-        heardSomething = true;
-        const question = (e.results[0][0].transcript || '').trim();
-        if (question) askInterruptQuestion(question, pausedSnapshot);
-        else if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
-      };
-      recognizer.onerror = () => {
-        if (!heardSomething) toast("Didn't catch that — try again, or type your question below.");
-      };
-      recognizer.onend = () => {
-        voiceRecognizer = null;
-        voiceBtn.textContent = '🎤 Ask a question';
-        voiceBtn.classList.remove('listening');
-        avatarRing.classList.remove('listening');
-        if (avatarLabel) {
-          avatarLabel.classList.remove('listening-label');
-          avatarLabel.textContent = simliAvatarClient ? 'AI Teacher — video avatar connected' : originalLabelText;
+      const answer = await new Promise((resolve) => {
+        function submit() {
+          const value = input.value.trim();
+          if (!value) return;
+          cleanup();
+          resolve(value);
         }
-        if (!heardSomething && pausedSnapshot) resumePausedSpeech(pausedSnapshot);
-      };
-      try { recognizer.start(); } catch { toast('Could not start the microphone.'); recognizer.onend(); }
-    });
+        function onKeydown(e) { if (e.key === 'Enter') submit(); }
+        function onVoice() {
+          if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopping */ } return; }
+          voiceRecognizer = startVoiceCapture({
+            button: voiceBtn,
+            ringEl: avatarRing,
+            labelEl: avatarLabel,
+            onTranscript: (text) => { voiceRecognizer = null; input.value = text; submit(); },
+            onCancelled: () => { voiceRecognizer = null; },
+          });
+        }
+        function cleanup() {
+          submitBtn.removeEventListener('click', submit);
+          input.removeEventListener('keydown', onKeydown);
+          voiceBtn.removeEventListener('click', onVoice);
+        }
+        submitBtn.addEventListener('click', submit);
+        input.addEventListener('keydown', onKeydown);
+        voiceBtn.addEventListener('click', onVoice);
+      });
+      if (stopped) return;
 
-    const avatarBtn = document.getElementById('start-avatar-btn');
-    if (avatarBtn) avatarBtn.addEventListener('click', async () => {
-      avatarBtn.disabled = true;
-      avatarBtn.textContent = 'Connecting…';
-      const client = await connectAvatar(
-        document.getElementById('avatar-video'),
-        document.getElementById('avatar-audio'),
-        document.getElementById('ai-avatar-ring'),
-        document.getElementById('ai-avatar-label')
-      );
-      if (client) {
-        simliAvatarClient = client;
-        avatarBtn.hidden = true;
-        speakThroughAvatarOrTts(section.speechText, document.getElementById('ai-avatar-ring'));
-      } else {
-        avatarBtn.disabled = false;
-        avatarBtn.textContent = '🎥 Connect video avatar';
+      box.hidden = true;
+      askVoiceBtn.disabled = false;
+      try {
+        const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
+        boardStatus.textContent = result.correct ? 'AI Teacher — well done!' : 'AI Teacher — explaining';
+        await speakAsync(`${result.correct ? "That's correct! " : 'Not quite. '}${result.feedback}`, avatarRing);
+      } catch (err) {
+        toast(err.message || 'Could not grade that answer.');
       }
-    });
+    }
+
+    // The continuous lesson loop: speaks each section, then either runs a
+    // comprehension check (once enough teaching has accumulated and this section has
+    // one) or advances straight to the next section -- there is no manual "next
+    // section" click, ever. A student interrupt naturally pauses this: pausing the
+    // in-flight speech just leaves the `await speakAsync(...)` below unresolved until
+    // resumePausedSpeech() lets it finish.
+    async function runLesson() {
+      if (avatarConfigured) {
+        const client = await connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel);
+        if (stopped) return;
+        if (client) simliAvatarClient = client;
+        else avatarLabel.textContent = 'AI Teacher';
+      }
+      while (!stopped) {
+        const section = renderSection(sectionIdx);
+        await speakAsync(section.speechText, avatarRing);
+        if (stopped) return;
+        wordsSinceCheck += wordCount(section.speechText);
+
+        if (section.checkQuestion && wordsSinceCheck >= CHECK_QUESTION_WORD_THRESHOLD) {
+          await runCheckQuestion(section.checkQuestion);
+          wordsSinceCheck = 0;
+          if (stopped) return;
+        }
+
+        let advance;
+        try {
+          advance = await api(`/ai-teacher/sessions/${session.id}/next`, { method: 'POST' });
+        } catch (err) {
+          if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
+          toast(err.message || 'Could not continue the lesson.');
+          return;
+        }
+        if (stopped) return;
+        if (advance.done) {
+          boardStatus.textContent = 'Lesson complete';
+          toast('Lesson complete — nice work!');
+          askVoiceBtn.disabled = true;
+          return;
+        }
+        sectionIdx++;
+      }
+    }
+
+    runLesson();
   }
 
   // ================= LIVE CLASSES (WebRTC via Socket.IO) =================

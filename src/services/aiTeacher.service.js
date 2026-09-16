@@ -85,4 +85,4 @@ async function gradeCheckAnswer({ checkQuestion, studentAnswer }) {
   return ai.askForJson(GRADE_SYSTEM, userPrompt);
 }
 
-module.exports = { isConfigured: ai.isConfigured, generateLessonPlan, answerInterrupt, gradeCheckAnswer, synthesizeSpeech: ai.synthesizeSpeech };
+module.exports = { isConfigured: ai.isConfigured, generateLessonPlan, answerInterrupt, gradeCheckAnswer, synthesizeSpeech: ai.synthesizeSpeech, resamplePcm16: ai.resamplePcm16 };
