@@ -144,7 +144,23 @@
   .smart-board-tray .marker.blue { background: #1E40AF; }
   .smart-board-tray .marker.black { background: #111827; }
   .smart-board-tray .tag { font-size: 0.65rem; color: #9094A4; margin-left: auto; letter-spacing: 0.04em; }
-  .smart-board .katex { color: #f4f1e8; font-size: 1.1rem; }
+  .smart-board .katex { color: #1E40AF; font-size: 1.1rem; }
+
+  /* Lesson stage: the avatar + smart-board pair stays put (sticky) while everything
+     below it -- section text, the check-question box, the ask-a-question panel --
+     scrolls underneath, on both desktop and mobile/tablet. Desktop splits the stage
+     into two side-by-side halves (avatar | board); narrower viewports stack them but
+     keep the same sticky behavior. */
+  .lesson-stage { position: sticky; top: 0; z-index: 5; background: var(--paper-raised); display: flex; flex-direction: column; gap: 14px; padding-bottom: 4px; }
+  .lesson-stage-expand-btn { position: absolute; top: 10px; right: 10px; z-index: 6; width: 34px; height: 34px; padding: 0; border-radius: 8px; background: rgba(20,32,51,0.55); color: #fff; border: 1px solid rgba(255,255,255,0.25); font-size: 1rem; display: flex; align-items: center; justify-content: center; }
+  .lesson-stage:fullscreen { background: var(--paper); padding: 20px; height: 100vh; overflow-y: auto; }
+  .lesson-stage:fullscreen .ai-avatar-box { min-height: 260px; }
+  @media (min-width: 900px) {
+    .lesson-stage { flex-direction: row; align-items: stretch; }
+    .lesson-stage .ai-avatar-box, .lesson-stage .smart-board-wrap { flex: 1 1 50%; min-width: 0; margin-bottom: 0; }
+    .lesson-stage .smart-board-wrap { display: flex; flex-direction: column; }
+    .lesson-stage .smart-board { flex: 1; }
+  }
 
   /* Collapsible "Got a question" panel -- closed by default, matching PassNow's
      placement below the lesson content rather than an always-visible input. */

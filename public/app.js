@@ -277,6 +277,7 @@
       ['courses', 'My Courses'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
+      ['lab-hub', 'Digital Lab'],
       ['past-questions-hub', 'Past Questions'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
@@ -492,18 +493,14 @@
     render();
   }
 
-  // Navigation should feel instant: only show a "Loading…" placeholder if the target
-  // screen's data hasn't arrived within 150ms, instead of blanking the page on every
-  // click regardless of how fast the response is.
+  // No loading placeholder: the previous screen just stays on-screen (instead of
+  // blanking to "Loading…") until the next one's data is ready and replaces it.
   async function render() {
-    const loadingTimer = setTimeout(() => { view.innerHTML = '<p class="muted">Loading…</p>'; }, 150);
     try {
       await dispatch();
     } catch (err) {
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
       view.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-    } finally {
-      clearTimeout(loadingTimer);
     }
 
     function dispatch() {
@@ -529,6 +526,8 @@
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
         case 'lab': return renderLab();
+        case 'lab-hub': return renderLabHub();
+        case 'lab-teach': return renderLabTeach();
         case 'transcript': return renderTranscript();
         case 'attendance-history': return renderStudentAttendanceHistory();
         case 'past-questions-hub': return renderPastQuestionsHub();
@@ -692,9 +691,7 @@
       api(`/departments?schoolId=${state.user.schoolId}`),
     ]);
     const deptCourses = {};
-    for (const d of departments) {
-      deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
-    }
+    await Promise.all(departments.map(async (d) => { deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses; }));
     const mineIds = new Set(mine.map((c) => c.id));
     const semesters = state.semesters || [];
     const activeSemesterId = state.view.semesterId || (semesters.find((s) => s.isCurrent) || semesters[0] || {}).id;
@@ -952,7 +949,12 @@
     if (avatarEl) utter.onstart = () => avatarEl.classList.add('speaking');
     utter.onend = () => { if (avatarEl) avatarEl.classList.remove('speaking'); speechCtrl = null; if (onDone) onDone(); };
     utter.onerror = () => { if (avatarEl) avatarEl.classList.remove('speaking'); speechCtrl = null; };
-    speechCtrl = { mode: 'browser', ringEl: avatarEl };
+    // Stores the original text/onDone (not just the utterance) because browser
+    // SpeechSynthesis has no reliable cross-browser "resume from an arbitrary
+    // offset" -- pausing for a question cancels the utterance outright and resuming
+    // re-speaks this same text from the start, rather than silently doing nothing
+    // (which is what plain .pause()/.resume() around an intervening .cancel() did).
+    speechCtrl = { mode: 'browser', ringEl: avatarEl, text, onDone };
     window.speechSynthesis.speak(utter);
   }
 
@@ -1063,20 +1065,30 @@
       const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
       if (ringEl) ringEl.classList.add('speaking');
       const chunkSize = Math.round((sampleRate || 16000) * 0.02) * 2;
-      speechCtrl = { mode: 'avatar', bytes, index: 0, chunkSize, ringEl, onDone };
+      speechCtrl = { mode: 'avatar', bytes, index: 0, chunkSize, ringEl, onDone, text };
       avatarPlaybackTick();
     } catch (err) {
-      toast(err.message || 'The AI Teacher had trouble speaking that.');
+      // Still call onDone on failure -- otherwise the continuous lesson loop's
+      // `await speakAsync(...)` would hang forever waiting for a callback that will
+      // never come, which looks exactly like the teacher freezing mid-lesson.
+      if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') renderUpgradePrompt(err.message);
+      else toast(err.message || 'The AI Teacher had trouble speaking that.');
+      if (onDone) onDone();
     }
   }
 
-  // Pauses whatever's currently being spoken without losing position, so it can be
-  // resumed afterwards. Returns a resumable snapshot, or null if nothing was playing.
+  // Pauses whatever's currently being spoken so it can be resumed afterwards.
+  // Returns a resumable snapshot, or null if nothing was playing. Avatar mode keeps
+  // its exact byte offset (true resume); browser mode has no reliable cross-browser
+  // "pause and resume from this offset" (speechSynthesis.pause()/.resume() silently
+  // does nothing once anything else calls .cancel() in between, which is exactly
+  // what speaking an interrupt's answer does) -- so it's cancelled outright here and
+  // resumePausedSpeech() below re-speaks the same text from the start instead.
   function pauseSpeechForQuestion() {
     const ctrl = speechCtrl;
     if (!ctrl) return null;
     if (ctrl.mode === 'avatar' && ctrl.timer) clearInterval(ctrl.timer);
-    else if (ctrl.mode === 'browser' && window.speechSynthesis) window.speechSynthesis.pause();
+    else if (ctrl.mode === 'browser' && window.speechSynthesis) window.speechSynthesis.cancel();
     if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
     speechCtrl = null;
     return ctrl;
@@ -1088,10 +1100,10 @@
       speechCtrl = paused;
       if (paused.ringEl) paused.ringEl.classList.add('speaking');
       avatarPlaybackTick();
-    } else if (paused.mode === 'browser' && window.speechSynthesis) {
-      speechCtrl = paused;
-      if (paused.ringEl) paused.ringEl.classList.add('speaking');
-      window.speechSynthesis.resume();
+    } else {
+      // Either browser mode, or the avatar disconnected while paused -- either way,
+      // re-speak the same text from the start rather than silently stopping.
+      speak(paused.text, paused.ringEl, paused.onDone);
     }
   }
 
@@ -1100,15 +1112,6 @@
   function speakAsync(text, ringEl) {
     return new Promise((resolve) => speakThroughAvatarOrTts(text, ringEl, resolve));
   }
-
-  function wordCount(text) {
-    return (text || '').trim().split(/\s+/).filter(Boolean).length;
-  }
-
-  // Roughly how many spoken words correspond to 3-4 minutes of teaching at a natural
-  // pace (~130-150 wpm) -- crossing this after a section with a checkQuestion is what
-  // triggers a comprehension check; resets to 0 once one is answered.
-  const CHECK_QUESTION_WORD_THRESHOLD = 450;
 
   // A SpeechRecognition capture with a hard 60-second cutoff, toggling shared UI state
   // on the given button/avatar ring/label while listening. Shared by the general
@@ -1170,7 +1173,6 @@
     let sectionIdx = session.sectionIdx;
     const { avatarConfigured, aiCredits } = await api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null }));
     let stopped = false;
-    let wordsSinceCheck = 0;
 
     view.innerHTML = `
       <div class="page-head">
@@ -1178,16 +1180,19 @@
         <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
       </div>
       <div class="card lesson-player">
-        <div class="ai-avatar-box">
-          <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(plan.title || 'AI'))}</div>
-          <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
-          <audio id="avatar-audio" autoplay hidden></audio>
-          <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Teacher'}</div>
-        </div>
-        <div class="smart-board-wrap">
-          <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">AI Teacher — writing on the board</div></div>
-          <div class="smart-board" id="smart-board"></div>
-          <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
+        <div class="lesson-stage" id="lesson-stage">
+          <button class="lesson-stage-expand-btn" id="lesson-expand-btn" title="Expand">⛶</button>
+          <div class="ai-avatar-box">
+            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(plan.title || 'AI'))}</div>
+            <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
+            <audio id="avatar-audio" autoplay hidden></audio>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Teacher'}</div>
+          </div>
+          <div class="smart-board-wrap">
+            <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">AI Teacher — writing on the board</div></div>
+            <div class="smart-board" id="smart-board"></div>
+            <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
+          </div>
         </div>
         <div class="meta" style="margin-top:12px;" id="section-meta"></div>
         <h3 style="margin:8px 0 12px;" id="section-title"></h3>
@@ -1231,6 +1236,15 @@
     const sectionTitleEl = document.getElementById('section-title');
     const askVoiceBtn = document.getElementById('ask-voice-btn');
 
+    document.getElementById('lesson-expand-btn').addEventListener('click', () => {
+      const stage = document.getElementById('lesson-stage');
+      if (!document.fullscreenElement) {
+        (stage.requestFullscreen || stage.webkitRequestFullscreen)?.call(stage).catch(() => toast('Fullscreen is not available on this device.'));
+      } else {
+        document.exitFullscreen?.();
+      }
+    });
+
     document.getElementById('back-btn').addEventListener('click', () => {
       stopped = true;
       if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
@@ -1262,6 +1276,7 @@
       const panel = document.getElementById('got-question-panel');
       panel.hidden = false;
       document.getElementById('gq-arrow').textContent = '▲';
+      boardStatus.textContent = 'AI Teacher — thinking…';
       try {
         const { answer, boardActions } = await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
@@ -1354,6 +1369,7 @@
 
       box.hidden = true;
       askVoiceBtn.disabled = false;
+      boardStatus.textContent = 'AI Teacher — thinking…';
       try {
         const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
         boardStatus.textContent = result.correct ? 'AI Teacher — well done!' : 'AI Teacher — explaining';
@@ -1370,34 +1386,36 @@
     // in-flight speech just leaves the `await speakAsync(...)` below unresolved until
     // resumePausedSpeech() lets it finish.
     async function runLesson() {
+      // Avatar connects in the background -- the lesson starts speaking immediately
+      // (via the browser-voice fallback until the avatar is ready) instead of making
+      // the student sit through a multi-second WebRTC handshake before anything
+      // happens at all. speakThroughAvatarOrTts() automatically upgrades to the
+      // avatar for whatever it says next as soon as simliAvatarClient gets set.
       if (avatarConfigured) {
-        const client = await connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel);
-        if (stopped) return;
-        if (client) simliAvatarClient = client;
-        else avatarLabel.textContent = 'AI Teacher';
+        connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
+          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Teacher'; });
       }
       while (!stopped) {
         const section = renderSection(sectionIdx);
         await speakAsync(section.speechText, avatarRing);
         if (stopped) return;
-        wordsSinceCheck += wordCount(section.speechText);
 
-        if (section.checkQuestion && wordsSinceCheck >= CHECK_QUESTION_WORD_THRESHOLD) {
+        // The lesson plan already spaces checkQuestions across roughly half the
+        // sections (a handful of sections total, so a word-count minimum before
+        // asking one almost never got crossed in time -- the check just never fired).
+        // Ask it as soon as its section finishes, every time one exists.
+        if (section.checkQuestion) {
           await runCheckQuestion(section.checkQuestion);
-          wordsSinceCheck = 0;
           if (stopped) return;
         }
 
-        let advance;
-        try {
-          advance = await api(`/ai-teacher/sessions/${session.id}/next`, { method: 'POST' });
-        } catch (err) {
-          if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
-          toast(err.message || 'Could not continue the lesson.');
-          return;
-        }
-        if (stopped) return;
-        if (advance.done) {
+        // The full plan is already in hand client-side, so advancing doesn't need to
+        // wait on a round trip -- /next only persists the pointer server-side (for
+        // resuming a reopened session later) and is fired in the background.
+        api(`/ai-teacher/sessions/${session.id}/next`, { method: 'POST' }).catch((err) => {
+          if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') renderUpgradePrompt(err.message);
+        });
+        if (sectionIdx >= plan.sections.length - 1) {
           boardStatus.textContent = 'Lesson complete';
           toast('Lesson complete — nice work!');
           askVoiceBtn.disabled = true;
@@ -1961,11 +1979,10 @@
   // "Past Questions" entry (no more per-course-only access).
   async function renderPastQuestionsHub() {
     const { courses } = await api('/students/me/courses');
-    const rows = [];
-    for (const c of courses) {
+    const rows = await Promise.all(courses.map(async (c) => {
       const { assessments } = await api(`/courses/${c.id}/assessments`);
-      rows.push({ course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') });
-    }
+      return { course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') };
+    }));
     view.innerHTML = `
       <div class="page-head"><h1>Past Questions</h1></div>
       <p class="muted" style="margin-bottom:16px;">Practice as many times as you like — these don't affect your CBT scores.</p>
@@ -2103,7 +2120,7 @@
 
   // ================= DIGITAL LAB (curated + AI-generated, admin-approved) =================
 
-  function demoCardHtml(d) {
+  function demoCardHtml(d, opts = {}) {
     const steps = d.steps;
     return `<div class="card" style="padding:20px; margin-bottom:14px;" data-demo-card="${d.id}">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
@@ -2113,6 +2130,7 @@
         </div>
         <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
       </div>
+      ${opts.courseId ? `<button class="btn btn-accent btn-sm" data-teach-lab="${d.id}" data-teach-course="${opts.courseId}" style="margin-top:12px;">▶ Start guided practical</button>` : ''}
       <ol style="margin:14px 0 0; padding-left: 20px; display:flex; flex-direction:column; gap:8px;">
         ${steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
       </ol>
@@ -2159,6 +2177,181 @@
     });
   }
 
+  function labStepBoardActions(step) {
+    return [
+      { type: 'TEXT', content: `${step.title}\n\n${step.instruction}` },
+      { type: 'TEXT', content: `Expected result: ${step.expectedResult}` },
+    ];
+  }
+
+  // The same continuous, avatar-narrated, whiteboard-illustrated teaching method as
+  // the live AI Teacher session -- applied to a Digital Lab practical's steps instead
+  // of a generated lesson plan's sections. Reuses every shared piece (connectAvatar,
+  // speakThroughAvatarOrTts, pause/resume, startVoiceCapture, the sticky lesson-stage
+  // layout) rather than a second parallel implementation. No comprehension checks
+  // here -- a hands-on practical walkthrough doesn't have Question-bank checkpoints
+  // the way a generated lesson plan does -- and no server-side step pointer either,
+  // since all of a practical's steps are already in hand from one fetch.
+  async function renderLabTeach() {
+    if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
+    if (speechCtrl && speechCtrl.timer) clearInterval(speechCtrl.timer);
+    speechCtrl = null;
+    const { courseId, demoId } = state.view;
+    const [{ demonstrations }, { avatarConfigured, aiCredits }] = await Promise.all([
+      api(`/courses/${courseId}/lab`),
+      api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null })),
+    ]);
+    const demo = demonstrations.find((d) => d.id === demoId);
+    if (!demo) { view.innerHTML = '<p>Practical not found.</p>'; return; }
+    let stepIdx = 0;
+    let stopped = false;
+
+    view.innerHTML = `
+      <div class="page-head">
+        <div><span class="pill pill-accent">Digital Lab — guided practical</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(demo.title)}</h1></div>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← End practical</button>
+      </div>
+      <div class="card lesson-player">
+        <div class="lesson-stage" id="lesson-stage">
+          <button class="lesson-stage-expand-btn" id="lesson-expand-btn" title="Expand">⛶</button>
+          <div class="ai-avatar-box">
+            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(demo.title || 'AI'))}</div>
+            <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
+            <audio id="avatar-audio" autoplay hidden></audio>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Teacher'}</div>
+          </div>
+          <div class="smart-board-wrap">
+            <div class="smart-board-head"><div class="dot">🧪</div><div class="label" id="board-status">AI Teacher — writing on the board</div></div>
+            <div class="smart-board" id="smart-board"></div>
+            <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
+          </div>
+        </div>
+        <div class="meta" style="margin-top:12px;" id="step-meta"></div>
+        <h3 style="margin:8px 0 12px;" id="step-title"></h3>
+
+        <div class="controls">
+          <button class="btn btn-ghost" id="ask-voice-btn">🎤 Ask a question</button>
+        </div>
+
+        <div class="got-question-toggle" id="got-question-toggle">
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub">Learnza answers visually without leaving the practical</div></div>
+          <span id="gq-arrow">▼</span>
+        </div>
+        <div class="got-question-panel" id="got-question-panel" hidden>
+          <div id="interrupt-log" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="interrupt-input" placeholder="e.g. Why does this step matter?" style="flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+            <button class="btn btn-primary btn-sm" id="interrupt-btn">Ask</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const avatarRing = document.getElementById('ai-avatar-ring');
+    const avatarLabel = document.getElementById('ai-avatar-label');
+    const boardStatus = document.getElementById('board-status');
+    const board = document.getElementById('smart-board');
+    const stepMeta = document.getElementById('step-meta');
+    const stepTitleEl = document.getElementById('step-title');
+    const askVoiceBtn = document.getElementById('ask-voice-btn');
+
+    document.getElementById('lesson-expand-btn').addEventListener('click', () => {
+      const stage = document.getElementById('lesson-stage');
+      if (!document.fullscreenElement) {
+        (stage.requestFullscreen || stage.webkitRequestFullscreen)?.call(stage).catch(() => toast('Fullscreen is not available on this device.'));
+      } else {
+        document.exitFullscreen?.();
+      }
+    });
+
+    document.getElementById('back-btn').addEventListener('click', () => {
+      stopped = true;
+      navigate('lab', { courseId });
+    });
+
+    function renderStep(idx) {
+      const step = demo.steps[idx];
+      stepMeta.textContent = `Step ${idx + 1} of ${demo.steps.length}`;
+      stepTitleEl.textContent = step.title;
+      const actions = labStepBoardActions(step);
+      board.innerHTML = renderBoardActionsHtml(actions);
+      mountBoardActions(board, actions);
+      boardStatus.textContent = 'AI Teacher — writing on the board';
+      return step;
+    }
+
+    document.getElementById('got-question-toggle').addEventListener('click', () => {
+      const panel = document.getElementById('got-question-panel');
+      panel.hidden = !panel.hidden;
+      document.getElementById('gq-arrow').textContent = panel.hidden ? '▼' : '▲';
+    });
+
+    async function askLabQuestion(question, pausedSnapshot) {
+      const panel = document.getElementById('got-question-panel');
+      panel.hidden = false;
+      document.getElementById('gq-arrow').textContent = '▲';
+      boardStatus.textContent = 'AI Teacher — thinking…';
+      try {
+        const { answer } = await api(`/lab/${demo.id}/ask`, { method: 'POST', body: { question } });
+        const log = document.getElementById('interrupt-log');
+        log.insertAdjacentHTML('beforeend', `
+          <div class="chat-msg" style="max-width:100%; align-self:flex-end; background:var(--accent-soft);">${esc(question)}</div>
+          <div class="chat-msg" style="max-width:100%;">${esc(answer)}</div>
+        `);
+        log.scrollTop = log.scrollHeight;
+        boardStatus.textContent = 'AI Teacher — answering your question';
+        speakThroughAvatarOrTts(answer, avatarRing, () => {
+          if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
+        });
+      } catch (err) {
+        if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
+        if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
+        toast(err.message);
+      }
+    }
+
+    document.getElementById('interrupt-btn').addEventListener('click', () => {
+      const input = document.getElementById('interrupt-input');
+      const question = input.value.trim();
+      if (!question) return;
+      input.value = '';
+      askLabQuestion(question, pauseSpeechForQuestion());
+    });
+
+    askVoiceBtn.addEventListener('click', () => {
+      if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopping */ } return; }
+      const pausedSnapshot = pauseSpeechForQuestion();
+      voiceRecognizer = startVoiceCapture({
+        button: askVoiceBtn,
+        ringEl: avatarRing,
+        labelEl: avatarLabel,
+        onTranscript: (question) => { voiceRecognizer = null; askLabQuestion(question, pausedSnapshot); },
+        onCancelled: () => { voiceRecognizer = null; if (pausedSnapshot) resumePausedSpeech(pausedSnapshot); },
+      });
+    });
+
+    async function runPractical() {
+      if (avatarConfigured) {
+        connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
+          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Teacher'; });
+      }
+      while (!stopped) {
+        const step = renderStep(stepIdx);
+        await speakAsync(`${step.title}. ${step.instruction}`, avatarRing);
+        if (stopped) return;
+        if (stepIdx >= demo.steps.length - 1) {
+          boardStatus.textContent = 'Practical complete';
+          toast('Practical complete — nice work!');
+          askVoiceBtn.disabled = true;
+          return;
+        }
+        stepIdx++;
+      }
+    }
+
+    runPractical();
+  }
+
   async function renderLab() {
     const { courseId } = state.view;
     const { course } = await api(`/courses/${courseId}`);
@@ -2193,10 +2386,13 @@
           </div>
         </div>
       `}
-      ${demonstrations.map(demoCardHtml).join('') || '<p class="muted">No practicals published yet.</p>'}
+      ${demonstrations.map((d) => demoCardHtml(d, { courseId: isLecturer ? null : courseId })).join('') || '<p class="muted">No practicals published yet.</p>'}
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate(isLecturer ? 'lect-lessons' : 'course-detail', { courseId }));
     wireLabQuestionPanels(view);
+    view.querySelectorAll('[data-teach-lab]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('lab-teach', { courseId: btn.dataset.teachCourse, demoId: btn.dataset.teachLab }));
+    });
 
     const demoForm = document.getElementById('demo-form');
     if (demoForm) demoForm.addEventListener('submit', async (e) => {
@@ -2234,6 +2430,31 @@
         requestBtn.disabled = false;
         requestBtn.textContent = 'Generate practical';
       }
+    });
+  }
+
+  // Every practical across every enrolled course, in one page -- the sidebar's
+  // "Digital Lab" entry, matching the Past Questions / CBT hub pattern instead of
+  // Digital Lab only being reachable from inside a specific course.
+  async function renderLabHub() {
+    const { courses } = await api('/students/me/courses');
+    const rows = await Promise.all(courses.map(async (c) => {
+      const { demonstrations } = await api(`/courses/${c.id}/lab`);
+      return { course: c, demonstrations };
+    }));
+    view.innerHTML = `
+      <div class="page-head"><h1>Digital Lab</h1></div>
+      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI teacher and a smart board — pick a course to see what's available.</p>
+      ${rows.map(({ course, demonstrations }) => `
+        <div style="margin-bottom:22px;">
+          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          ${demonstrations.map((d) => demoCardHtml(d, { courseId: course.id })).join('') || '<p class="muted" style="padding:8px 0;">No practicals published yet.</p>'}
+        </div>
+      `).join('') || '<p class="muted">Enroll in a course first to see its practicals.</p>'}
+    `;
+    wireLabQuestionPanels(view);
+    view.querySelectorAll('[data-teach-lab]').forEach((btn) => {
+      btn.addEventListener('click', () => navigate('lab-teach', { courseId: btn.dataset.teachCourse, demoId: btn.dataset.teachLab }));
     });
   }
 
@@ -2417,7 +2638,7 @@
       isLecturer ? ensureLectCourses().then((r) => r.courses) : Promise.resolve([]),
     ]);
     const deptCourses = {};
-    for (const d of departments) deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
+    await Promise.all(departments.map(async (d) => { deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses; }));
     const itemsByCourse = {};
     for (const it of allItems) (itemsByCourse[it.courseId] = itemsByCourse[it.courseId] || []).push(it);
 
@@ -2492,11 +2713,10 @@
 
   async function renderGroups() {
     const { courses } = await api('/students/me/courses');
-    const groupsByCourse = [];
-    for (const c of courses) {
+    const groupsByCourse = await Promise.all(courses.map(async (c) => {
       const { groups } = await api(`/courses/${c.id}/groups`);
-      groupsByCourse.push({ course: c, groups });
-    }
+      return { course: c, groups };
+    }));
     view.innerHTML = `
       <div class="page-head"><h1>Study Groups</h1></div>
       <p class="muted" style="margin-bottom:20px;">Peer discussion spaces for your courses — no scores, no leaderboard.</p>
@@ -2645,11 +2865,10 @@
   async function renderAssessments(isLecturer, opts = {}) {
     const { heading, typeFilter, defaultType } = opts;
     const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
-    const rows = [];
-    for (const c of courses) {
+    const rows = await Promise.all(courses.map(async (c) => {
       const { assessments } = await api(`/courses/${c.id}/assessments`);
-      rows.push({ course: c, assessments });
-    }
+      return { course: c, assessments };
+    }));
     const defaultExclude = ['PAST_QUESTION', 'SEMESTER_EXAM'];
     view.innerHTML = `
       <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Assessments' : 'CBT Mock Exam Practice'))}</h1></div>
@@ -3349,15 +3568,13 @@
   // can drill into results but not create/edit (that's the lecturer's job).
   async function renderAdminSemesterExam() {
     const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
-    const rows = [];
-    for (const d of departments) {
-      const { courses } = await api(`/departments/${d.id}/courses`);
-      for (const c of courses) {
-        const { assessments } = await api(`/courses/${c.id}/assessments`);
-        const exams = assessments.filter((a) => a.type === 'SEMESTER_EXAM');
-        if (exams.length) rows.push({ course: c, exams });
-      }
-    }
+    const courseLists = await Promise.all(departments.map((d) => api(`/departments/${d.id}/courses`).then((r) => r.courses)));
+    const allCourses = courseLists.flat();
+    const rows = (await Promise.all(allCourses.map(async (c) => {
+      const { assessments } = await api(`/courses/${c.id}/assessments`);
+      const exams = assessments.filter((a) => a.type === 'SEMESTER_EXAM');
+      return exams.length ? { course: c, exams } : null;
+    }))).filter(Boolean);
     view.innerHTML = `
       <div class="page-head"><h1>Semester Exam</h1></div>
       <p class="muted" style="margin-bottom:18px;">Read-only view of every semester exam set by lecturers across the school.</p>
@@ -3657,7 +3874,7 @@
   async function renderAdminAcademics() {
     const [{ departments }, { school }] = await Promise.all([api(`/departments?schoolId=${state.user.schoolId}`), api('/admin/school')]);
     const deptCourses = {};
-    for (const d of departments) deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses;
+    await Promise.all(departments.map(async (d) => { deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses; }));
     view.innerHTML = `
       <div class="page-head"><h1>Departments & Courses</h1></div>
       <div class="card" style="padding:16px 20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
