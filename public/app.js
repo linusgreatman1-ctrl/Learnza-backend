@@ -85,6 +85,23 @@
       : '<span class="pill pill-pass">Free during testing</span>';
   }
 
+  // Falls back to a hidden-textarea copy when navigator.clipboard is unavailable (e.g.
+  // a non-HTTPS embedded webview) rather than silently doing nothing.
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed; opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch {}
+      ta.remove();
+    }
+    toast('Copied to clipboard');
+  }
+
   function toast(msg) {
     let stack = document.getElementById('toast-stack');
     if (!stack) {
@@ -249,6 +266,20 @@
     window.location.href = 'index.html';
   });
 
+  // Lets an admin/lecturer see the public marketing site the way an actual visitor
+  // would. This signs them out first -- previously the link just opened index.html in
+  // a new tab while staying logged in, so its own "Open Learnza"/"Log in" links quietly
+  // resumed the same admin/lecturer session instead of showing a real login screen.
+  // The sessionStorage flag (untouched by clearSession, which only removes vp_token/
+  // vp_user) survives the navigation within this same tab so the login screen can show
+  // a one-line explanation instead of just appearing with no context.
+  function switchToPublicApp() {
+    sessionStorage.setItem('vp_from_public_switch', '1');
+    clearSession();
+    window.speechSynthesis && window.speechSynthesis.cancel();
+    window.location.href = 'index.html';
+  }
+
   async function onAuthed(token, user) {
     state.token = token;
     state.user = user;
@@ -371,12 +402,14 @@
       ['lect-attendance-hub', 'Class Attendance'],
       ['lect-tests', 'Tests'],
       ['lect-semester-exam', 'Semester Exam'],
+      ['lect-assessments', 'Assessments'],
       ['lect-assignments-hub', 'Assignments'],
       ['lect-results-hub', 'Student Results'],
       ['research', 'AI Research Assistant'],
       ['staff-profile', 'My Staff Profile'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
+      ['switch-public-app', '🌐 Switch to Public App'],
     ],
     ADMIN: [
       ['admin-dashboard', 'My Dashboard'],
@@ -392,6 +425,7 @@
       ['admin-hostel-allocations', 'Hostels'],
       ['admin-results', 'Results'],
       ['settings', 'Settings'],
+      ['switch-public-app', '🌐 Switch to Public App'],
     ],
   };
 
@@ -461,7 +495,11 @@
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
     nav.querySelectorAll('.nav-item').forEach((btn) => {
-      btn.addEventListener('click', () => { navigate(btn.dataset.screen); closeMobileNav(); });
+      btn.addEventListener('click', () => {
+        if (btn.dataset.screen === 'switch-public-app') return switchToPublicApp();
+        navigate(btn.dataset.screen);
+        closeMobileNav();
+      });
     });
   }
 
@@ -619,7 +657,8 @@
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
-        case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM'], allowedTypes: ['CA', 'Test', 'Mock', 'PAST_QUESTION'] });
+        case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM', 'PAST_QUESTION'], allowedTypes: ['CA', 'Test', 'Mock'] });
+        case 'lect-assessments': return renderAssessments(true, { heading: 'Assessments', typeFilter: ['PAST_QUESTION'], defaultType: 'PAST_QUESTION', allowedTypes: ['PAST_QUESTION'] });
         case 'lect-semester-exam': return renderLecturerSemesterExam();
         case 'lect-assessment-results': return renderAssessmentResults();
         case 'lect-attendance-hub': return renderLecturerAttendanceHub();
@@ -1574,11 +1613,30 @@
     view.innerHTML = `
       <div class="page-head">
         <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="pill pill-muted" id="live-watching-pill">👀 0 watching</span>
+          <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+        </div>
       </div>
       <div class="video-grid" id="video-grid"></div>
+      ${isHost ? `
+        <div class="card" style="padding:14px 18px; margin-bottom:16px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <h3 style="font-size:0.95rem;">🙋 Student questions</h3>
+            <span class="pill pill-accent" id="live-question-count">0 waiting</span>
+          </div>
+          <div id="live-question-queue"><p class="muted">No questions yet.</p></div>
+        </div>
+      ` : ''}
+      <div id="live-qa-feed"></div>
       <div class="card live-chat">
         <div class="chat-messages" id="live-chat-messages"></div>
+        ${!isHost ? `
+          <form class="chat-input-row" id="live-question-form">
+            <input type="text" id="live-question-input" placeholder="Ask the lecturer a question…">
+            <button class="btn btn-accent btn-sm" type="submit">🙋 Ask</button>
+          </form>
+        ` : ''}
         <form class="chat-input-row" id="live-chat-form">
           <input type="text" id="live-chat-input" placeholder="Message the class…">
           <button class="btn btn-primary btn-sm" type="submit">Send</button>
@@ -1587,7 +1645,7 @@
     `;
 
     teardownLive();
-    live = { isHost, liveClassId, peers: new Map(), localStream: null, socket: null };
+    live = { isHost, liveClassId, peers: new Map(), localStream: null, socket: null, questions: new Map() };
 
     document.getElementById('leave-btn').addEventListener('click', async () => {
       // Call the REST endpoint directly rather than emitting a socket event right
@@ -1606,12 +1664,65 @@
       live.socket.emit('chat:message', { liveClassId, text: input.value.trim() });
       input.value = '';
     });
+    const questionForm = document.getElementById('live-question-form');
+    if (questionForm) {
+      questionForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = document.getElementById('live-question-input');
+        if (!input.value.trim()) return;
+        live.socket.emit('live:question', { liveClassId, text: input.value.trim() });
+        toast('Question sent to the lecturer');
+        input.value = '';
+      });
+    }
 
     try {
       await setupLiveSocket(isHost, liveClassId, courseId);
     } catch (err) {
       toast(err.message || 'Could not connect to the live class.');
     }
+  }
+
+  function renderQuestionQueue() {
+    const box = document.getElementById('live-question-queue');
+    const countPill = document.getElementById('live-question-count');
+    if (!box || !live) return;
+    const items = Array.from(live.questions.values());
+    countPill.textContent = `${items.length} waiting`;
+    box.innerHTML = items.length ? items.map((q) => `
+      <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:8px;" data-question-row="${q.id}">
+        <div><div style="font-weight:600;">${esc(q.studentName)}</div><p style="margin-top:4px;">${esc(q.text)}</p></div>
+        <form class="answer-form" data-answer-for="${q.id}" style="display:flex; gap:8px; width:100%;">
+          <input type="text" class="answer-input" placeholder="Type your answer…" style="flex:1;">
+          <button class="btn btn-primary btn-sm" type="submit">Answer</button>
+        </form>
+      </div>
+    `).join('') : '<p class="muted">No questions yet.</p>';
+    box.querySelectorAll('.answer-form').forEach((form) => {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = form.querySelector('.answer-input');
+        if (!input.value.trim()) return;
+        live.socket.emit('live:answer-question', { liveClassId: live.liveClassId, questionId: form.dataset.answerFor, answer: input.value.trim() });
+        live.questions.delete(form.dataset.answerFor);
+        renderQuestionQueue();
+      });
+    });
+  }
+
+  function appendQaFeed(studentName, question, answer) {
+    const feed = document.getElementById('live-qa-feed');
+    if (!feed) return;
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.style.cssText = 'padding:12px 16px; margin-bottom:12px; border-left:3px solid var(--accent);';
+    div.innerHTML = `
+      <div class="meta">${esc(studentName)} asked${question ? ':' : ' a question'}</div>
+      ${question ? `<p style="font-weight:600; margin:4px 0 8px;">${esc(question)}</p>` : ''}
+      <div class="meta">Lecturer's answer</div>
+      <p>${esc(answer)}</p>
+    `;
+    feed.prepend(div);
   }
 
   function addVideoTile(id, label, stream, muted) {
@@ -1656,11 +1767,34 @@
       teardownLive();
       navigate('course-detail', { courseId });
     });
+    socket.on('live:watching-count', ({ count }) => {
+      const pill = document.getElementById('live-watching-pill');
+      if (pill) pill.textContent = `👀 ${count} watching`;
+    });
+    socket.on('live:room-info', ({ title: roomTitle }) => {
+      if (roomTitle) { const h1 = view.querySelector('.page-head h1'); if (h1) h1.textContent = roomTitle; }
+    });
+    socket.on('live:qa', ({ studentName, question, answer }) => appendQaFeed(studentName, question, answer));
+    socket.on('live:new-question', (q) => { live.questions.set(q.id, q); renderQuestionQueue(); });
+    socket.on('live:questions-sync', ({ questions }) => {
+      live.questions = new Map((questions || []).map((q) => [q.id, q]));
+      renderQuestionQueue();
+    });
+    socket.on('live:question-received', () => {});
+
+    // Socket.IO auto-reconnects on its own after a drop (WiFi blip, tab backgrounding),
+    // opening a new socket id each time -- re-running the join handshake on every
+    // 'connect' (not just the first) is what lets the server's reconnect grace period
+    // actually work, instead of the class looking joined client-side but not
+    // server-side after a reconnect.
+    socket.on('connect', () => {
+      if (isHost) socket.emit('teacher:join', { liveClassId });
+      else socket.emit('student:join', { liveClassId });
+    });
 
     if (isHost) {
       live.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       addVideoTile('self', 'You (host)', live.localStream, true);
-      socket.emit('teacher:join', { liveClassId });
 
       socket.on('student:joined', async ({ studentSocketId, studentName }) => {
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -1682,7 +1816,6 @@
         if (pc) { try { await pc.addIceCandidate(candidate); } catch {} }
       });
     } else {
-      socket.emit('student:join', { liveClassId });
       socket.on('webrtc:offer', async ({ from, offer }) => {
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         live.peers.set(from, pc);
@@ -2812,7 +2945,7 @@
                   <span class="opt-label">${OPTION_LABELS[oi] || oi + 1}</span>${esc(opt)}
                 </div>
               `).join('')}
-          ${c && c.questionType !== 'THEORY' ? `<p class="meta" style="margin-top:10px;">${c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.'}</p>` : ''}
+          ${c && c.questionType !== 'THEORY' ? `<p class="meta" style="margin-top:10px;">${c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.'}</p>${c.explanation ? `<p style="margin-top:6px;">${esc(c.explanation)}</p>` : ''}` : ''}
         </div>
       `;
       if (!c) {
@@ -3317,20 +3450,31 @@
           <textarea id="research-input" placeholder="e.g. How should I structure a project comparing two teaching methods for primary science?"></textarea>
         </div>
         <button class="btn btn-primary" id="research-ask-btn">Ask</button>
-        <div id="research-answer" style="margin-top:18px; white-space:pre-wrap; line-height:1.7;"></div>
+        <div id="research-answer-wrap" hidden style="margin-top:18px;">
+          <div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+            <button class="btn btn-ghost btn-sm" id="research-copy-btn" title="Copy answer">📋 Copy</button>
+          </div>
+          <div id="research-answer" style="white-space:pre-wrap; line-height:1.7;"></div>
+        </div>
       </div>
     `;
+    let lastAnswer = '';
+    document.getElementById('research-copy-btn').addEventListener('click', () => { if (lastAnswer) copyToClipboard(lastAnswer); });
     document.getElementById('research-ask-btn').addEventListener('click', async () => {
       const question = document.getElementById('research-input').value.trim();
       if (!question) return;
+      const wrap = document.getElementById('research-answer-wrap');
       const answerBox = document.getElementById('research-answer');
+      wrap.hidden = false;
       answerBox.textContent = 'Thinking…';
       try {
         const { answer } = await api('/research-assistant/ask', { method: 'POST', body: { question } });
         answerBox.textContent = answer;
+        lastAnswer = answer;
       } catch (err) {
         if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
         answerBox.innerHTML = `<span style="color:var(--danger);">${esc(aiErrorMessage(err))}</span>`;
+        lastAnswer = '';
       }
     });
   }
@@ -3761,9 +3905,10 @@
       ...individualCourses.map(async (c) => ({ course: c, assessments: (await api(`/individual-courses/${c.id}/assessments`)).assessments })),
     ]);
     const defaultExclude = ['PAST_QUESTION', 'SEMESTER_EXAM'];
+    const kindLabel = isLecturer ? assessmentKindLabel(opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION']) : '';
     view.innerHTML = `
       <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Tests' : 'CBT Mock Exam Practice'))}</h1></div>
-      ${isLecturer ? `<button class="btn btn-accent btn-sm" id="new-assessment-btn" style="margin-bottom:18px;">+ New assessment</button>` : ''}
+      ${isLecturer ? `<button class="btn btn-accent btn-sm" id="new-assessment-btn" style="margin-bottom:18px;">+ Set new ${esc(kindLabel)}</button>` : ''}
       ${rows.map(({ course, assessments: allAssessments }) => {
         // typeFilter is an inclusive allow-list (e.g. only SEMESTER_EXAM); excludeTypes
         // is a deny-list (e.g. everything except SEMESTER_EXAM) -- kept as two separate
@@ -3785,7 +3930,7 @@
                   <div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div>
                 </div>
                 ${isLecturer
-                  ? `<button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>`
+                  ? `<div style="display:flex; gap:8px;"><button class="btn btn-ghost btn-sm" data-edit="${a.id}" data-course="${course.id}">Edit</button><button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button></div>`
                   : `<button class="btn btn-primary btn-sm" data-take="${a.id}">Take test</button>`}
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
@@ -3799,6 +3944,14 @@
     });
     view.querySelectorAll('[data-results]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('lect-assessment-results', { assessmentId: btn.dataset.results }));
+    });
+    view.querySelectorAll('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          const { assessment } = await api(`/assessments/${btn.dataset.edit}`);
+          openNewAssessmentDialog(courses, { defaultType, allowedTypes: opts.allowedTypes, existing: { ...assessment, courseId: btn.dataset.course } });
+        } catch (err) { toast(err.message); }
+      });
     });
     if (isLecturer) {
       document.getElementById('new-assessment-btn').addEventListener('click', () => openNewAssessmentDialog(courses, { defaultType, allowedTypes: opts.allowedTypes }));
@@ -3962,6 +4115,7 @@
         <div class="card quiz-q">
           <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
           ${q.options.map((opt, oi) => `<div class="quiz-opt ${oi === q.correctIndex ? 'correct' : ''} ${oi === q.chosen && oi !== q.correctIndex ? 'wrong' : ''}">${esc(opt)}${oi === q.chosen ? ' — your answer' : ''}</div>`).join('')}
+          ${q.explanation ? `<p class="meta" style="margin-top:10px;">${esc(q.explanation)}</p>` : ''}
         </div>
       `).join('')}
     `;
@@ -4146,14 +4300,14 @@
   // ================= LECTURER: ATTENDANCE, ASSIGNMENTS, RESULTS =================
 
   async function renderLecturerAttendance() {
-    const { courseId, courseTitle, courseCode } = state.view;
+    const { courseId, courseTitle, courseCode, backTo } = state.view;
     const todayIso = new Date().toISOString().slice(0, 10);
     const dateStr = state.view.date || todayIso;
     const { roster } = await api(`/courses/${courseId}/attendance?date=${dateStr}`);
     view.innerHTML = `
       <div class="page-head">
         <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Class attendance — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
+        <button class="btn btn-ghost btn-sm" id="back-btn">${backTo === 'lect-attendance-hub' ? '← Back' : '← Back to course'}</button>
       </div>
       <div class="card" style="padding:16px 20px; margin-bottom:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <label style="display:flex; align-items:center; gap:8px;">
@@ -4173,9 +4327,9 @@
         `).join('') || '<p class="muted" style="padding:16px;">No students enrolled yet.</p>'}
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(backTo === 'lect-attendance-hub' ? 'lect-attendance-hub' : 'lect-lessons', backTo === 'lect-attendance-hub' ? {} : { courseId }));
     document.getElementById('att-date').addEventListener('change', (e) => {
-      navigate('lect-attendance', { courseId, courseTitle, courseCode, date: e.target.value });
+      navigate('lect-attendance', { courseId, courseTitle, courseCode, backTo, date: e.target.value });
     });
     view.querySelectorAll('[data-mark]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -4185,7 +4339,7 @@
             method: 'POST',
             body: { studentId: row.dataset.student, status: btn.dataset.mark, date: dateStr },
           });
-          navigate('lect-attendance', { courseId, courseTitle, courseCode, date: dateStr });
+          navigate('lect-attendance', { courseId, courseTitle, courseCode, backTo, date: dateStr });
         } catch (err) { toast(err.message); }
       });
     });
@@ -4233,17 +4387,17 @@
     });
     view.querySelectorAll('[data-open]').forEach((el) => {
       const a = assignments.find((x) => x.id === el.dataset.open);
-      el.addEventListener('click', () => navigate('lect-assignment-submissions', { assignmentId: a.id, assignmentTitle: a.title, courseId, courseTitle, courseCode }));
+      el.addEventListener('click', () => navigate('lect-assignment-submissions', { assignmentId: a.id, assignmentTitle: a.title, courseId, courseTitle, courseCode, backTo: 'lect-assignments' }));
     });
   }
 
   async function renderAssignmentSubmissions() {
-    const { assignmentId, assignmentTitle, courseId, courseTitle, courseCode } = state.view;
+    const { assignmentId, assignmentTitle, courseId, courseTitle, courseCode, backTo } = state.view;
     const { submissions } = await api(`/assignments/${assignmentId}/submissions`);
     view.innerHTML = `
       <div class="page-head">
         <h1>${esc(assignmentTitle || 'Submissions')}</h1>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to assignments</button>
+        <button class="btn btn-ghost btn-sm" id="back-btn">${backTo === 'lect-assignments-hub' ? '← Back' : '← Back to assignments'}</button>
       </div>
       <div class="card">
         ${submissions.map((s) => `
@@ -4264,7 +4418,7 @@
         `).join('') || '<p class="muted" style="padding:16px;">No submissions yet.</p>'}
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-assignments', { courseId, courseTitle, courseCode }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(backTo === 'lect-assignments-hub' ? 'lect-assignments-hub' : 'lect-assignments', backTo === 'lect-assignments-hub' ? {} : { courseId, courseTitle, courseCode }));
     view.querySelectorAll('.mark-form').forEach((form) => {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -4273,7 +4427,7 @@
         try {
           await api(`/assignment-submissions/${form.dataset.sub}/mark`, { method: 'POST', body: { score, feedback } });
           toast('Marked');
-          navigate('lect-assignment-submissions', { assignmentId, assignmentTitle, courseId, courseTitle, courseCode });
+          navigate('lect-assignment-submissions', { assignmentId, assignmentTitle, courseId, courseTitle, courseCode, backTo });
         } catch (err) { toast(err.message); }
       });
     });
@@ -4293,40 +4447,57 @@
       </div>
       <p class="muted" style="margin-bottom:18px;">${count} student${count === 1 ? '' : 's'} enrolled</p>
       <div class="card" style="padding:20px; margin-bottom:22px;">
-        <h3 style="margin-bottom:12px; font-size:1rem;">Publish a result</h3>
+        <div class="page-head" style="margin-bottom:12px;">
+          <h3 style="font-size:1rem;">Create new result</h3>
+          ${results.some((r) => !r.sentAt) ? `<button class="btn btn-ghost btn-sm" id="publish-drafts-btn">📤 Publish results (${results.filter((r) => !r.sentAt).length} draft${results.filter((r) => !r.sentAt).length === 1 ? '' : 's'})</button>` : ''}
+        </div>
         <form id="result-form">
           <div class="field"><label>Student</label><select id="res-student">${roster.map((r) => `<option value="${r.student.id}">${esc(r.student.fullName)} (${esc(r.student.matricNumber || '—')})</option>`).join('')}</select></div>
           <div class="field"><label>Semester</label><input type="text" id="res-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
           <div class="field"><label>Score</label><input type="number" id="res-score" required></div>
           <div class="field"><label>Grade (optional)</label><input type="text" id="res-grade" placeholder="e.g. A"></div>
           <div class="field"><label>Remark (optional)</label><input type="text" id="res-remark"></div>
-          <button class="btn btn-primary" type="submit">Publish result</button>
+          <p class="meta" style="margin:8px 0;">"Save and Send" delivers it right away. "Save" keeps it as a draft to send later.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-primary" type="submit" id="res-save-send">Save and Send</button>
+            <button class="btn btn-ghost" type="button" id="res-save">Save</button>
+          </div>
         </form>
       </div>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
+          <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Status</th></tr></thead>
           <tbody>
-            ${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results published yet.</td></tr>'}
+            ${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
           </tbody>
         </table>
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
-    document.getElementById('result-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    async function saveResult(send) {
       try {
         await api(`/courses/${courseId}/results`, {
           method: 'POST',
           body: {
             studentId: document.getElementById('res-student').value,
+            send,
             term: document.getElementById('res-term').value.trim(),
             score: document.getElementById('res-score').value,
             grade: document.getElementById('res-grade').value.trim() || null,
             remark: document.getElementById('res-remark').value.trim() || null,
           },
         });
-        toast('Result published');
+        toast(send ? 'Result saved and sent' : 'Result saved as a draft');
+        navigate('lect-results', { courseId, courseTitle, courseCode });
+      } catch (err) { toast(err.message); }
+    }
+    document.getElementById('result-form').addEventListener('submit', (e) => { e.preventDefault(); saveResult(true); });
+    document.getElementById('res-save').addEventListener('click', () => saveResult(false));
+    const publishBtn = document.getElementById('publish-drafts-btn');
+    if (publishBtn) publishBtn.addEventListener('click', async () => {
+      try {
+        const { count } = await api(`/courses/${courseId}/results/publish`, { method: 'POST' });
+        toast(count ? `${count} result${count === 1 ? '' : 's'} sent to students` : 'Nothing to publish');
         navigate('lect-results', { courseId, courseTitle, courseCode });
       } catch (err) { toast(err.message); }
     });
@@ -4366,7 +4537,6 @@
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
         <button class="btn btn-ghost" id="dash-staff-profile-btn">👤 My Staff Profile</button>
-        <a class="btn btn-ghost" href="index.html" target="_blank" rel="noopener">🌐 Switch to Public App</a>
       </div>
     `;
     document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
@@ -4605,7 +4775,7 @@
       </div>
     `;
     view.querySelectorAll('[data-open]').forEach((el) => {
-      el.addEventListener('click', () => navigate('lect-attendance', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
+      el.addEventListener('click', () => navigate('lect-attendance', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code, backTo: 'lect-attendance-hub' }));
     });
   }
 
@@ -4636,6 +4806,7 @@
     view.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-assignment-submissions', {
         assignmentId: el.dataset.open, courseId: el.dataset.course, courseTitle: el.dataset.courseTitle, courseCode: el.dataset.courseCode,
+        backTo: 'lect-assignments-hub',
       }));
     });
     document.getElementById('new-assignment-btn').addEventListener('click', () => openNewAssignmentDialog(courses));
@@ -4739,21 +4910,36 @@
     view.innerHTML = `
       <div class="page-head">
         <h1>Student Results</h1>
-        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Publish result</button>
+        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Create new result</button>
       </div>
-      ${rows.map(({ course, results }) => `
+      ${rows.map(({ course, results }) => {
+        const draftCount = results.filter((r) => !r.sentAt).length;
+        return `
         <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
+          <div class="page-head" style="margin-bottom:8px;">
+            <div class="muted" style="font-weight:700;">${esc(course.code)} — ${esc(course.title)}</div>
+            ${draftCount ? `<button class="btn btn-ghost btn-sm" data-publish="${course.id}">📤 Publish results (${draftCount} draft${draftCount === 1 ? '' : 's'})</button>` : ''}
+          </div>
           <div class="card" style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Published</th></tr></thead>
-              <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results published yet.</td></tr>'}</tbody>
+              <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Status</th></tr></thead>
+              <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}</tbody>
             </table>
           </div>
         </div>
-      `).join('') || '<p class="muted">No courses yet.</p>'}
+      `;
+      }).join('') || '<p class="muted">No courses yet.</p>'}
     `;
     document.getElementById('new-result-btn').addEventListener('click', () => openPublishResultDialog(courses));
+    view.querySelectorAll('[data-publish]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          const { count } = await api(`/courses/${btn.dataset.publish}/results/publish`, { method: 'POST' });
+          toast(count ? `${count} result${count === 1 ? '' : 's'} sent to students` : 'Nothing to publish');
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
   }
 
   function openPublishResultDialog(courses) {
@@ -4761,15 +4947,17 @@
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">Publish a result</h3>
+      <h3 style="margin-bottom:14px;">Create new result</h3>
       <div class="field"><label>Class (course)</label><select id="pr-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
       <div class="field"><label>Student</label><select id="pr-student"><option value="">Loading students…</option></select></div>
       <div class="field"><label>Semester</label><input type="text" id="pr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
       <div class="field"><label>Score</label><input type="number" id="pr-score" required></div>
       <div class="field"><label>Grade (optional)</label><input type="text" id="pr-grade" placeholder="e.g. A"></div>
       <div class="field"><label>Remark (optional)</label><input type="text" id="pr-remark"></div>
-      <div style="display:flex; gap:10px; margin-top:10px;">
-        <button class="btn btn-primary" id="pr-save">Publish</button>
+      <p class="meta" style="margin-bottom:10px;">"Save and Send" delivers it to the student right away. "Save" keeps it as a draft you can send later, individually or all at once with "Publish results".</p>
+      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="pr-save-send">Save and Send</button>
+        <button class="btn btn-ghost" id="pr-save">Save</button>
         <button class="btn btn-ghost" id="pr-cancel">Cancel</button>
       </div>
     `;
@@ -4787,52 +4975,78 @@
     container.querySelector('#pr-course').addEventListener('change', (e) => loadStudents(e.target.value));
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#pr-cancel').addEventListener('click', close);
-    container.querySelector('#pr-save').addEventListener('click', async () => {
+    async function save(send) {
       const courseId = container.querySelector('#pr-course').value;
       const studentId = container.querySelector('#pr-student').value;
-      if (!studentId) return toast('No student to publish for.');
+      if (!studentId) return toast('No student to save this for.');
       try {
         await api(`/courses/${courseId}/results`, {
           method: 'POST',
           body: {
-            studentId,
+            studentId, send,
             term: container.querySelector('#pr-term').value.trim(),
             score: container.querySelector('#pr-score').value,
             grade: container.querySelector('#pr-grade').value.trim() || null,
             remark: container.querySelector('#pr-remark').value.trim() || null,
           },
         });
-        toast('Result published');
+        toast(send ? 'Result saved and sent' : 'Result saved as a draft');
         close();
         render();
       } catch (err) { toast(err.message); }
-    });
+    }
+    container.querySelector('#pr-save-send').addEventListener('click', () => save(true));
+    container.querySelector('#pr-save').addEventListener('click', () => save(false));
   }
 
+  // Which types the dropdown offers depends on where this dialog was opened from --
+  // Tests and Semester Exam are separate, disjoint sidebar pages now (they used to
+  // share one "everything" list, which read as the same screen twice), so the type
+  // choices offered here mirror that split instead of listing every type always.
+  // "Assignment" was removed entirely -- that's the real Assignment/Project model
+  // and its own screen (free-text instructions + manual marking), not an Assessment.
+  const ASSESSMENT_TYPE_LABELS = { CA: 'CA', Test: 'Test', Mock: 'Mock', SEMESTER_EXAM: 'Semester Exam', PAST_QUESTION: 'Past Question' };
+  // Singular, human label for whichever type this dialog is scoped to -- drives the
+  // dialog title and save-button wording so it reads "New test"/"Edit test" instead of
+  // always the generic "New assessment", which is what the lecturer was actually
+  // seeing on the Tests/Semester Exam pages regardless of which one they were on.
+  function assessmentKindLabel(allowedTypes) {
+    if (allowedTypes.length !== 1) return 'assessment';
+    return { CA: 'assessment', Test: 'test', Mock: 'mock test', SEMESTER_EXAM: 'semester exam', PAST_QUESTION: 'past question set' }[allowedTypes[0]] || 'assessment';
+  }
+
+  // opts.existing (an already-loaded assessment with its full questions, e.g. from
+  // GET /assessments/:id) switches this into edit mode: fields prefill, the course is
+  // fixed (can't move a test to a different class), and saving PUTs in place instead
+  // of creating a new one.
   function openNewAssessmentDialog(courses, opts = {}) {
+    const { existing } = opts;
     const container = document.createElement('div');
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     let qCount = 1;
-    function questionBlock(i) {
+    function questionBlock(i, q) {
+      const isTheory = q && q.questionType === 'THEORY';
+      const opts4 = q && !isTheory ? JSON.parse(q.options || '[]') : [];
       return `<div class="field" data-question-block="${i}">
         <label>Question ${i + 1}</label>
         <select class="q-type" style="margin-bottom:6px;">
-          <option value="OBJECTIVE">Objective (multiple choice)</option>
-          <option value="THEORY">Theory (free response)</option>
+          <option value="OBJECTIVE" ${!isTheory ? 'selected' : ''}>Objective (multiple choice)</option>
+          <option value="THEORY" ${isTheory ? 'selected' : ''}>Theory (free response)</option>
         </select>
-        <input type="text" class="q-text" placeholder="Question text" required>
-        <div class="q-objective-fields">
-          <input type="text" class="q-opt" placeholder="Option A" style="margin-top:6px;">
-          <input type="text" class="q-opt" placeholder="Option B" style="margin-top:6px;">
-          <input type="text" class="q-opt" placeholder="Option C" style="margin-top:6px;">
-          <input type="text" class="q-opt" placeholder="Option D" style="margin-top:6px;">
+        <input type="text" class="q-text" placeholder="Question text" value="${esc(q ? q.text : '')}" required>
+        <div class="q-objective-fields" ${isTheory ? 'hidden' : ''}>
+          <input type="text" class="q-opt" placeholder="Option A" value="${esc(opts4[0] || '')}" style="margin-top:6px;">
+          <input type="text" class="q-opt" placeholder="Option B" value="${esc(opts4[1] || '')}" style="margin-top:6px;">
+          <input type="text" class="q-opt" placeholder="Option C" value="${esc(opts4[2] || '')}" style="margin-top:6px;">
+          <input type="text" class="q-opt" placeholder="Option D" value="${esc(opts4[3] || '')}" style="margin-top:6px;">
           <select class="q-correct" style="margin-top:6px;">
-            <option value="0">Correct: Option A</option><option value="1">Correct: Option B</option>
-            <option value="2">Correct: Option C</option><option value="3">Correct: Option D</option>
+            <option value="0" ${q && q.correctIndex === 0 ? 'selected' : ''}>Correct: Option A</option><option value="1" ${q && q.correctIndex === 1 ? 'selected' : ''}>Correct: Option B</option>
+            <option value="2" ${q && q.correctIndex === 2 ? 'selected' : ''}>Correct: Option C</option><option value="3" ${q && q.correctIndex === 3 ? 'selected' : ''}>Correct: Option D</option>
           </select>
+          <textarea class="q-explanation" placeholder="Briefly explain why this is correct (shown to students when they review mistakes)" style="margin-top:6px; width:100%;" rows="2">${esc(q ? q.explanation || '' : '')}</textarea>
         </div>
-        <textarea class="q-model-answer" placeholder="Model answer (shown to the student to self-review against)" style="margin-top:6px; width:100%;" hidden rows="2"></textarea>
+        <textarea class="q-model-answer" placeholder="Model answer (shown to the student to self-review against)" style="margin-top:6px; width:100%;" ${isTheory ? '' : 'hidden'} rows="2">${esc(isTheory ? (q.modelAnswer || '') : '')}</textarea>
       </div>`;
     }
     function wireQuestionTypeToggle(block) {
@@ -4845,31 +5059,31 @@
         modelAnswer.hidden = !isTheory;
       });
     }
-    // Which types the dropdown offers depends on where this dialog was opened from --
-    // Tests and Semester Exam are separate, disjoint sidebar pages now (they used to
-    // share one "everything" list, which read as the same screen twice), so the type
-    // choices offered here mirror that split instead of listing every type always.
-    // "Assignment" was removed entirely -- that's the real Assignment/Project model
-    // and its own screen (free-text instructions + manual marking), not an Assessment.
-    const TYPE_LABELS = { CA: 'CA', Test: 'Test', Mock: 'Mock', SEMESTER_EXAM: 'Semester Exam', PAST_QUESTION: 'Past Question (practice)' };
     const allowedTypes = opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION'];
-    const typeFieldHtml = allowedTypes.length === 1
-      ? `<div class="field"><label>Type</label><div style="padding:10px 0; font-weight:600;">${esc(TYPE_LABELS[allowedTypes[0]])}</div><input type="hidden" id="na-type" value="${allowedTypes[0]}"></div>`
-      : `<div class="field"><label>Type</label><select id="na-type">${allowedTypes.map((t) => `<option value="${t}" ${opts.defaultType === t ? 'selected' : ''}>${esc(TYPE_LABELS[t])}</option>`).join('')}</select></div>`;
+    const kindLabel = assessmentKindLabel(allowedTypes);
+    const lockedType = existing ? existing.type : (allowedTypes.length === 1 ? allowedTypes[0] : null);
+    const typeFieldHtml = lockedType
+      ? `<div class="field"><label>Type</label><div style="padding:10px 0; font-weight:600;">${esc(ASSESSMENT_TYPE_LABELS[lockedType] || lockedType)}</div><input type="hidden" id="na-type" value="${lockedType}"></div>`
+      : `<div class="field"><label>Type</label><select id="na-type">${allowedTypes.map((t) => `<option value="${t}" ${opts.defaultType === t ? 'selected' : ''}>${esc(ASSESSMENT_TYPE_LABELS[t])}</option>`).join('')}</select></div>`;
+    const course = existing ? courses.find((c) => c.id === existing.courseId) : null;
+    const courseFieldHtml = existing
+      ? `<div class="field"><label>Class (course)</label><div style="padding:10px 0; font-weight:600;">${course ? esc(`${course.code} — ${course.title}`) : ''}</div></div>`
+      : `<div class="field"><label>Class (course)</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>`;
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">New ${allowedTypes.length === 1 && allowedTypes[0] === 'SEMESTER_EXAM' ? 'semester exam' : 'assessment'}</h3>
-      <div class="field"><label>Class (course)</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
-      <div class="field"><label>Title</label><input type="text" id="na-title" required></div>
+      <h3 style="margin-bottom:14px;">${existing ? 'Edit' : 'Set new'} ${esc(kindLabel)}</h3>
+      ${courseFieldHtml}
+      <div class="field"><label>Title</label><input type="text" id="na-title" value="${esc(existing ? existing.title : '')}" required></div>
       ${typeFieldHtml}
       <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
       <p class="meta" style="margin-bottom:14px;">Students get 1 minute per question automatically — no need to set a duration.</p>
-      <div id="na-questions">${questionBlock(0)}</div>
+      <div id="na-questions">${existing ? existing.questions.map((q, i) => questionBlock(i, q)).join('') : questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
       <div style="display:flex; gap:10px;">
-        <button class="btn btn-primary" id="na-save">Publish assessment</button>
+        <button class="btn btn-primary" id="na-save">${existing ? 'Save changes' : `Set ${esc(kindLabel)}`}</button>
         <button class="btn btn-ghost" id="na-cancel">Cancel</button>
       </div>
     `;
+    qCount = existing ? existing.questions.length : 1;
     const backdrop = document.createElement('div');
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     document.body.appendChild(backdrop);
@@ -4885,7 +5099,7 @@
     }
     container.querySelector('#na-type').addEventListener('change', updateCapNote);
     updateCapNote();
-    wireQuestionTypeToggle(container.querySelector('[data-question-block="0"]'));
+    container.querySelectorAll('[data-question-block]').forEach(wireQuestionTypeToggle);
 
     container.querySelector('#na-add-q').addEventListener('click', () => {
       if (container.querySelectorAll('[data-question-block]').length >= maxQuestions()) return;
@@ -4911,19 +5125,28 @@
           text,
           options: Array.from(b.querySelectorAll('.q-opt')).map((i) => i.value).filter(Boolean),
           correctIndex: Number(b.querySelector('.q-correct').value),
+          explanation: b.querySelector('.q-explanation').value.trim() || null,
         };
       }).filter((q) => q.text && (q.questionType === 'THEORY' || q.options.length >= 2));
       if (!questions.length) { toast('Add at least one complete question'); return; }
       try {
-        await api(`/courses/${container.querySelector('#na-course').value}/assessments`, {
-          method: 'POST',
-          body: {
-            title: container.querySelector('#na-title').value,
-            type: container.querySelector('#na-type').value,
-            questions,
-          },
-        });
-        toast('Assessment published');
+        if (existing) {
+          await api(`/assessments/${existing.id}`, {
+            method: 'PUT',
+            body: { title: container.querySelector('#na-title').value, questions },
+          });
+          toast(`${kindLabel.charAt(0).toUpperCase() + kindLabel.slice(1)} updated`);
+        } else {
+          await api(`/courses/${container.querySelector('#na-course').value}/assessments`, {
+            method: 'POST',
+            body: {
+              title: container.querySelector('#na-title').value,
+              type: container.querySelector('#na-type').value,
+              questions,
+            },
+          });
+          toast(`${kindLabel.charAt(0).toUpperCase() + kindLabel.slice(1)} set`);
+        }
         close();
         render();
       } catch (err) { toast(err.message); }
@@ -5256,7 +5479,6 @@
 
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
-        <a class="btn btn-ghost" id="dash-public-site-btn" href="index.html" target="_blank" rel="noopener">🌐 Switch to Public App</a>
       </div>
     `;
     wireSelfAvatarUpload('avatar-admin-dash');
@@ -6241,6 +6463,9 @@
       }
     });
     initNotifications();
+  } else if (sessionStorage.getItem('vp_from_public_switch')) {
+    sessionStorage.removeItem('vp_from_public_switch');
+    authError.innerHTML = '<div class="hint-box">Signed out to show you the public site. Sign in with the login details you already have to get back to your dashboard.</div>';
   } else if (location.hash.includes('register')) {
     document.querySelector('[data-audience="individual"]').click();
     document.querySelector('#individual-panel [data-tab="register"]').click();

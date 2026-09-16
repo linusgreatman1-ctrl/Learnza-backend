@@ -381,6 +381,7 @@ model Question {
   options      String?    // JSON-encoded string array, OBJECTIVE only
   correctIndex Int?       // OBJECTIVE only
   modelAnswer  String?    // THEORY only -- shown back to the student for self-review, never auto-graded
+  explanation  String?    // OBJECTIVE only -- brief "why" shown under the correct answer during review
   order        Int        @default(0)
 }
 
@@ -704,6 +705,7 @@ model Result {
   grade       String?
   remark      String?
   publishedAt DateTime @default(now())
+  sentAt      DateTime? // null = saved as a draft, not yet visible to the student; set once sent/published
 }
 
 model Notification {

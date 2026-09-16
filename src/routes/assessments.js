@@ -25,6 +25,18 @@ router.get('/courses/:id/assessments', requireAuth, async (req, res) => {
 
 const MAX_QUESTIONS = { PAST_QUESTION: 20, DEFAULT: 10 };
 
+function questionCreateData(questions) {
+  return questions.map((q, i) => ({
+    questionType: q.questionType === 'THEORY' ? 'THEORY' : 'OBJECTIVE',
+    text: q.text,
+    options: q.questionType === 'THEORY' ? null : JSON.stringify(q.options),
+    correctIndex: q.questionType === 'THEORY' ? null : q.correctIndex,
+    modelAnswer: q.questionType === 'THEORY' ? (q.modelAnswer || null) : null,
+    explanation: q.questionType === 'THEORY' ? null : (q.explanation || null),
+    order: i,
+  }));
+}
+
 router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const { title, type, durationMin, questions } = req.body;
   if (!title || !Array.isArray(questions) || questions.length === 0) {
@@ -43,16 +55,7 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
       durationMin: durationMin || 20,
       authorId: req.user.id,
       semesterId,
-      questions: {
-        create: questions.map((q, i) => ({
-          questionType: q.questionType === 'THEORY' ? 'THEORY' : 'OBJECTIVE',
-          text: q.text,
-          options: q.questionType === 'THEORY' ? null : JSON.stringify(q.options),
-          correctIndex: q.questionType === 'THEORY' ? null : q.correctIndex,
-          modelAnswer: q.questionType === 'THEORY' ? (q.modelAnswer || null) : null,
-          order: i,
-        })),
-      },
+      questions: { create: questionCreateData(questions) },
     },
     include: { questions: true },
   });
@@ -67,6 +70,41 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
   }
 
   res.json({ assessment });
+});
+
+// Lecturer edits their own already-set test/exam -- title and/or the full question
+// set. Replaces every question rather than diffing them (simpler, and a lecturer
+// editing a test is expected to review the whole thing anyway); refused once anyone
+// has submitted, since changing questions under a student mid-attempt (or after
+// grading) would silently invalidate their score.
+router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const { title, questions } = req.body;
+  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
+  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+  if (assessment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'You can only edit tests/exams you created.' });
+  }
+  const submissionCount = await prisma.submission.count({ where: { assessmentId: assessment.id, submittedAt: { not: null } } });
+  if (submissionCount > 0) return res.status(400).json({ error: 'This already has submissions and can no longer be edited.' });
+
+  if (!title || !Array.isArray(questions) || questions.length === 0) {
+    return res.status(400).json({ error: 'Title and at least one question are required' });
+  }
+  const max = MAX_QUESTIONS[assessment.type] || MAX_QUESTIONS.DEFAULT;
+  if (questions.length > max) {
+    return res.status(400).json({ error: `${assessment.type === 'PAST_QUESTION' ? 'Past question sets' : 'Tests'} can have at most ${max} questions.` });
+  }
+
+  await prisma.question.deleteMany({ where: { assessmentId: assessment.id } });
+  const updated = await prisma.assessment.update({
+    where: { id: assessment.id },
+    data: {
+      title,
+      questions: { create: questionCreateData(questions) },
+    },
+    include: { questions: true },
+  });
+  res.json({ assessment: updated });
 });
 
 // Student view: questions without the correct answer revealed. mySubmission may be a
@@ -176,7 +214,7 @@ router.get('/assessments/:id/my-review', requireAuth, requireRole('STUDENT'), as
     const chosen = mine ? mine.choice : null;
     return {
       questionId: q.id, questionType: 'OBJECTIVE', text: q.text, options: JSON.parse(q.options),
-      correctIndex: q.correctIndex, chosen, correct: chosen === q.correctIndex,
+      correctIndex: q.correctIndex, chosen, correct: chosen === q.correctIndex, explanation: q.explanation,
     };
   });
   res.json({ review, score: submission.score, total: submission.total });
@@ -203,7 +241,7 @@ router.post('/assessments/:id/practice-submit', requireAuth, requireRole('STUDEN
     const chosen = mine ? mine.choice : undefined;
     const correct = chosen === q.correctIndex;
     if (correct) score += 1;
-    return { questionId: q.id, questionType: 'OBJECTIVE', correctIndex: q.correctIndex, chosen: chosen ?? null, correct };
+    return { questionId: q.id, questionType: 'OBJECTIVE', correctIndex: q.correctIndex, chosen: chosen ?? null, correct, explanation: q.explanation };
   });
   res.json({ score, total: objectiveCount, corrections });
 });
