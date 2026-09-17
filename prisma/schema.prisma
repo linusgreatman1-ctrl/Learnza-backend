@@ -370,6 +370,11 @@ model Assessment {
   semester    Semester?    @relation(fields: [semesterId], references: [id])
   semesterId  String?
   createdAt   DateTime     @default(now())
+  // Defaults to "now" (immediately visible/sent) so every existing creation path
+  // (seed data, individual-learner auto-generation) keeps working unchanged; only the
+  // lecturer's own create/edit dialog ever explicitly passes null, to hold a test/exam
+  // back as a draft until deliberately sent.
+  sentAt      DateTime?    @default(now())
 }
 
 model Question {
@@ -672,6 +677,7 @@ model Assignment {
   semesterId   String?
   createdAt    DateTime @default(now())
   submissions  AssignmentSubmission[]
+  sentAt       DateTime? @default(now()) // see Assessment.sentAt -- same draft/send pattern
 }
 
 model AssignmentSubmission {

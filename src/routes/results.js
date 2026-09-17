@@ -41,13 +41,15 @@ router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'
 // courses for one student at a time, where a per-course bulk /publish (below) would
 // need a separate button per course; this covers that case with a single "Send" per
 // row instead.
+// Sends a draft result the first time, or resends an already-sent one (e.g. a student
+// missed the notification, or the lecturer wants to prompt them to check it again) --
+// same endpoint either way, since the only difference is whether sentAt was already set.
 router.post('/results/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const result = await prisma.result.findUnique({ where: { id: req.params.id }, include: { student: { select: { fullName: true, schoolId: true } } } });
   if (!result || result.student.schoolId !== req.user.schoolId) return res.status(404).json({ error: 'Result not found' });
   if (result.authorId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'You can only send results you created.' });
-  if (result.sentAt) return res.json({ result });
 
-  const updated = await prisma.result.update({ where: { id: result.id }, data: { sentAt: new Date() } });
+  const updated = await prisma.result.update({ where: { id: result.id }, data: { sentAt: result.sentAt || new Date() } });
   await notify(result.studentId, 'Result published', `Your result for ${result.term} is ready.`, 'digital-id');
   await notifySchoolAdmins(
     result.student.schoolId,
@@ -55,6 +57,24 @@ router.post('/results/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), 
     `${result.student.fullName} scored ${result.score} for ${result.term}.`,
     'admin-student-activity'
   );
+  res.json({ result: updated });
+});
+
+// Edits a saved result's own fields, whether still a draft or already sent -- lets a
+// lecturer correct a mistake without deleting and recreating the row. Editing an
+// already-sent result doesn't re-notify on its own; use /send afterward to resend if
+// the correction should reach the student again.
+router.put('/results/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const { term, score, grade, remark } = req.body;
+  const result = await prisma.result.findUnique({ where: { id: req.params.id }, include: { student: { select: { schoolId: true } } } });
+  if (!result || result.student.schoolId !== req.user.schoolId) return res.status(404).json({ error: 'Result not found' });
+  if (result.authorId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'You can only edit results you created.' });
+  if (!term || score === undefined || score === null) return res.status(400).json({ error: 'Semester and score are required.' });
+
+  const updated = await prisma.result.update({
+    where: { id: result.id },
+    data: { term, score: Number(score), grade: grade || null, remark: remark || null },
+  });
   res.json({ result: updated });
 });
 

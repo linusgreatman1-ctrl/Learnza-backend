@@ -242,37 +242,34 @@
     body { background: #fff; color: #000; }
   }
 
-  /* On mobile/tablet, the back button floats at the top of the screen (below the
-     mobile topbar) instead of sitting inline in the page-head, where it scrolls away
-     with the rest of the page body and competes for space with the title. Vertically
-     centering it (an earlier attempt) instead left it floating mid-screen on top of
-     whatever body text happened to be there, so it stays pinned near the top edge
-     here. It's the same #back-btn element every screen already renders -- only one
-     exists in the DOM at a time -- so a single rule repositions it everywhere without
-     touching each screen's own markup. z-index sits below the mobile nav drawer/
-     backdrop so it's hidden while the sidebar is open. */
-  @media (min-width: 761px) and (max-width: 1024px) {
-    /* Tablet keeps the desktop grid layout (sidebar + content, no topbar), so the
-       button sits near where the page-head would normally place it. */
+  /* The back button floats at the top-left corner on every screen size instead of
+     sitting inline in the page-head, where it scrolled away with the rest of the page
+     body and competed for space with the title. Top-left matches the conventional
+     "back" position (a browser/app back chevron), rather than top-right which reads
+     as a generic action slot. It's the same #back-btn element every screen already
+     renders -- only one exists in the DOM at a time -- so a single rule repositions it
+     everywhere without touching each screen's own markup. z-index sits below the
+     mobile nav drawer/backdrop so it's hidden while the sidebar is open. */
+  #back-btn {
+    position: fixed;
+    z-index: 25;
+    box-shadow: var(--shadow);
+    white-space: nowrap;
+  }
+  @media (min-width: 761px) {
+    /* Desktop and tablet both keep the grid layout (232px sidebar + content), so the
+       button sits just past the sidebar, roughly where the page-head's title starts. */
     #back-btn {
-      position: fixed;
       top: 24px;
-      right: 24px;
-      z-index: 25;
-      box-shadow: var(--shadow);
-      white-space: nowrap;
+      left: 266px;
     }
   }
   @media (max-width: 760px) {
-    /* Mobile has its own sticky topbar (~50px tall) up top, so the button sits just
-       below it instead. */
+    /* Mobile has its own sticky topbar (~50px tall) up top and no permanent sidebar
+       (it's an overlay drawer), so the button sits just below the topbar instead. */
     #back-btn {
-      position: fixed;
       top: 62px;
-      right: 10px;
-      z-index: 25;
-      box-shadow: var(--shadow);
-      white-space: nowrap;
+      left: 10px;
     }
   }
 </style>
@@ -382,8 +379,8 @@
   <header class="mobile-topbar">
     <div class="brand">Learnza</div>
     <div style="display:flex; align-items:center; gap:8px;">
-      <button class="notif-bell" id="notif-bell-mobile" aria-label="Notifications">🔔<span class="notif-badge" id="notif-badge-mobile" hidden></span></button>
       <button class="menu-toggle" id="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
+      <button class="notif-bell" id="notif-bell-mobile" aria-label="Notifications">🔔<span class="notif-badge" id="notif-badge-mobile" hidden></span></button>
     </div>
   </header>
   <button class="notif-bell notif-bell-desktop" id="notif-bell-desktop" aria-label="Notifications">🔔<span class="notif-badge" id="notif-badge-desktop" hidden></span></button>

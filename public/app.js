@@ -3,15 +3,29 @@
 
   // Session storage strategy: sessionStorage is the source of truth once a tab has one
   // (per-tab, so logging into a different account in another tab never overwrites this
-  // tab's own session), but a tab reads localStorage as a fallback the moment its own
-  // sessionStorage is empty -- a brand-new tab, or a refresh in a browser/webview whose
-  // sessionStorage doesn't survive a reload -- so refreshing never forces a fresh login
-  // as long as *some* session was ever saved. Every write (login, profile update, etc.)
-  // saves to both, via saveSession()/clearSession() below, so localStorage always holds
-  // the last-active session for that fallback, while each tab's own sessionStorage
-  // still wins over whatever any other tab does afterward.
+  // tab's own session). It falls back to localStorage ONLY when this load is an actual
+  // page reload (F5/refresh) -- covering both a normal reload (sessionStorage should
+  // already have it, but some embedded webviews don't reliably keep sessionStorage
+  // across a reload) and that edge case alike, so refreshing never forces a fresh
+  // login. A genuinely fresh navigation into app.html (a new tab, clicking "Open
+  // Learnza" from the public site, typing the URL) is deliberately NOT given the
+  // fallback: that tab's sessionStorage is empty because it's actually new, not
+  // because a reload lost it, so it should show the login screen rather than quietly
+  // resuming whichever account last logged in anywhere. Every write (login, profile
+  // update, etc.) still saves to both, via saveSession()/clearSession() below, so
+  // localStorage always holds the last-active session for the reload fallback, while
+  // each tab's own sessionStorage still wins over whatever any other tab does after.
+  function isPageReload() {
+    try {
+      const nav = performance.getEntriesByType('navigation')[0];
+      if (nav) return nav.type === 'reload';
+      if (performance.navigation) return performance.navigation.type === 1; // legacy TYPE_RELOAD
+    } catch { /* Performance/Navigation Timing unavailable */ }
+    return true; // unknown -- default to preserving login, the safer direction
+  }
+  const IS_RELOAD = isPageReload();
   function readSession(key) {
-    return sessionStorage.getItem(key) || localStorage.getItem(key);
+    return sessionStorage.getItem(key) || (IS_RELOAD ? localStorage.getItem(key) : null);
   }
   function saveSession(token, user) {
     sessionStorage.setItem('vp_token', token);
@@ -402,6 +416,7 @@
       ['admin-dashboard', 'My Dashboard'],
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
+      ['admin-tests', 'Tests'],
       ['admin-semester-exam', 'Semester Exam'],
       ['admin-activity', 'Lecturer Activity'],
       ['admin-student-activity', 'Student Activity'],
@@ -664,6 +679,7 @@
         case 'admin-directory-list': return renderAdminDirectoryList();
         case 'admin-directory-detail': return renderAdminDirectoryDetail();
         case 'admin-academics': return renderAdminAcademics();
+        case 'admin-tests': return renderAdminTests();
         case 'admin-semester-exam': return renderAdminSemesterExam();
         case 'admin-exam-questions': return renderAdminExamQuestions();
         case 'admin-activity': return renderAdminActivity();
@@ -4127,11 +4143,15 @@
             ${assessments.map((a) => `
               <div class="list-row">
                 <div>
-                  <div style="font-weight:600;">${esc(a.title)}</div>
+                  <div style="font-weight:600;">${esc(a.title)} ${isLecturer ? (a.sentAt ? '<span class="pill pill-pass" style="margin-left:6px;">Sent</span>' : '<span class="pill pill-muted" style="margin-left:6px;">Draft</span>') : ''}</div>
                   <div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div>
                 </div>
                 ${isLecturer
-                  ? `<div style="display:flex; gap:8px;"><button class="btn btn-ghost btn-sm" data-edit="${a.id}" data-course="${course.id}">Edit</button><button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button></div>`
+                  ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">
+                      <button class="btn btn-ghost btn-sm" data-edit="${a.id}" data-course="${course.id}">Edit</button>
+                      <button class="btn btn-ghost btn-sm" data-send="${a.id}">${a.sentAt ? 'Resend' : 'Send'}</button>
+                      <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
+                    </div>`
                   : `<button class="btn btn-primary btn-sm" data-take="${a.id}">Take test</button>`}
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
@@ -4151,6 +4171,15 @@
         try {
           const { assessment } = await api(`/assessments/${btn.dataset.edit}`);
           openNewAssessmentDialog(courses, { defaultType, allowedTypes: opts.allowedTypes, existing: { ...assessment, courseId: btn.dataset.course } });
+        } catch (err) { toast(err.message); }
+      });
+    });
+    view.querySelectorAll('[data-send]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/assessments/${btn.dataset.send}/send`, { method: 'POST' });
+          toast(btn.textContent === 'Resend' ? 'Resent to the class' : 'Sent to the class');
+          render();
         } catch (err) { toast(err.message); }
       });
     });
@@ -4881,9 +4910,16 @@
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${esc(course.code)} — ${esc(course.title)}</div>
           <div class="card">
             ${assignments.map((a) => `
-              <div class="list-row" data-open="${a.id}" data-course="${course.id}" data-course-title="${esc(course.title)}" data-course-code="${esc(course.code)}" style="cursor:pointer;">
-                <div><div style="font-weight:600;">${esc(a.title)} ${a.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-left:6px;">Project</span>' : ''}</div><div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div></div>
-                <span class="pill pill-accent">View submissions</span>
+              <div class="list-row">
+                <div>
+                  <div style="font-weight:600;">${esc(a.title)} ${a.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-left:6px;">Project</span>' : ''} ${a.sentAt ? '<span class="pill pill-pass" style="margin-left:6px;">Sent</span>' : '<span class="pill pill-muted" style="margin-left:6px;">Draft</span>'}</div>
+                  <div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  ${!a.sentAt ? `<button class="btn btn-ghost btn-sm" data-edit-assignment="${a.id}">Edit</button>` : ''}
+                  <button class="btn btn-ghost btn-sm" data-send-assignment="${a.id}">${a.sentAt ? 'Resend' : 'Send'}</button>
+                  <button class="btn btn-ghost btn-sm" data-open="${a.id}" data-course="${course.id}" data-course-title="${esc(course.title)}" data-course-code="${esc(course.code)}">View submissions</button>
+                </div>
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>
@@ -4894,6 +4930,21 @@
       el.addEventListener('click', () => navigate('lect-assignment-submissions', {
         assignmentId: el.dataset.open, courseId: el.dataset.course, courseTitle: el.dataset.courseTitle, courseCode: el.dataset.courseCode,
       }));
+    });
+    view.querySelectorAll('[data-edit-assignment]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const assignment = rows.flatMap((r) => r.assignments).find((a) => a.id === btn.dataset.editAssignment);
+        if (assignment) openNewAssignmentDialog(courses, { existing: assignment });
+      });
+    });
+    view.querySelectorAll('[data-send-assignment]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/assignments/${btn.dataset.sendAssignment}/send`, { method: 'POST' });
+          toast(btn.textContent === 'Resend' ? 'Resent to the class' : 'Sent to the class');
+          render();
+        } catch (err) { toast(err.message); }
+      });
     });
     document.getElementById('new-assignment-btn').addEventListener('click', () => openNewAssignmentDialog(courses));
   }
@@ -4976,7 +5027,11 @@
   // as a test/exam (openNewAssessmentDialog) -- compiled into the assignment's
   // instructions as one numbered body, since a student still submits one holistic
   // written answer (Assignment has no per-question submission model, unlike Assessment).
-  function openNewAssignmentDialog(courses) {
+  // opts.existing switches to editing a still-unsent draft -- the compiled instructions
+  // are shown as one editable block rather than re-deriving individual question rows
+  // from the compiled text, which would be fragile to parse back out.
+  function openNewAssignmentDialog(courses, opts = {}) {
+    const { existing } = opts;
     const container = document.createElement('div');
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
@@ -5008,17 +5063,36 @@
         });
       });
     }
-    container.innerHTML = `
+    const course = existing ? courses.find((c) => c.id === existing.courseId) : null;
+    const courseFieldHtml = existing
+      ? `<div class="field"><label>Class (course)</label><div style="padding:10px 0; font-weight:600;">${course ? esc(`${course.code} — ${course.title}`) : ''}</div></div>`
+      : `<div class="field"><label>Class (course)</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>`;
+    container.innerHTML = existing ? `
+      <h3 style="margin-bottom:14px;">Edit ${existing.kind === 'PROJECT' ? 'project' : 'assignment'}</h3>
+      ${courseFieldHtml}
+      <div class="field"><label>Kind</label><select id="na-kind"><option value="ASSIGNMENT" ${existing.kind !== 'PROJECT' ? 'selected' : ''}>Assignment</option><option value="PROJECT" ${existing.kind === 'PROJECT' ? 'selected' : ''}>Project</option></select></div>
+      <div class="field"><label>Title</label><input type="text" id="na-title" value="${esc(existing.title)}" required></div>
+      <div class="field"><label>Due date (optional)</label><input type="date" id="na-due" value="${existing.dueAt ? new Date(existing.dueAt).toISOString().slice(0, 10) : ''}"></div>
+      <div class="field"><label>Instructions</label><textarea id="na-instructions" rows="8" required>${esc(existing.instructions)}</textarea></div>
+      <p class="meta" style="margin-bottom:10px;">"Save and Send" delivers it to the class now. "Save" keeps it as a draft.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="na-save-send">Save and Send</button>
+        <button class="btn btn-ghost" id="na-save">Save</button>
+        <button class="btn btn-ghost" id="na-cancel">Cancel</button>
+      </div>
+    ` : `
       <h3 style="margin-bottom:14px;">Post a new assignment</h3>
-      <div class="field"><label>Class (course)</label><select id="na-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+      ${courseFieldHtml}
       <div class="field"><label>Kind</label><select id="na-kind"><option value="ASSIGNMENT">Assignment</option><option value="PROJECT">Project</option></select></div>
       <div class="field"><label>Title</label><input type="text" id="na-title" required></div>
       <div class="field"><label>Due date (optional)</label><input type="date" id="na-due"></div>
       <p class="meta" style="margin-bottom:10px;">Draft the questions the same way a test/exam is drafted — objective or theory, one or more. They're compiled into the body students see, answered as one written submission.</p>
       <div id="na-questions">${questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
-      <div style="display:flex; gap:10px;">
-        <button class="btn btn-primary" id="na-save">Post</button>
+      <p class="meta" style="margin-bottom:10px;">"Save and Send" posts it to the class now. "Save" keeps it as a draft you can review, edit, and send later -- even tomorrow.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="na-save-send">Save and Send</button>
+        <button class="btn btn-ghost" id="na-save">Save</button>
         <button class="btn btn-ghost" id="na-cancel">Cancel</button>
       </div>
     `;
@@ -5026,47 +5100,55 @@
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     document.body.appendChild(backdrop);
     document.body.appendChild(container);
-    wireToggle(container.querySelector('[data-aq-block="0"]'));
-    container.querySelector('#na-add-q').addEventListener('click', () => {
-      const div = document.createElement('div');
-      div.innerHTML = questionBlock(qCount++);
-      const block = div.firstElementChild;
-      container.querySelector('#na-questions').appendChild(block);
-      wireToggle(block);
-    });
+    if (!existing) {
+      wireToggle(container.querySelector('[data-aq-block="0"]'));
+      container.querySelector('#na-add-q').addEventListener('click', () => {
+        const div = document.createElement('div');
+        div.innerHTML = questionBlock(qCount++);
+        const block = div.firstElementChild;
+        container.querySelector('#na-questions').appendChild(block);
+        wireToggle(block);
+      });
+    }
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#na-cancel').addEventListener('click', close);
-    container.querySelector('#na-save').addEventListener('click', async () => {
-      const blocks = container.querySelectorAll('[data-aq-block]');
-      const bodyParts = Array.from(blocks).map((b, i) => {
-        const type = b.querySelector('.aq-type').dataset.value;
-        const text = b.querySelector('.aq-text').value.trim();
-        if (!text) return null;
-        if (type === 'OBJECTIVE') {
-          const opts = Array.from(b.querySelectorAll('.aq-opt')).map((el) => el.value.trim()).filter(Boolean);
-          const lettered = opts.map((o, idx) => `   ${OPTION_LABELS[idx]}) ${o}`).join('\n');
-          return `${i + 1}. ${text}${lettered ? `\n${lettered}` : ''}`;
-        }
-        return `${i + 1}. ${text}`;
-      }).filter(Boolean);
-      if (!bodyParts.length) return toast('Add at least one question.');
+    async function save(send) {
       const title = container.querySelector('#na-title').value.trim();
       if (!title) return toast('Give it a title.');
+      const dueAt = container.querySelector('#na-due').value || null;
+      const kind = container.querySelector('#na-kind').value;
       try {
-        await api(`/courses/${container.querySelector('#na-course').value}/assignments`, {
-          method: 'POST',
-          body: {
-            title,
-            instructions: bodyParts.join('\n\n'),
-            dueAt: container.querySelector('#na-due').value || null,
-            kind: container.querySelector('#na-kind').value,
-          },
-        });
-        toast('Posted');
+        if (existing) {
+          const instructions = container.querySelector('#na-instructions').value.trim();
+          if (!instructions) return toast('Instructions cannot be empty.');
+          await api(`/assignments/${existing.id}`, { method: 'PUT', body: { title, instructions, dueAt, kind, send } });
+          toast(send ? 'Saved and sent' : 'Saved as a draft');
+        } else {
+          const blocks = container.querySelectorAll('[data-aq-block]');
+          const bodyParts = Array.from(blocks).map((b, i) => {
+            const type = b.querySelector('.aq-type').dataset.value;
+            const text = b.querySelector('.aq-text').value.trim();
+            if (!text) return null;
+            if (type === 'OBJECTIVE') {
+              const opts = Array.from(b.querySelectorAll('.aq-opt')).map((el) => el.value.trim()).filter(Boolean);
+              const lettered = opts.map((o, idx) => `   ${OPTION_LABELS[idx]}) ${o}`).join('\n');
+              return `${i + 1}. ${text}${lettered ? `\n${lettered}` : ''}`;
+            }
+            return `${i + 1}. ${text}`;
+          }).filter(Boolean);
+          if (!bodyParts.length) return toast('Add at least one question.');
+          await api(`/courses/${container.querySelector('#na-course').value}/assignments`, {
+            method: 'POST',
+            body: { title, instructions: bodyParts.join('\n\n'), dueAt, kind, send },
+          });
+          toast(send ? 'Posted and sent' : 'Saved as a draft');
+        }
         close();
         render();
       } catch (err) { toast(err.message); }
-    });
+    }
+    container.querySelector('#na-save-send').addEventListener('click', () => save(true));
+    container.querySelector('#na-save').addEventListener('click', () => save(false));
   }
 
   // Every published result across every class in one page, labeled per class.
@@ -5088,8 +5170,12 @@
           </div>
           <div class="card" style="overflow-x:auto;">
             <table class="data-table">
-              <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Status</th></tr></thead>
-              <tbody>${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}</tbody>
+              <thead><tr><th>Student</th><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Status</th><th></th></tr></thead>
+              <tbody>${results.map((r) => `<tr>
+                <td>${esc(r.student.fullName)}</td><td class="tabular">${esc(course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td>
+                <td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td>
+                <td><div style="display:flex; gap:6px;"><button class="btn btn-ghost btn-sm" data-edit-result="${r.id}">Edit</button><button class="btn btn-ghost btn-sm" data-send-result="${r.id}">${r.sentAt ? 'Resend' : 'Send'}</button></div></td>
+              </tr>`).join('') || '<tr><td colspan="7" class="muted" style="padding:16px;">No results yet.</td></tr>'}</tbody>
             </table>
           </div>
         </div>
@@ -5106,24 +5192,54 @@
         } catch (err) { toast(err.message); }
       });
     });
+    view.querySelectorAll('[data-edit-result]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const result = rows.flatMap((r) => r.results).find((x) => x.id === btn.dataset.editResult);
+        if (result) openPublishResultDialog(courses, { existing: result });
+      });
+    });
+    view.querySelectorAll('[data-send-result]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/results/${btn.dataset.sendResult}/send`, { method: 'POST' });
+          toast(btn.textContent === 'Resend' ? 'Resent to the student' : 'Sent to the student');
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
   }
 
-  function openPublishResultDialog(courses) {
+  // opts.existing switches to editing an already-saved result (draft or sent) --
+  // student/course are shown as fixed context rather than the search/pick flow, since
+  // those never change on an edit.
+  function openPublishResultDialog(courses, opts = {}) {
+    const { existing } = opts;
     const container = document.createElement('div');
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    const course = existing ? courses.find((c) => c.id === existing.courseId) : null;
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">Create new result</h3>
-      <div class="field"><label>Class (course)</label><select id="pr-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
-      <div class="field"><label>Student</label><select id="pr-student"><option value="">Loading students…</option></select></div>
-      <div class="field"><label>Semester</label><input type="text" id="pr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
-      <div class="field"><label>Score</label><input type="number" id="pr-score" required></div>
-      <div class="field"><label>Grade (optional)</label><input type="text" id="pr-grade" placeholder="e.g. A"></div>
-      <div class="field"><label>Remark (optional)</label><input type="text" id="pr-remark"></div>
-      <p class="meta" style="margin-bottom:10px;">"Save and Send" delivers it to the student right away. "Save" keeps it as a draft you can send later, individually or all at once with "Publish results".</p>
+      <h3 style="margin-bottom:14px;">${existing ? 'Edit result' : 'Create new result'}</h3>
+      ${existing ? `
+        <div class="field"><label>Student</label><div style="padding:10px 0; font-weight:600;">${esc(existing.student.fullName)}</div></div>
+        <div class="field"><label>Course</label><div style="padding:10px 0; font-weight:600;">${course ? esc(`${course.code} — ${course.title}`) : ''}</div></div>
+      ` : `
+        <div class="field"><label>Class (course)</label><select id="pr-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+        <div class="field"><label>Student</label><select id="pr-student"><option value="">Loading students…</option></select></div>
+      `}
+      <div class="field"><label>Semester</label><input type="text" id="pr-term" value="${esc(existing ? existing.term : '')}" placeholder="e.g. 1st Semester 2025/2026" required></div>
+      <div class="field"><label>Score</label><input type="number" id="pr-score" value="${existing ? existing.score : ''}" required></div>
+      <div class="field"><label>Grade (optional)</label><input type="text" id="pr-grade" value="${esc(existing ? existing.grade || '' : '')}" placeholder="e.g. A"></div>
+      <div class="field"><label>Remark (optional)</label><input type="text" id="pr-remark" value="${esc(existing ? existing.remark || '' : '')}"></div>
+      ${existing && existing.sentAt ? `
+        <p class="meta" style="margin-bottom:10px;">Already sent -- changes save in place. Use Resend on the list if the student should be notified again.</p>
+      ` : `
+        <p class="meta" style="margin-bottom:10px;">"Save and Send" delivers it to the student right away. "Save" keeps it as a draft you can send later, individually or all at once with "Publish results".</p>
+      `}
       <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-        <button class="btn btn-primary" id="pr-save-send">Save and Send</button>
-        <button class="btn btn-ghost" id="pr-save">Save</button>
+        ${existing && existing.sentAt
+          ? `<button class="btn btn-primary" id="pr-save">Save changes</button>`
+          : `<button class="btn btn-primary" id="pr-save-send">Save and Send</button><button class="btn btn-ghost" id="pr-save">Save</button>`}
         <button class="btn btn-ghost" id="pr-cancel">Cancel</button>
       </div>
     `;
@@ -5131,37 +5247,40 @@
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     document.body.appendChild(backdrop);
     document.body.appendChild(container);
-    async function loadStudents(courseId) {
-      const studentSelect = container.querySelector('#pr-student');
-      if (!courseId) { studentSelect.innerHTML = '<option value="">No class selected</option>'; return; }
-      const { students } = await api(`/courses/${courseId}/roster`);
-      studentSelect.innerHTML = students.map((s) => `<option value="${s.id}">${esc(s.fullName)} (${esc(s.matricNumber || '—')})</option>`).join('') || '<option value="">No students enrolled</option>';
+    if (!existing) {
+      async function loadStudents(courseId) {
+        const studentSelect = container.querySelector('#pr-student');
+        if (!courseId) { studentSelect.innerHTML = '<option value="">No class selected</option>'; return; }
+        const { students } = await api(`/courses/${courseId}/roster`);
+        studentSelect.innerHTML = students.map((s) => `<option value="${s.id}">${esc(s.fullName)} (${esc(s.matricNumber || '—')})</option>`).join('') || '<option value="">No students enrolled</option>';
+      }
+      loadStudents(courses[0] && courses[0].id);
+      container.querySelector('#pr-course').addEventListener('change', (e) => loadStudents(e.target.value));
     }
-    loadStudents(courses[0] && courses[0].id);
-    container.querySelector('#pr-course').addEventListener('change', (e) => loadStudents(e.target.value));
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#pr-cancel').addEventListener('click', close);
     async function save(send) {
-      const courseId = container.querySelector('#pr-course').value;
-      const studentId = container.querySelector('#pr-student').value;
-      if (!studentId) return toast('No student to save this for.');
+      const term = container.querySelector('#pr-term').value.trim();
+      const score = container.querySelector('#pr-score').value;
+      const grade = container.querySelector('#pr-grade').value.trim() || null;
+      const remark = container.querySelector('#pr-remark').value.trim() || null;
       try {
-        await api(`/courses/${courseId}/results`, {
-          method: 'POST',
-          body: {
-            studentId, send,
-            term: container.querySelector('#pr-term').value.trim(),
-            score: container.querySelector('#pr-score').value,
-            grade: container.querySelector('#pr-grade').value.trim() || null,
-            remark: container.querySelector('#pr-remark').value.trim() || null,
-          },
-        });
-        toast(send ? 'Result saved and sent' : 'Result saved as a draft');
+        if (existing) {
+          await api(`/results/${existing.id}`, { method: 'PUT', body: { term, score, grade, remark } });
+          toast('Result updated');
+        } else {
+          const courseId = container.querySelector('#pr-course').value;
+          const studentId = container.querySelector('#pr-student').value;
+          if (!studentId) return toast('No student to save this for.');
+          await api(`/courses/${courseId}/results`, { method: 'POST', body: { studentId, send, term, score, grade, remark } });
+          toast(send ? 'Result saved and sent' : 'Result saved as a draft');
+        }
         close();
         render();
       } catch (err) { toast(err.message); }
     }
-    container.querySelector('#pr-save-send').addEventListener('click', () => save(true));
+    const sendBtn = container.querySelector('#pr-save-send');
+    if (sendBtn) sendBtn.addEventListener('click', () => save(true));
     container.querySelector('#pr-save').addEventListener('click', () => save(false));
   }
 
@@ -5257,8 +5376,15 @@
       <p class="meta" style="margin-bottom:14px;">Students get 1 minute per question automatically — no need to set a duration.</p>
       <div id="na-questions">${existing ? existing.questions.map((q, i) => questionBlock(i, q)).join('') : questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
-      <div style="display:flex; gap:10px;">
-        <button class="btn btn-primary" id="na-save">${existing ? 'Save changes' : `Set ${esc(kindLabel)}`}</button>
+      ${existing && existing.sentAt ? `
+        <p class="meta" style="margin-bottom:10px;">Already sent -- changes save in place without re-sending. Use Resend on the list if you want students notified again.</p>
+      ` : `
+        <p class="meta" style="margin-bottom:10px;">"Save and Send" notifies the class now. "Save" keeps it as a draft you can review, edit, and send later -- even tomorrow.</p>
+      `}
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        ${existing && existing.sentAt
+          ? `<button class="btn btn-primary" id="na-save">Save changes</button>`
+          : `<button class="btn btn-primary" id="na-save-send">Save and Send</button><button class="btn btn-ghost" id="na-save">Save</button>`}
         <button class="btn btn-ghost" id="na-cancel">Cancel</button>
       </div>
     `;
@@ -5291,7 +5417,7 @@
     });
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#na-cancel').addEventListener('click', close);
-    container.querySelector('#na-save').addEventListener('click', async () => {
+    async function save(send) {
       const blocks = container.querySelectorAll('[data-question-block]');
       const questions = Array.from(blocks).map((b) => {
         const questionType = b.querySelector('.q-type').dataset.value;
@@ -5308,28 +5434,30 @@
         };
       }).filter((q) => q.text && (q.questionType === 'THEORY' || q.options.length >= 2));
       if (!questions.length) { toast('Add at least one complete question'); return; }
+      const title = container.querySelector('#na-title').value;
       try {
         if (existing) {
           await api(`/assessments/${existing.id}`, {
             method: 'PUT',
-            body: { title: container.querySelector('#na-title').value, questions },
+            body: { title, questions, send: existing.sentAt ? undefined : send },
           });
-          toast(`${kindLabel.charAt(0).toUpperCase() + kindLabel.slice(1)} updated`);
+          const Kind = kindLabel.charAt(0).toUpperCase() + kindLabel.slice(1);
+          toast(existing.sentAt ? 'Changes saved' : send ? `${Kind} saved and sent` : `${Kind} saved as a draft`);
         } else {
           await api(`/courses/${container.querySelector('#na-course').value}/assessments`, {
             method: 'POST',
-            body: {
-              title: container.querySelector('#na-title').value,
-              type: container.querySelector('#na-type').value,
-              questions,
-            },
+            body: { title, type: container.querySelector('#na-type').value, questions, send },
           });
-          toast(`${kindLabel.charAt(0).toUpperCase() + kindLabel.slice(1)} set`);
+          const Kind = kindLabel.charAt(0).toUpperCase() + kindLabel.slice(1);
+          toast(send ? `${Kind} saved and sent` : `${Kind} saved as a draft`);
         }
         close();
         render();
       } catch (err) { toast(err.message); }
-    });
+    }
+    const sendBtn = container.querySelector('#na-save-send');
+    if (sendBtn) sendBtn.addEventListener('click', () => save(true));
+    container.querySelector('#na-save').addEventListener('click', () => save(existing && existing.sentAt ? undefined : false));
   }
 
   async function renderAssessmentResults() {
@@ -5348,27 +5476,28 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'lect-tests'));
   }
 
-  // Read-only, school-wide view of every semester exam set by any lecturer -- admin
-  // can drill into results but not create/edit (that's the lecturer's job).
-  // Every semester exam a lecturer sets is live here the instant they publish it (this
-  // just reads the same Assessment rows the lecturer's own screen writes to -- there's
-  // no caching/approval step in between), grouped department by department so a large
-  // school stays scannable. Clicking one shows every question in it, not just a count.
-  async function renderAdminSemesterExam() {
+  // Read-only, school-wide view of every test/exam set by any lecturer -- admin can
+  // drill into questions and results but not create/edit (that's the lecturer's job).
+  // Shared by "Semester Exam" and "Tests" in the admin sidebar (same structure,
+  // different type filter); each reads live off the same Assessment rows the
+  // lecturer's own screen writes to -- there's no caching/approval step in between --
+  // grouped department by department so a large school stays scannable. Clicking one
+  // shows every question (and, via View results, every score) in it.
+  async function renderAdminAssessmentTypeView(heading, types, backTo, emptyNote) {
     const { departments } = await api(`/departments?schoolId=${state.user.schoolId}`);
     const deptRows = await Promise.all(departments.map(async (d) => {
       const { courses } = await api(`/departments/${d.id}/courses`);
       const rows = (await Promise.all(courses.map(async (c) => {
         const { assessments } = await api(`/courses/${c.id}/assessments`);
-        const exams = assessments.filter((a) => a.type === 'SEMESTER_EXAM');
-        return exams.length ? { course: c, exams } : null;
+        const matches = assessments.filter((a) => types.includes(a.type));
+        return matches.length ? { course: c, exams: matches } : null;
       }))).filter(Boolean);
       return { department: d, rows };
     }));
     const nonEmpty = deptRows.filter((d) => d.rows.length);
     view.innerHTML = `
-      <div class="page-head"><h1>Semester Exam</h1></div>
-      <p class="muted" style="margin-bottom:18px;">Every semester exam a lecturer sets appears here immediately, grouped by department. Click one to see its full question set.</p>
+      <div class="page-head"><h1>${esc(heading)}</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Every ${heading.toLowerCase()} a lecturer sets appears here immediately, grouped by department. Click one to see its full question set, answers, and results.</p>
       ${nonEmpty.map(({ department, rows }) => `
         <h3 style="margin:20px 0 10px; font-size:1rem;">${esc(department.name)}</h3>
         ${rows.map(({ course, exams }) => `
@@ -5377,25 +5506,32 @@
             <div class="card">
               ${exams.map((a) => `
                 <div class="list-row clickable" data-exam="${a.id}" style="cursor:pointer;">
-                  <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div></div>
+                  <div><div style="font-weight:600;">${esc(a.title)} ${a.sentAt ? '<span class="pill pill-pass" style="margin-left:6px;">Sent</span>' : '<span class="pill pill-muted" style="margin-left:6px;">Draft</span>'}</div><div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div></div>
                   <span class="pill pill-accent">View questions</span>
                 </div>
               `).join('')}
             </div>
           </div>
         `).join('')}
-      `).join('') || '<p class="muted">No semester exams set yet.</p>'}
+      `).join('') || `<p class="muted">${esc(emptyNote)}</p>`}
     `;
     view.querySelectorAll('[data-exam]').forEach((el) => {
-      el.addEventListener('click', () => navigate('admin-exam-questions', { assessmentId: el.dataset.exam }));
+      el.addEventListener('click', () => navigate('admin-exam-questions', { assessmentId: el.dataset.exam, backTo }));
     });
   }
+  function renderAdminSemesterExam() {
+    return renderAdminAssessmentTypeView('Semester Exam', ['SEMESTER_EXAM'], 'admin-semester-exam', 'No semester exams set yet.');
+  }
+  function renderAdminTests() {
+    return renderAdminAssessmentTypeView('Tests', ['CA', 'Test', 'Mock'], 'admin-tests', 'No tests set yet.');
+  }
 
-  // Full question set for one exam -- correct answers/model answers included, since
-  // this is an admin-only read (GET /assessments/:id returns the raw questions for
-  // any non-STUDENT role already).
+  // Full question set for one exam/test -- correct answers/model answers included,
+  // since this is an admin-only read (GET /assessments/:id returns the raw questions
+  // for any non-STUDENT role already).
   async function renderAdminExamQuestions() {
-    const { assessment } = await api(`/assessments/${state.view.assessmentId}`);
+    const { assessmentId, backTo } = state.view;
+    const { assessment } = await api(`/assessments/${assessmentId}`);
     view.innerHTML = `
       <div class="page-head"><h1>${esc(assessment.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       <p class="muted" style="margin-bottom:16px;">${assessment.questions.length} question${assessment.questions.length === 1 ? '' : 's'}</p>
@@ -5411,8 +5547,8 @@
       </div>
       <button class="btn btn-ghost btn-sm" id="results-btn">View results</button>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-semester-exam'));
-    document.getElementById('results-btn').addEventListener('click', () => navigate('lect-assessment-results', { assessmentId: assessment.id, backTo: 'admin-semester-exam' }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(backTo || 'admin-semester-exam'));
+    document.getElementById('results-btn').addEventListener('click', () => navigate('lect-assessment-results', { assessmentId: assessment.id, backTo: backTo || 'admin-semester-exam' }));
   }
 
   // ================= STAFF PROFILE (attendance, CPD, publications) =================
@@ -5633,13 +5769,9 @@
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
       </div>
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
-      </div>
     `;
     wireSelfAvatarUpload('avatar-admin-dash');
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
-    document.getElementById('dash-digital-id-btn').addEventListener('click', () => navigate('digital-id'));
   }
 
   // A school can have more than one admin (e.g. a vice-principal or registrar
@@ -6476,7 +6608,7 @@
           <tbody>${results.map((r) => `<tr>
             <td class="tabular">${esc(r.course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${esc(r.remark || '—')}</td>
             <td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td>
-            <td>${!r.sentAt ? `<button class="btn btn-ghost btn-sm" data-send="${r.id}">Send</button>` : ''}</td>
+            <td><div style="display:flex; gap:6px;"><button class="btn btn-ghost btn-sm" data-edit="${r.id}">Edit</button><button class="btn btn-ghost btn-sm" data-send="${r.id}">${r.sentAt ? 'Resend' : 'Send'}</button></div></td>
           </tr>`).join('') || '<tr><td colspan="7" class="muted" style="padding:16px;">No results for this student yet.</td></tr>'}</tbody>
         </table>
       </div>
@@ -6486,11 +6618,19 @@
       const { students } = await api('/admin/students');
       openSendResultDialog(students, student.id);
     });
+    view.querySelectorAll('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const result = results.find((r) => r.id === btn.dataset.edit);
+        if (!result) return;
+        const { students } = await api('/admin/students');
+        openSendResultDialog(students, student.id, { ...result, student, courseId: result.course.id });
+      });
+    });
     view.querySelectorAll('[data-send]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         try {
           await api(`/results/${btn.dataset.send}/send`, { method: 'POST' });
-          toast('Result sent');
+          toast(btn.textContent === 'Resend' ? 'Result resent' : 'Result sent');
           render();
         } catch (err) { toast(err.message); }
       });
@@ -6500,26 +6640,38 @@
   // "Search and select student" flow: type a name/matric to filter, pick one, then the
   // course dropdown narrows to just the courses that student is actually enrolled in
   // (each student's own `courses` list is already included in GET /admin/students).
-  function openSendResultDialog(students, preselectStudentId) {
+  // opts.existing switches to editing an already-saved result -- student/course shown
+  // as fixed context instead of the search/pick flow, since neither changes on an edit.
+  function openSendResultDialog(students, preselectStudentId, existing) {
     const container = document.createElement('div');
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">Create new result</h3>
-      <div class="field"><label>Student</label><input type="text" id="sr-search" placeholder="Search by name or matric number…"></div>
-      <div id="sr-matches" class="card" style="max-height:160px; overflow-y:auto; margin-bottom:14px;"></div>
-      <div id="sr-form" hidden>
-        <p class="meta" id="sr-picked" style="margin-bottom:10px;"></p>
-        <div class="field"><label>Course</label><select id="sr-course"></select></div>
-        <div class="field"><label>Semester</label><input type="text" id="sr-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
-        <div class="field"><label>Score</label><input type="number" id="sr-score" required></div>
-        <div class="field"><label>Grade (optional)</label><input type="text" id="sr-grade" placeholder="e.g. A"></div>
-        <div class="field"><label>Remark (optional)</label><input type="text" id="sr-remark"></div>
+      <h3 style="margin-bottom:14px;">${existing ? 'Edit result' : 'Create new result'}</h3>
+      ${existing ? `
+        <div class="field"><label>Student</label><div style="padding:10px 0; font-weight:600;">${esc(existing.student.fullName)}</div></div>
+        <div class="field"><label>Course</label><div style="padding:10px 0; font-weight:600;">${existing.course ? esc(`${existing.course.code} — ${existing.course.title}`) : ''}</div></div>
+      ` : `
+        <div class="field"><label>Student</label><input type="text" id="sr-search" placeholder="Search by name or matric number…"></div>
+        <div id="sr-matches" class="card" style="max-height:160px; overflow-y:auto; margin-bottom:14px;"></div>
+        <div id="sr-form" hidden>
+          <p class="meta" id="sr-picked" style="margin-bottom:10px;"></p>
+          <div class="field"><label>Course</label><select id="sr-course"></select></div>
+        </div>
+      `}
+      <div class="field"><label>Semester</label><input type="text" id="sr-term" value="${esc(existing ? existing.term : '')}" placeholder="e.g. 1st Semester 2025/2026" required></div>
+      <div class="field"><label>Score</label><input type="number" id="sr-score" value="${existing ? existing.score : ''}" required></div>
+      <div class="field"><label>Grade (optional)</label><input type="text" id="sr-grade" value="${esc(existing ? existing.grade || '' : '')}" placeholder="e.g. A"></div>
+      <div class="field"><label>Remark (optional)</label><input type="text" id="sr-remark" value="${esc(existing ? existing.remark || '' : '')}"></div>
+      ${existing && existing.sentAt ? `
+        <p class="meta" style="margin:8px 0;">Already sent -- changes save in place. Use Resend on the list if the student should be notified again.</p>
+      ` : `
         <p class="meta" style="margin:8px 0;">"Save and Send" delivers it right away. "Save" keeps it as a draft to send later.</p>
-      </div>
+      `}
       <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-        <button class="btn btn-primary" id="sr-save-send" ${preselectStudentId ? '' : 'hidden'}>Save and Send</button>
-        <button class="btn btn-ghost" id="sr-save" ${preselectStudentId ? '' : 'hidden'}>Save</button>
+        ${existing && existing.sentAt
+          ? `<button class="btn btn-primary" id="sr-save">Save changes</button>`
+          : `<button class="btn btn-primary" id="sr-save-send" ${!existing && preselectStudentId ? '' : existing ? '' : 'hidden'}>Save and Send</button><button class="btn btn-ghost" id="sr-save" ${!existing && preselectStudentId ? '' : existing ? '' : 'hidden'}>Save</button>`}
         <button class="btn btn-ghost" id="sr-cancel">Cancel</button>
       </div>
     `;
@@ -6530,54 +6682,56 @@
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#sr-cancel').addEventListener('click', close);
 
-    let picked = null;
-    function pickStudent(s) {
-      picked = s;
-      container.querySelector('#sr-matches').innerHTML = '';
-      container.querySelector('#sr-search').value = s.fullName;
-      container.querySelector('#sr-picked').textContent = `${s.fullName} (${s.matricNumber || '—'})`;
-      container.querySelector('#sr-course').innerHTML = (s.courses || []).map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('') || '<option value="">Not enrolled in any course</option>';
-      container.querySelector('#sr-form').hidden = false;
-      container.querySelector('#sr-save-send').hidden = false;
-      container.querySelector('#sr-save').hidden = false;
-    }
-    function renderMatches(q) {
-      const matchesEl = container.querySelector('#sr-matches');
-      if (!q) { matchesEl.innerHTML = ''; return; }
-      const matches = students.filter((s) => s.fullName.toLowerCase().includes(q.toLowerCase()) || (s.matricNumber || '').toLowerCase().includes(q.toLowerCase())).slice(0, 8);
-      matchesEl.innerHTML = matches.map((s) => `<div class="list-row clickable" data-pick="${s.id}" style="cursor:pointer; padding:8px 12px;"><div>${esc(s.fullName)}</div><span class="meta tabular">${esc(s.matricNumber || '—')}</span></div>`).join('') || '<p class="muted" style="padding:8px 12px;">No match.</p>';
-      matchesEl.querySelectorAll('[data-pick]').forEach((row) => {
-        row.addEventListener('click', () => pickStudent(students.find((s) => s.id === row.dataset.pick)));
-      });
-    }
-    container.querySelector('#sr-search').addEventListener('input', (e) => renderMatches(e.target.value.trim()));
-    if (preselectStudentId) {
-      const pre = students.find((s) => s.id === preselectStudentId);
-      if (pre) pickStudent(pre);
+    let picked = existing ? existing.student : null;
+    if (!existing) {
+      function pickStudent(s) {
+        picked = s;
+        container.querySelector('#sr-matches').innerHTML = '';
+        container.querySelector('#sr-search').value = s.fullName;
+        container.querySelector('#sr-picked').textContent = `${s.fullName} (${s.matricNumber || '—'})`;
+        container.querySelector('#sr-course').innerHTML = (s.courses || []).map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('') || '<option value="">Not enrolled in any course</option>';
+        container.querySelector('#sr-form').hidden = false;
+        container.querySelector('#sr-save-send').hidden = false;
+        container.querySelector('#sr-save').hidden = false;
+      }
+      function renderMatches(q) {
+        const matchesEl = container.querySelector('#sr-matches');
+        if (!q) { matchesEl.innerHTML = ''; return; }
+        const matches = students.filter((s) => s.fullName.toLowerCase().includes(q.toLowerCase()) || (s.matricNumber || '').toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+        matchesEl.innerHTML = matches.map((s) => `<div class="list-row clickable" data-pick="${s.id}" style="cursor:pointer; padding:8px 12px;"><div>${esc(s.fullName)}</div><span class="meta tabular">${esc(s.matricNumber || '—')}</span></div>`).join('') || '<p class="muted" style="padding:8px 12px;">No match.</p>';
+        matchesEl.querySelectorAll('[data-pick]').forEach((row) => {
+          row.addEventListener('click', () => pickStudent(students.find((s) => s.id === row.dataset.pick)));
+        });
+      }
+      container.querySelector('#sr-search').addEventListener('input', (e) => renderMatches(e.target.value.trim()));
+      if (preselectStudentId) {
+        const pre = students.find((s) => s.id === preselectStudentId);
+        if (pre) pickStudent(pre);
+      }
     }
 
     async function saveResult(send) {
-      if (!picked) return toast('Search for and select a student first.');
-      const courseId = container.querySelector('#sr-course').value;
-      if (!courseId) return toast(`${picked.fullName} isn't enrolled in any course.`);
+      const term = container.querySelector('#sr-term').value.trim();
+      const score = container.querySelector('#sr-score').value;
+      const grade = container.querySelector('#sr-grade').value.trim() || null;
+      const remark = container.querySelector('#sr-remark').value.trim() || null;
       try {
-        await api(`/courses/${courseId}/results`, {
-          method: 'POST',
-          body: {
-            studentId: picked.id,
-            send,
-            term: container.querySelector('#sr-term').value.trim(),
-            score: container.querySelector('#sr-score').value,
-            grade: container.querySelector('#sr-grade').value.trim() || null,
-            remark: container.querySelector('#sr-remark').value.trim() || null,
-          },
-        });
-        toast(send ? 'Result saved and sent' : 'Result saved as a draft');
+        if (existing) {
+          await api(`/results/${existing.id}`, { method: 'PUT', body: { term, score, grade, remark } });
+          toast('Result updated');
+        } else {
+          if (!picked) return toast('Search for and select a student first.');
+          const courseId = container.querySelector('#sr-course').value;
+          if (!courseId) return toast(`${picked.fullName} isn't enrolled in any course.`);
+          await api(`/courses/${courseId}/results`, { method: 'POST', body: { studentId: picked.id, send, term, score, grade, remark } });
+          toast(send ? 'Result saved and sent' : 'Result saved as a draft');
+        }
         close();
         render();
       } catch (err) { toast(err.message); }
     }
-    container.querySelector('#sr-save-send').addEventListener('click', () => saveResult(true));
+    const sendBtn = container.querySelector('#sr-save-send');
+    if (sendBtn) sendBtn.addEventListener('click', () => saveResult(true));
     container.querySelector('#sr-save').addEventListener('click', () => saveResult(false));
   }
 

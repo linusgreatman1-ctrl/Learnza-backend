@@ -16,7 +16,9 @@ function minutesFor(questionCount) {
 
 router.get('/courses/:id/assessments', requireAuth, async (req, res) => {
   const assessments = await prisma.assessment.findMany({
-    where: { courseId: req.params.id },
+    // Drafts (sentAt still null) are the lecturer's own working copy -- invisible to
+    // students until deliberately sent, same as a draft Result.
+    where: { courseId: req.params.id, ...(req.user.role === 'STUDENT' ? { sentAt: { not: null } } : {}) },
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: 'desc' },
   });
@@ -38,7 +40,7 @@ function questionCreateData(questions) {
 }
 
 router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const { title, type, durationMin, questions } = req.body;
+  const { title, type, durationMin, questions, send } = req.body;
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Title and at least one question are required' });
   }
@@ -55,15 +57,17 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
       durationMin: durationMin || 20,
       authorId: req.user.id,
       semesterId,
+      sentAt: send === false ? null : new Date(),
       questions: { create: questionCreateData(questions) },
     },
     include: { questions: true },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_ASSESSMENT', title);
 
-  // Real tests/exams notify the class immediately; PAST_QUESTION sets are practice
-  // material a student opts into, not an event worth pushing a notification for.
-  if (type !== 'PAST_QUESTION') {
+  // Real tests/exams notify the class immediately (unless saved as a draft to send
+  // later); PAST_QUESTION sets are practice material a student opts into, not an
+  // event worth pushing a notification for.
+  if (type !== 'PAST_QUESTION' && send !== false) {
     const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
     const label = type === 'SEMESTER_EXAM' ? 'New semester exam' : 'New test';
     await notifyMany(students.map((s) => s.studentId), label, title, type === 'SEMESTER_EXAM' ? 'semester-exam-hub' : 'cbt-mock');
@@ -72,13 +76,31 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
   res.json({ assessment });
 });
 
+// Sends (or resends) a test/exam to its class -- draft -> sent the first time, just a
+// fresh round of notifications every time after (e.g. a reminder, or for students who
+// missed the first one). Mirrors the equivalent /results/:id/send.
+router.post('/assessments/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
+  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+  if (assessment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'You can only send tests/exams you created.' });
+  }
+  const updated = await prisma.assessment.update({ where: { id: assessment.id }, data: { sentAt: assessment.sentAt || new Date() } });
+  if (assessment.type !== 'PAST_QUESTION' && assessment.courseId) {
+    const students = await prisma.enrollment.findMany({ where: { courseId: assessment.courseId }, select: { studentId: true } });
+    const label = assessment.type === 'SEMESTER_EXAM' ? 'New semester exam' : 'New test';
+    await notifyMany(students.map((s) => s.studentId), label, assessment.title, assessment.type === 'SEMESTER_EXAM' ? 'semester-exam-hub' : 'cbt-mock');
+  }
+  res.json({ assessment: updated });
+});
+
 // Lecturer edits their own already-set test/exam -- title and/or the full question
 // set. Replaces every question rather than diffing them (simpler, and a lecturer
 // editing a test is expected to review the whole thing anyway); refused once anyone
 // has submitted, since changing questions under a student mid-attempt (or after
 // grading) would silently invalidate their score.
 router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const { title, questions } = req.body;
+  const { title, questions, send } = req.body;
   const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
   if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
   if (assessment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
@@ -96,14 +118,23 @@ router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), as
   }
 
   await prisma.question.deleteMany({ where: { assessmentId: assessment.id } });
+  // Editing a still-unsent draft can choose to send it now instead ("Save and Send");
+  // editing one that's already out just resaves the content in place, no re-send.
+  const nextSentAt = send === true && !assessment.sentAt ? new Date() : assessment.sentAt;
   const updated = await prisma.assessment.update({
     where: { id: assessment.id },
     data: {
       title,
+      sentAt: nextSentAt,
       questions: { create: questionCreateData(questions) },
     },
     include: { questions: true },
   });
+  if (send === true && !assessment.sentAt && assessment.type !== 'PAST_QUESTION' && assessment.courseId) {
+    const students = await prisma.enrollment.findMany({ where: { courseId: assessment.courseId }, select: { studentId: true } });
+    const label = assessment.type === 'SEMESTER_EXAM' ? 'New semester exam' : 'New test';
+    await notifyMany(students.map((s) => s.studentId), label, title, assessment.type === 'SEMESTER_EXAM' ? 'semester-exam-hub' : 'cbt-mock');
+  }
   res.json({ assessment: updated });
 });
 

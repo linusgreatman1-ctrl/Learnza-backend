@@ -8,7 +8,9 @@ const router = express.Router();
 
 router.get('/courses/:id/assignments', requireAuth, async (req, res) => {
   const assignments = await prisma.assignment.findMany({
-    where: { courseId: req.params.id },
+    // Same draft/send pattern as Assessment/Result -- a draft (sentAt null) is the
+    // lecturer's own unsent working copy, invisible to students.
+    where: { courseId: req.params.id, ...(req.user.role === 'STUDENT' ? { sentAt: { not: null } } : {}) },
     include: { _count: { select: { submissions: true } } },
     orderBy: { createdAt: 'desc' },
   });
@@ -23,22 +25,68 @@ router.get('/courses/:id/assignments', requireAuth, async (req, res) => {
 });
 
 router.post('/courses/:id/assignments', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const { title, instructions, dueAt, kind } = req.body;
+  const { title, instructions, dueAt, kind, send } = req.body;
   if (!title || !instructions) return res.status(400).json({ error: 'Title and instructions are required.' });
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const assignment = await prisma.assignment.create({
     data: {
       courseId: req.params.id, title, instructions, dueAt: dueAt ? new Date(dueAt) : null,
       authorId: req.user.id, kind: kind === 'PROJECT' ? 'PROJECT' : 'ASSIGNMENT', semesterId,
+      sentAt: send === false ? null : new Date(),
     },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_ASSIGNMENT', title);
 
-  const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
-  const label = kind === 'PROJECT' ? 'New project posted' : 'New assignment posted';
-  await notifyMany(students.map((s) => s.studentId), label, title, 'my-dashboard');
+  if (send !== false) {
+    const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
+    const label = kind === 'PROJECT' ? 'New project posted' : 'New assignment posted';
+    await notifyMany(students.map((s) => s.studentId), label, title, 'my-dashboard');
+  }
 
   res.json({ assignment });
+});
+
+// Edits a draft (unsent) assignment's own details. Once it's out, the content stays
+// fixed -- a student may already be partway through writing an answer to it, so
+// changing the instructions under them isn't safe the way it is while still a draft.
+router.put('/assignments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const { title, instructions, dueAt, kind, send } = req.body;
+  const assignment = await prisma.assignment.findUnique({ where: { id: req.params.id } });
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'You can only edit assignments you created.' });
+  }
+  if (assignment.sentAt) return res.status(400).json({ error: 'This has already been sent and can no longer be edited.' });
+  if (!title || !instructions) return res.status(400).json({ error: 'Title and instructions are required.' });
+
+  const updated = await prisma.assignment.update({
+    where: { id: assignment.id },
+    data: {
+      title, instructions, dueAt: dueAt ? new Date(dueAt) : null,
+      kind: kind === 'PROJECT' ? 'PROJECT' : 'ASSIGNMENT',
+      sentAt: send === true ? new Date() : null,
+    },
+  });
+  if (send === true) {
+    const students = await prisma.enrollment.findMany({ where: { courseId: assignment.courseId }, select: { studentId: true } });
+    const label = updated.kind === 'PROJECT' ? 'New project posted' : 'New assignment posted';
+    await notifyMany(students.map((s) => s.studentId), label, title, 'my-dashboard');
+  }
+  res.json({ assignment: updated });
+});
+
+// Sends (or resends) an already-created assignment/project to its class.
+router.post('/assignments/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const assignment = await prisma.assignment.findUnique({ where: { id: req.params.id } });
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  if (assignment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'You can only send assignments you created.' });
+  }
+  const updated = await prisma.assignment.update({ where: { id: assignment.id }, data: { sentAt: assignment.sentAt || new Date() } });
+  const students = await prisma.enrollment.findMany({ where: { courseId: assignment.courseId }, select: { studentId: true } });
+  const label = assignment.kind === 'PROJECT' ? 'New project posted' : 'New assignment posted';
+  await notifyMany(students.map((s) => s.studentId), label, assignment.title, 'my-dashboard');
+  res.json({ assignment: updated });
 });
 
 // One assignment's full detail + the caller's own submission -- powers a click-through
