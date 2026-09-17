@@ -85,6 +85,19 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // Show/hide toggle for every password field -- delegated on document so it works
+  // for any .password-field/.pw-toggle-btn pair regardless of which screen rendered
+  // it or when, with nothing to wire up per-field.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pw-toggle-btn');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('input');
+    if (!input) return;
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.textContent = showing ? '👁' : '🙈';
+  });
+
   // MCQ option letters -- always A/B/C/D (E/F as a fallback for any question with
   // more than 4 options), matching PassNow's exam-taking convention.
   const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -2858,9 +2871,9 @@
       <div class="page-head"><h1>Change Password</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to Settings</button></div>
       <div class="card" style="padding:24px; max-width:480px;">
         <form id="password-form">
-          <div class="field"><label>Current password</label><input type="password" id="pw-current" required></div>
-          <div class="field"><label>New password</label><input type="password" id="pw-new" required minlength="6"></div>
-          <div class="field"><label>Confirm new password</label><input type="password" id="pw-confirm" required minlength="6"></div>
+          <div class="field"><label>Current password</label><div class="password-field"><input type="password" id="pw-current" required><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+          <div class="field"><label>New password</label><div class="password-field"><input type="password" id="pw-new" required minlength="6"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+          <div class="field"><label>Confirm new password</label><div class="password-field"><input type="password" id="pw-confirm" required minlength="6"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
           <button class="btn btn-primary" type="submit">Update password</button>
         </form>
       </div>
@@ -6087,7 +6100,7 @@
           <div class="field"><label>Full name</label><input type="text" id="aa-name" required></div>
           <div class="field"><label>Email</label><input type="email" id="aa-email" required></div>
           <div class="field"><label>Phone number</label><input type="tel" id="aa-phone"></div>
-          <div class="field"><label>Password</label><input type="password" id="aa-password" required minlength="6"></div>
+          <div class="field"><label>Password</label><div class="password-field"><input type="password" id="aa-password" required minlength="6"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
           <p class="meta" style="margin-bottom:10px;">Give this email and password to the new admin -- that's what they'll log in with.</p>
           <button class="btn btn-primary" type="submit">Add admin</button>
         </form>
