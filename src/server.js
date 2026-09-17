@@ -35,7 +35,15 @@ app.use(cors());
 // to parse JSON for every other route.
 app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// No Cache-Control at all meant browsers could apply their own heuristic caching to
+// app.js/app.html/etc. and keep serving an already-loaded copy across page loads --
+// invisible to whoever's testing, and indistinguishable from a fix "not actually
+// working" when it was really just stale cached JS. Forcing revalidation on every
+// load is cheap (still a fast 304 via ETag/Last-Modified when nothing changed) and
+// guarantees a real refresh always gets whatever was just deployed.
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 app.use('/api/auth', authRoutes);
 app.use('/api', academicsRoutes);
