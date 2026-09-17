@@ -34,12 +34,27 @@
   .tab-btn { flex: 1; border: none; background: transparent; padding: 8px 10px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); cursor: pointer; }
   .tab-btn.active { background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow); }
   .error-box { background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 14px; }
+  .notif-bell-btn { position: relative; background: transparent; border: none; font-size: 1.2rem; cursor: pointer; padding: 4px; line-height: 1; }
+  .notif-badge { position: absolute; top: -3px; right: -4px; background: var(--danger); color: #fff; font-size: 0.62rem; font-weight: 700; border-radius: 999px; padding: 1px 5px; min-width: 15px; text-align: center; }
+  .notif-panel { position: absolute; top: 34px; right: 0; width: 280px; max-height: 320px; overflow-y: auto; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); z-index: 50; }
+  .notif-item { padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; text-align: left; }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item.unread { background: var(--accent-soft); }
+  .notif-item .notif-title { font-weight: 600; font-size: 0.83rem; }
+  .notif-item .notif-body { font-size: 0.76rem; color: var(--ink-soft); margin-top: 2px; }
+  .notif-item .notif-time { font-size: 0.68rem; color: var(--ink-soft); margin-top: 4px; }
 </style>
 </head>
 <body>
 
 <div class="card apply-box" id="box">
-  <div class="brand">Learnza</div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <div class="brand">Learnza</div>
+    <div style="position:relative;">
+      <button id="apt-notif-bell" class="notif-bell-btn" hidden title="Notifications">🔔<span class="notif-badge" id="apt-notif-badge" hidden>0</span></button>
+      <div id="apt-notif-panel" class="notif-panel" hidden></div>
+    </div>
+  </div>
   <div class="muted" style="font-size:0.85rem; margin-bottom:18px;">Apply for admission</div>
   <div id="view"></div>
 </div>
@@ -67,8 +82,62 @@
     return data;
   }
 
-  function setToken(t) { token = t; localStorage.setItem('applicant_token', t); }
-  function signOut() { token = null; localStorage.removeItem('applicant_token'); renderAuth(); }
+  function setToken(t) { token = t; localStorage.setItem('applicant_token', t); refreshApplicantNotifications(); }
+  function signOut() {
+    token = null;
+    localStorage.removeItem('applicant_token');
+    document.getElementById('apt-notif-bell').hidden = true;
+    document.getElementById('apt-notif-panel').hidden = true;
+    renderAuth();
+  }
+
+  // ---------------- Notification bell -- the in-app counterpart to the emails
+  // admissions.js already sends on every status change, so a status update reaches
+  // the applicant even if they don't happen to check their email. ----------------
+
+  function timeAgo(iso) {
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    const m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  }
+  async function refreshApplicantNotifications() {
+    if (!token) return;
+    try {
+      const { notifications, unreadCount } = await api('/applicant/notifications');
+      document.getElementById('apt-notif-bell').hidden = false;
+      const badge = document.getElementById('apt-notif-badge');
+      badge.hidden = unreadCount === 0;
+      badge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+      const panel = document.getElementById('apt-notif-panel');
+      panel.innerHTML = notifications.map((n) => `
+        <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}">
+          <div class="notif-title">${esc(n.title)}</div>
+          <div class="notif-body">${esc(n.body)}</div>
+          <div class="notif-time">${timeAgo(n.createdAt)}</div>
+        </div>
+      `).join('') || '<div class="notif-item"><span class="muted">No notifications yet.</span></div>';
+      panel.querySelectorAll('.notif-item[data-id]').forEach((item) => {
+        item.addEventListener('click', async () => {
+          try { await api(`/applicant/notifications/${item.dataset.id}/read`, { method: 'POST' }); } catch {}
+          refreshApplicantNotifications();
+        });
+      });
+    } catch { /* silent -- notifications are a convenience, not critical path */ }
+  }
+  document.getElementById('apt-notif-bell').addEventListener('click', () => {
+    const panel = document.getElementById('apt-notif-panel');
+    panel.hidden = !panel.hidden;
+  });
+  document.addEventListener('click', (e) => {
+    const panel = document.getElementById('apt-notif-panel');
+    const bell = document.getElementById('apt-notif-bell');
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== bell) panel.hidden = true;
+  });
+  // Catches a status change landing while the applicant is already sitting on their
+  // dashboard, same 20s cadence as the main app's notification bell.
+  setInterval(refreshApplicantNotifications, 20000);
 
   // ---------------- Auth (create account / log in) ----------------
 
@@ -394,7 +463,7 @@
   // browser, ?login=1 opens straight on the Log in tab instead of Create account, since
   // they're checking on an existing application, not starting a new one.
   const startedFromLoginLink = new URLSearchParams(location.search).get('login') === '1';
-  if (token) renderDashboard(); else renderAuth(startedFromLoginLink ? 'login' : 'register');
+  if (token) { renderDashboard(); refreshApplicantNotifications(); } else renderAuth(startedFromLoginLink ? 'login' : 'register');
 })();
 </script>
 </body>

@@ -21,6 +21,16 @@ async function notifyApplicantByEmail(email, subject, text) {
   }
 }
 
+// The in-app counterpart to the email above -- every school decision reached an
+// applicant only by email before, with nothing to see on the dashboard itself unless
+// they happened to re-check their application status. applicantId is nullable on
+// Application in the schema (pre-dates applicant accounts existing at all), so this
+// is a no-op for the rare row without one rather than a hard requirement.
+async function notifyApplicant(applicantId, title, body) {
+  if (!applicantId) return;
+  await prisma.applicantNotification.create({ data: { applicantId, title, body } });
+}
+
 // A generic, platform-level screening question -- not school-specific and not
 // configurable by admin, unlike the real aptitude test below. correctIndex never
 // leaves the server; it's only used to record iqCorrect for the admin's own reference.
@@ -154,6 +164,7 @@ router.post('/admin/admissions/:id/screen', requireAuth, requireRole('ADMIN'), a
   const application = await prisma.application.update({ where: { id: req.params.id }, data: { status: 'UNDER_REVIEW' } });
   notifyApplicantByEmail(application.email, 'Your Learnza application is under review',
     `Hi ${application.fullName},\n\nYour admission application is now under review. Log in to your applicant dashboard on Learnza anytime to check for updates.\n\n— Learnza`);
+  notifyApplicant(application.applicantId, 'Application under review', 'Your admission application is now under review.');
   res.json({ application });
 });
 
@@ -190,6 +201,7 @@ router.post('/admin/admissions/:id/accept', requireAuth, requireRole('ADMIN'), u
   });
   notifyApplicantByEmail(existing.email, 'Your Learnza application has been accepted',
     admissionAcceptedEmailText({ ...existing, admissionLetterUrl }));
+  notifyApplicant(existing.applicantId, 'Application accepted', `Congratulations! You've been offered provisional admission to ${existing.department.name}.`);
   res.json({ application });
 });
 
@@ -200,6 +212,7 @@ router.post('/admin/admissions/:id/reject', requireAuth, requireRole('ADMIN'), a
     data: { status: 'REJECTED', decidedAt: new Date(), rejectionReason: reason || null },
   });
   notifyApplicantByEmail(application.email, 'Update on your Learnza application', admissionRejectedEmailText(application));
+  notifyApplicant(application.applicantId, 'Update on your application', 'There is an update on your admission application -- log in to view it.');
   res.json({ application });
 });
 
@@ -213,6 +226,7 @@ router.post('/admin/admissions/:id/admission-letter', requireAuth, requireRole('
   const application = await prisma.application.update({ where: { id: existing.id }, data: { admissionLetterUrl: url } });
   notifyApplicantByEmail(existing.email, 'Your Learnza admission letter is ready',
     `Dear ${existing.fullName},\n\nYour admission letter is now available. Log in to your applicant dashboard on Learnza to download it.\n\n— Admissions Office`);
+  notifyApplicant(existing.applicantId, 'Admission letter ready', 'Your admission letter is now available to download from your dashboard.');
   res.json({ application });
 });
 
@@ -254,8 +268,32 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
   });
   notifyApplicantByEmail(application.email, 'Welcome to Learnza — your student account is ready',
     `Hi ${application.fullName},\n\nYour admission has been registered. You can now log in to Learnza with:\n\nEmail: ${user.email}\nMatric number: ${matricNumber}\nAccess code: ${accessCode}\nTemporary password: ${tempPassword}\n\nPlease log in and change your password as soon as possible.\n\n— Learnza`);
+  notifyApplicant(application.applicantId, 'Your student account is ready', 'Your admission has been registered -- check your email for your login details.');
 
   res.json({ user: { fullName: user.fullName, email: user.email, matricNumber }, accessCode, tempPassword });
+});
+
+// ---- Applicant's own notification bell: an in-app feed of every status change above,
+// so their dashboard doesn't rely purely on email having actually reached them. ----
+
+router.get('/applicant/notifications', requireApplicant, async (req, res) => {
+  const notifications = await prisma.applicantNotification.findMany({
+    where: { applicantId: req.applicant.id },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+  });
+  const unreadCount = await prisma.applicantNotification.count({ where: { applicantId: req.applicant.id, read: false } });
+  res.json({ notifications, unreadCount });
+});
+
+router.post('/applicant/notifications/:id/read', requireApplicant, async (req, res) => {
+  await prisma.applicantNotification.updateMany({ where: { id: req.params.id, applicantId: req.applicant.id }, data: { read: true } });
+  res.json({ ok: true });
+});
+
+router.post('/applicant/notifications/read-all', requireApplicant, async (req, res) => {
+  await prisma.applicantNotification.updateMany({ where: { applicantId: req.applicant.id, read: false }, data: { read: true } });
+  res.json({ ok: true });
 });
 
 // ---- Admission aptitude test: one bank per school. Editable in place for as long
@@ -338,6 +376,7 @@ router.post('/admin/admissions/:id/send-aptitude-test', requireAuth, requireRole
     : await prisma.aptitudeTestSubmission.create({ data: { testId: test.id, applicationId: application.id, sentAt: new Date() } });
   notifyApplicantByEmail(application.email, 'Your Learnza aptitude test is ready',
     `Hi ${application.fullName},\n\nYour school has sent your aptitude test. Log in to your applicant dashboard on Learnza to take it -- once you open it, you'll have 1 minute per question and it cannot be paused.\n\n— Learnza`);
+  notifyApplicant(application.applicantId, 'Aptitude test ready', 'Your school has sent your aptitude test -- log in to take it.');
   res.json({ submission });
 });
 
