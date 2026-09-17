@@ -394,6 +394,11 @@ model GroupMessage {
   fileName  String?
   fileMime  String?
   createdAt DateTime   @default(now())
+  // "Delete for everyone" clears the content but keeps the row (so the thread order
+  // still makes sense) and shows a placeholder to every member. "Delete for me" only
+  // hides it from the deleting member's own view via this per-user id list.
+  deletedForEveryone Boolean  @default(false)
+  deletedForIds      String[] @default([])
 }
 
 // courseId/individualCourseId are mutually exclusive, mirroring AiTeacherSession's

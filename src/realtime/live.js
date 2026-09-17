@@ -172,10 +172,16 @@ function attachLiveNamespace(io) {
     pendingEndTimers.delete(liveClassId);
     questionsByLiveClass.delete(liveClassId);
     watchersByLiveClass.delete(liveClassId);
-    await prisma.liveClass.updateMany({ where: { id: liveClassId, status: 'ACTIVE' }, data: { status: 'ENDED', endedAt: new Date() } });
-    nsp.to(`live:${liveClassId}`).emit('live:ended');
+    const endedAt = new Date();
+    // Read startedAt before the update so everyone (host and students alike) can be
+    // told how long the class actually ran, not just that it ended.
+    const liveClass = await prisma.liveClass.findUnique({ where: { id: liveClassId } });
+    const durationMin = liveClass ? Math.max(1, Math.round((endedAt - liveClass.startedAt) / 60000)) : 0;
+    await prisma.liveClass.updateMany({ where: { id: liveClassId, status: 'ACTIVE' }, data: { status: 'ENDED', endedAt } });
+    nsp.to(`live:${liveClassId}`).emit('live:ended', { durationMin });
     const room = nsp.adapter.rooms.get(`live:${liveClassId}`);
     if (room) for (const socketId of room) nsp.sockets.get(socketId)?.leave(`live:${liveClassId}`);
+    return durationMin;
   }
 
   // Exposed so the REST /live/:id/end route (src/routes/live.js) can trigger the

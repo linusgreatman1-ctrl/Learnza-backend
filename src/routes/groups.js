@@ -37,7 +37,8 @@ router.post('/groups/:id/join', requireAuth, requireRole('STUDENT'), async (req,
 
 router.get('/groups/:id/messages', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const messages = await prisma.groupMessage.findMany({
-    where: { groupId: req.params.id },
+    // Hide anything this member deleted "for me" -- everyone else still sees it.
+    where: { groupId: req.params.id, NOT: { deletedForIds: { has: req.user.id } } },
     include: { sender: { select: { fullName: true } } },
     orderBy: { createdAt: 'asc' },
   });
@@ -77,13 +78,28 @@ router.post('/groups/:id/messages/file', requireAuth, requireRole('STUDENT'), up
   res.json({ message, storage });
 });
 
-// A student can delete their own messages (text, file, or voice note) -- ownership
-// checked server-side regardless of what the client claims.
+// Delete for everyone: only the sender may do this, and it clears the content
+// (keeping the row so the thread order/placeholder still makes sense) rather than
+// removing the row outright. Delete for me: any member can hide it from just their
+// own view via deletedForIds, leaving it untouched for everyone else. Ownership for
+// "everyone" is checked server-side regardless of what the client claims.
 router.delete('/groups/:groupId/messages/:messageId', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const message = await prisma.groupMessage.findUnique({ where: { id: req.params.messageId } });
   if (!message || message.groupId !== req.params.groupId) return res.status(404).json({ error: 'Message not found' });
-  if (message.senderId !== req.user.id) return res.status(403).json({ error: 'You can only delete your own messages.' });
-  await prisma.groupMessage.delete({ where: { id: message.id } });
+  if (req.query.for === 'everyone') {
+    if (message.senderId !== req.user.id) return res.status(403).json({ error: 'You can only delete your own messages for everyone.' });
+    await prisma.groupMessage.update({
+      where: { id: message.id },
+      data: { deletedForEveryone: true, body: null, fileUrl: null, fileName: null, fileMime: null },
+    });
+  } else {
+    if (!message.deletedForIds.includes(req.user.id)) {
+      await prisma.groupMessage.update({
+        where: { id: message.id },
+        data: { deletedForIds: { push: req.user.id } },
+      });
+    }
+  }
   res.json({ ok: true });
 });
 

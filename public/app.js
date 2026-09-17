@@ -1686,6 +1686,29 @@
     live = null;
   }
 
+  // Stops the host's local recorder (if any) and resolves with the finished video
+  // Blob once the last chunk has flushed -- resolves null when nothing was recorded
+  // (unsupported browser, or the recorder was never started) so callers can just
+  // check truthiness rather than branching on support themselves.
+  function stopRecordingAndGetBlob() {
+    return new Promise((resolve) => {
+      if (!live || !live.recorder || live.recorder.state === 'inactive') return resolve(null);
+      live.recorder.onstop = () => resolve(new Blob(live.recordedChunks, { type: 'video/webm' }));
+      live.recorder.stop();
+    });
+  }
+
+  async function uploadLiveRecording(liveClassId, blob) {
+    const fd = new FormData();
+    fd.append('video', blob, 'recording.webm');
+    try {
+      await api(`/live/${liveClassId}/recording`, { method: 'POST', body: fd });
+      toast('Class recording saved — students can rewatch and download it from their dashboard.');
+    } catch {
+      toast('Could not save the class recording.');
+    }
+  }
+
   async function renderLiveClass() {
     const { courseId, liveClassId, isHost, title } = state.view;
     view.innerHTML = `
@@ -1730,7 +1753,15 @@
       // before disconnecting -- that emit can race the disconnect and never reach
       // the server, leaving the class stuck "live" for students.
       if (isHost) {
-        try { await api(`/live/${liveClassId}/end`, { method: 'POST' }); } catch {}
+        const recordingBlob = await stopRecordingAndGetBlob();
+        try {
+          const { durationMin } = await api(`/live/${liveClassId}/end`, { method: 'POST' });
+          if (durationMin) toast(`Class ended — it lasted ${durationMin} minute${durationMin === 1 ? '' : 's'}.`);
+        } catch {}
+        // Uploading can take a while for a longer class -- fired without waiting so
+        // "End class" doesn't stall on it; the upload keeps running in the
+        // background after navigate() below since this is a same-page SPA route.
+        if (recordingBlob && recordingBlob.size > 0) uploadLiveRecording(liveClassId, recordingBlob);
       }
       teardownLive();
       navigate('course-detail', { courseId });
@@ -1819,6 +1850,23 @@
 
   function removeVideoTile(id) {
     document.getElementById('tile-' + id)?.remove();
+  }
+
+  // Student-side: a toggle on their one video tile (the lecturer's feed) to grow it
+  // beyond its already-larger default size, and shrink it back -- CSS-only (see
+  // .video-tile.expanded in app.html), so it works the same on every browser without
+  // depending on the Fullscreen API.
+  function addExpandToggleButton(tileId) {
+    const tile = document.getElementById('tile-' + tileId);
+    if (!tile || tile.querySelector('.expand-toggle-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost btn-sm expand-toggle-btn';
+    btn.textContent = '⤢ Expand';
+    btn.addEventListener('click', () => {
+      const expanded = tile.classList.toggle('expanded');
+      btn.textContent = expanded ? '⤡ Collapse' : '⤢ Expand';
+    });
+    tile.appendChild(btn);
   }
 
   // Host-side: one button per student tile to call them on to speak. While a student
@@ -1911,8 +1959,8 @@
       if (err.code === 'SUBSCRIPTION_REQUIRED') { teardownLive(); renderUpgradePrompt(err.message); }
     });
     socket.on('chat:message', ({ from, role, text }) => appendLiveChat(from, role, text));
-    socket.on('live:ended', () => {
-      toast('The live class has ended.');
+    socket.on('live:ended', ({ durationMin } = {}) => {
+      toast(durationMin ? `The live class has ended — it lasted ${durationMin} minute${durationMin === 1 ? '' : 's'}.` : 'The live class has ended.');
       teardownLive();
       navigate('course-detail', { courseId });
     });
@@ -1946,6 +1994,21 @@
       live.speakerInboundPcs = new Map(); // speaking student's socket id -> pc receiving their mic
       live.relayPcs = new Map(); // "speakerId:listenerId" -> pc sending that speaker's audio on to one listener
       addVideoTile('self', 'You (host)', live.localStream, true);
+
+      // Record the lecturer's own camera/mic locally throughout the class -- there's
+      // no central media server that sees every stream (see the star-topology note
+      // above), so this is the only feed worth recording. Uploaded once the class
+      // ends (see the leave-btn handler) so students can rewatch/download it from
+      // their dashboard. Recording is best-effort: unsupported browsers just skip it
+      // rather than blocking the live class itself.
+      live.recordedChunks = [];
+      try {
+        live.recorder = new MediaRecorder(live.localStream, { mimeType: 'video/webm;codecs=vp8,opus' });
+        live.recorder.ondataavailable = (e) => { if (e.data.size) live.recordedChunks.push(e.data); };
+        live.recorder.start();
+      } catch {
+        live.recorder = null;
+      }
 
       socket.on('student:joined', async ({ studentSocketId, studentName }) => {
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -1986,6 +2049,10 @@
         pc.ontrack = (e) => {
           const audioTrack = e.streams[0].getAudioTracks()[0];
           if (!audioTrack) return;
+          // The lecturer invited this student to speak specifically to hear them --
+          // relaying only to the OTHER students (below) and never playing it back
+          // for the host themselves left the lecturer unable to hear anyone at all.
+          playRelayedAudio(studentSocketId, e.streams[0]);
           live.peers.forEach((_listenerMainPc, listenerId) => {
             if (listenerId === studentSocketId) return;
             relaySpeakerToListener(studentSocketId, listenerId, audioTrack, e.streams[0]);
@@ -2017,6 +2084,7 @@
         live.relayPcs.forEach((pc, key) => {
           if (key.startsWith(`${studentSocketId}:`)) { pc.close(); live.relayPcs.delete(key); }
         });
+        removeRelayedAudio(studentSocketId);
         resetInviteToSpeakButton(studentSocketId);
       });
     } else {
@@ -2042,7 +2110,7 @@
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         live.peers.set(from, pc);
         pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: from, candidate: e.candidate }); };
-        pc.ontrack = (e) => addVideoTile('host', 'Lecturer', e.streams[0], false);
+        pc.ontrack = (e) => { addVideoTile('host', 'Lecturer', e.streams[0], false); addExpandToggleButton('host'); };
         await pc.setRemoteDescription(offer);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -2912,9 +2980,14 @@
     }
     function lessonRowHtml(l) {
       return `
-          <div class="list-row" data-open-lesson="${l.id}" data-course="${l.courseId}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(l.title)}</div><div class="meta">${esc(l.course.code)}${l.author ? ` · ${esc(l.author.fullName)}` : ''} · ${new Date(l.createdAt).toLocaleDateString()}</div></div>
-            <span class="pill pill-muted">▶ Watch</span>
+          <div class="list-row" style="align-items:center;">
+            <div data-open-lesson="${l.id}" data-course="${l.courseId}" style="cursor:pointer; flex:1;">
+              <div style="font-weight:600;">${esc(l.title)}</div><div class="meta">${esc(l.course.code)}${l.author ? ` · ${esc(l.author.fullName)}` : ''} · ${new Date(l.createdAt).toLocaleDateString()}</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="pill pill-muted" data-open-lesson="${l.id}" data-course="${l.courseId}" style="cursor:pointer;">▶ Watch</span>
+              <a class="pill pill-muted" href="${esc(l.videoUrl)}" download target="_blank" rel="noopener" title="Download">⬇ Download</a>
+            </div>
           </div>`;
     }
     function notificationRowHtml(n) {
@@ -4060,20 +4133,32 @@
   function groupMessageBubbleHtml(m) {
     const isMine = m.senderId === state.user.id;
     const sender = `<div class="sender">${esc(m.sender.fullName)}</div>`;
-    // Own messages (text, file, or voice note alike) get a delete button -- ownership
-    // is re-checked server-side regardless of this client-side flag.
-    const deleteBtn = isMine ? `<button class="btn btn-ghost btn-sm" data-delete-msg="${m.id}" style="margin-top:4px; padding:2px 8px; font-size:0.72rem;" title="Delete">🗑️ Delete</button>` : '';
-    if (!m.fileUrl) return `<div class="chat-msg">${sender}${esc(m.body)}${deleteBtn}</div>`;
+    if (m.deletedForEveryone) {
+      return `<div class="chat-msg">${sender}<span class="muted" style="font-style:italic;">🚫 This message was deleted</span></div>`;
+    }
+    // Every message gets a delete control with two choices -- "for me" (hide from
+    // just this member's own view) available to anyone, and "for everyone" (clears
+    // the content for the whole group) restricted to the sender, re-checked
+    // server-side regardless of what this menu shows.
+    const deleteMenu = `
+      <span style="position:relative; display:inline-block; margin-top:4px;">
+        <button class="btn btn-ghost btn-sm" data-toggle-delete-menu="${m.id}" style="padding:2px 8px; font-size:0.72rem;" title="Delete">🗑️ Delete</button>
+        <div class="delete-menu-options" id="delete-menu-${m.id}" hidden style="position:absolute; bottom:100%; left:0; background:var(--surface,#fff); border:1px solid var(--border,#ddd); border-radius:8px; padding:4px; z-index:5; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+          <button class="btn btn-ghost btn-sm" data-delete-msg="${m.id}" data-delete-mode="me" style="display:block; width:100%; text-align:left;">Delete for me</button>
+          ${isMine ? `<button class="btn btn-ghost btn-sm" data-delete-msg="${m.id}" data-delete-mode="everyone" style="display:block; width:100%; text-align:left;">Delete for everyone</button>` : ''}
+        </div>
+      </span>`;
+    if (!m.fileUrl) return `<div class="chat-msg">${sender}${esc(m.body)}${deleteMenu}</div>`;
     const isImage = (m.fileMime || '').startsWith('image/');
     const isVideo = (m.fileMime || '').startsWith('video/');
     const isAudio = (m.fileMime || '').startsWith('audio/');
-    if (isAudio) return `<div class="chat-msg">${sender}<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">🎙️ <audio controls src="${esc(m.fileUrl)}" style="height:32px; max-width:220px;"></audio></div>${deleteBtn}</div>`;
+    if (isAudio) return `<div class="chat-msg">${sender}<div style="margin-top:6px; display:flex; align-items:center; gap:6px;">🎙️ <audio controls src="${esc(m.fileUrl)}" style="height:32px; max-width:220px;"></audio></div>${deleteMenu}</div>`;
     const preview = isImage
       ? `<img src="${esc(m.fileUrl)}" alt="${esc(m.fileName)}" style="max-width:220px; max-height:220px; border-radius:8px; display:block; margin-top:6px;">`
       : isVideo
         ? `<video src="${esc(m.fileUrl)}" controls style="max-width:220px; border-radius:8px; display:block; margin-top:6px;"></video>`
         : `<div style="margin-top:6px;">📎 ${esc(m.fileName)}</div>`;
-    return `<div class="chat-msg">${sender}${preview}<a href="${esc(m.fileUrl)}" target="_blank" rel="noopener" style="font-size:0.78rem; text-decoration:underline; display:block; margin-top:4px;">⬇ Download</a>${deleteBtn}</div>`;
+    return `<div class="chat-msg">${sender}${preview}<a href="${esc(m.fileUrl)}" target="_blank" rel="noopener" style="font-size:0.78rem; text-decoration:underline; display:block; margin-top:4px;">⬇ Download</a>${deleteMenu}</div>`;
   }
 
   async function renderGroupChat() {
@@ -4096,11 +4181,20 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('groups'));
     const box = document.getElementById('chat-messages');
     box.scrollTop = box.scrollHeight;
+    view.querySelectorAll('[data-toggle-delete-menu]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = document.getElementById('delete-menu-' + btn.dataset.toggleDeleteMenu);
+        view.querySelectorAll('.delete-menu-options').forEach((m) => { if (m !== menu) m.hidden = true; });
+        if (menu) menu.hidden = !menu.hidden;
+      });
+    });
     view.querySelectorAll('[data-delete-msg]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm('Delete this message?')) return;
+        const mode = btn.dataset.deleteMode;
+        if (mode === 'everyone' && !confirm('Delete this message for everyone?')) return;
         try {
-          await api(`/groups/${state.view.groupId}/messages/${btn.dataset.deleteMsg}`, { method: 'DELETE' });
+          await api(`/groups/${state.view.groupId}/messages/${btn.dataset.deleteMsg}?for=${mode}`, { method: 'DELETE' });
           renderGroupChat();
         } catch (err) { toast(err.message); }
       });
