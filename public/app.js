@@ -426,6 +426,7 @@
       ['admin-student-requests', 'Student Requests'],
       ['admin-hostel-allocations', 'Hostels'],
       ['admin-results', 'Results'],
+      ['admin-announce', 'Announce'],
       ['admin-bulk-message', 'Bulk SMS/Email'],
       ['admin-management', 'Admin Management'],
       ['settings', 'Settings'],
@@ -694,6 +695,7 @@
         case 'admin-results': return renderAdminResults();
         case 'admin-student-results': return renderAdminStudentResults();
         case 'admin-student-activity': return renderAdminStudentActivity();
+        case 'admin-announce': return renderAdminAnnounce();
         case 'admin-bulk-message': return renderAdminBulkMessage();
         case 'admin-management': return renderAdminManagement();
         default: view.innerHTML = '<p>Not found.</p>';
@@ -6972,6 +6974,58 @@
     const sendBtn = container.querySelector('#sr-save-send');
     if (sendBtn) sendBtn.addEventListener('click', () => saveResult(true));
     container.querySelector('#sr-save').addEventListener('click', () => saveResult(false));
+  }
+
+  // A quick school-wide broadcast -- title + message + who it goes to, nothing else.
+  // Reuses the same /admin/bulk-message endpoint "Bulk SMS/Email" uses (an in-app
+  // notification to the whole audience), just always in-app and never narrowed by
+  // department -- that fuller control still lives on the Bulk SMS/Email page for
+  // when admin actually wants Email/SMS too.
+  async function renderAdminAnnounce() {
+    view.innerHTML = `
+      <div class="page-head"><h1>Announce</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Send an announcement to every student, every academic (lecturer) or non-academic staff member, or the whole school. Delivered as an in-app notification right away.</p>
+      <div class="card" style="padding:20px; max-width:560px;">
+        <form id="announce-form">
+          <div class="field">
+            <label>Audience</label>
+            <select id="ann-audience">
+              <option value="STUDENTS">All students</option>
+              <option value="ACADEMIC_STAFF">All academic staff (lecturers)</option>
+              <option value="NON_ACADEMIC_STAFF">All non-academic staff</option>
+              <option value="EVERYONE">Everyone</option>
+            </select>
+          </div>
+          <div class="field"><label>Title</label><input type="text" id="ann-title" required placeholder="e.g. Resumption date changed"></div>
+          <div class="field"><label>Message</label><textarea id="ann-body" required rows="5"></textarea></div>
+          <button class="btn btn-primary" type="submit" id="ann-send-btn">Send announcement</button>
+        </form>
+        <div id="ann-result" style="margin-top:16px;"></div>
+      </div>
+    `;
+    document.getElementById('announce-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('ann-title').value.trim();
+      const body = document.getElementById('ann-body').value.trim();
+      if (!title || !body) return toast('Title and message are required.');
+      const btn = document.getElementById('ann-send-btn');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      try {
+        const result = await api('/admin/bulk-message', {
+          method: 'POST',
+          body: { audience: document.getElementById('ann-audience').value, channels: ['IN_APP'], subject: title, body },
+        });
+        document.getElementById('ann-result').innerHTML = `<div class="hint-box">Sent to ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}.</div>`;
+        toast('Announcement sent');
+        document.getElementById('announce-form').reset();
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send announcement';
+      }
+    });
   }
 
   // Broadcasts to a whole audience at once (all students, all academic staff, all
