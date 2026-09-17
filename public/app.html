@@ -2,6 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+  // Redirect-before-paint guard: app.js's own version of this check (bottom of the
+  // file) only runs after the browser has already parsed and painted this page's
+  // static markup -- the login screen -- so a fresh/bookmarked visit briefly flashed
+  // it before bouncing to index.html. Running the identical decision here, as the
+  // very first thing in <head>, makes the redirect happen before that markup ever
+  // paints. Kept in sync with the session-reading logic at the top of app.js.
+  (function () {
+    try {
+      var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      var isReload = nav ? nav.type === 'reload' : (performance.navigation ? performance.navigation.type === 1 : true);
+      var token = sessionStorage.getItem('vp_token') || (isReload ? localStorage.getItem('vp_token') : null);
+      var fromIntro = new URLSearchParams(location.search).get('from') === 'intro';
+      if (!token && !fromIntro) location.replace('index.html');
+    } catch (e) { /* fall through to app.js's own check */ }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23142033'/%3E%3Ctext x='32' y='46' font-family='Georgia, Cambria, serif' font-size='36' font-weight='700' fill='%23e3ac4c' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
 <title>Learnza — App</title>
@@ -124,9 +141,21 @@
   /* Keeps both sides' video pinned in place while everything else (questions, Q&A,
      chat) scrolls underneath it, instead of the video scrolling away with the page. */
   .live-stage { position: sticky; top: 0; z-index: 20; background: var(--paper); padding-bottom: 6px; }
-  .live-stage .page-head { position: static; padding: 14px 0 4px; margin-bottom: 8px; }
+  /* padding-top/bottom only (not the shorthand) -- the shorthand would zero out
+     padding-right and silently override the desktop rule further down that clears
+     .notif-bell-desktop, letting the bell sit on top of the End class/Leave button. */
+  .live-stage .page-head { position: static; padding-top: 14px; padding-bottom: 4px; margin-bottom: 8px; }
   .live-chat { display: flex; flex-direction: column; height: 300px; }
   .live-chat .chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  /* Stacked (video, then questions/Q&A/chat below it) on narrow screens; side by side
+     on desktop, matching the "text belongs beside the video, not under it" request --
+     the video column keeps its own sticky pin either way. */
+  .live-layout { display: flex; flex-direction: column; gap: 16px; }
+  @media (min-width: 761px) {
+    .live-layout { flex-direction: row; align-items: flex-start; }
+    .live-video-col { flex: 1 1 58%; min-width: 0; }
+    .live-side-col { flex: 1 1 360px; max-width: 420px; display: flex; flex-direction: column; }
+  }
 
   .id-card { background: #142033; color: #faf7f0; border-radius: 18px; padding: 26px; max-width: 420px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
   .id-card::after { content: ""; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #e3ac4c33, transparent 70%); }

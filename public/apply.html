@@ -2,6 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+  // Same "redirect before paint" guard as app.html: a genuine reload (checking status
+  // mid-application, or refreshing during a timed aptitude test) must never bounce
+  // away, but a fresh/bookmarked visit -- no ?from=intro marker -- should land on the
+  // introduction page first rather than straight on the raw apply/login form.
+  (function () {
+    try {
+      var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      var isReload = nav ? nav.type === 'reload' : (performance.navigation ? performance.navigation.type === 1 : true);
+      var fromIntro = new URLSearchParams(location.search).get('from') === 'intro';
+      if (!isReload && !fromIntro) location.replace('index.html');
+    } catch (e) { /* fall through to the page's own render */ }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23142033'/%3E%3Ctext x='32' y='46' font-family='Georgia, Cambria, serif' font-size='36' font-weight='700' fill='%23e3ac4c' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
 <title>Apply — Learnza</title>
@@ -130,6 +144,7 @@
         <p class="muted" style="margin:10px 0 18px;">You haven't applied yet. Fill in your application details, upload your O-level result, and answer a short screening question to get started.</p>
         <button class="btn btn-primary" id="apply-btn" style="width:100%; justify-content:center;">Apply for Admission</button>
         <button class="btn btn-ghost" id="signout-btn" style="width:100%; justify-content:center; margin-top:10px;">Sign out</button>
+        <a class="btn btn-ghost" href="index.html" style="width:100%; justify-content:center; margin-top:10px;">← Back to Learnza</a>
       `;
       document.getElementById('apply-btn').addEventListener('click', renderApplyForm);
       document.getElementById('signout-btn').addEventListener('click', signOut);
@@ -148,6 +163,7 @@
       ${decisionMessageHtml(application)}
       <div id="aptitude-box"></div>
       <button class="btn btn-ghost" id="signout-btn" style="width:100%; justify-content:center; margin-top:14px;">Sign out</button>
+      <a class="btn btn-ghost" href="index.html" style="width:100%; justify-content:center; margin-top:10px;">← Back to Learnza</a>
     `;
     document.getElementById('signout-btn').addEventListener('click', signOut);
     renderAptitudeBox(sub, application.aptitudeScheduledAt);

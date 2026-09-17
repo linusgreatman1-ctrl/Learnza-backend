@@ -1687,6 +1687,16 @@
     if (live.socket) live.socket.disconnect();
     document.getElementById('speaking-banner')?.remove();
     document.querySelectorAll('[id^="relay-audio-"]').forEach((el) => el.remove());
+    // Closing a peer connection does not stop the remote tracks it already delivered,
+    // nor clear whatever <video> is still holding them -- a student's screen could
+    // keep showing the lecturer's last frame after class ends otherwise, briefly
+    // outliving the navigate() away from this screen. Explicitly stop and detach
+    // every tile's stream so nothing lingers regardless of that timing.
+    document.querySelectorAll('.video-tile video').forEach((v) => {
+      if (v.srcObject) v.srcObject.getTracks().forEach((t) => t.stop());
+      v.srcObject = null;
+    });
+    document.getElementById('video-grid')?.replaceChildren();
     live = null;
   }
 
@@ -1716,39 +1726,45 @@
   async function renderLiveClass() {
     const { courseId, liveClassId, isHost, title } = state.view;
     view.innerHTML = `
-      <div class="live-stage">
-        <div class="page-head">
-          <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span class="pill pill-muted" id="live-watching-pill">👀 0 watching</span>
-            <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+      <div class="live-layout">
+        <div class="live-video-col">
+          <div class="live-stage">
+            <div class="page-head">
+              <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span class="pill pill-muted" id="live-watching-pill">👀 0 watching</span>
+                <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+              </div>
+            </div>
+            <div class="video-grid" id="video-grid"></div>
           </div>
         </div>
-        <div class="video-grid" id="video-grid"></div>
-      </div>
-      ${isHost ? `
-        <div class="card" style="padding:12px 16px; margin-bottom:10px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-            <h3 style="font-size:0.95rem;">🙋 Student questions</h3>
-            <span class="pill pill-accent" id="live-question-count">0 waiting</span>
+        <div class="live-side-col">
+          ${isHost ? `
+            <div class="card" style="padding:12px 16px; margin-bottom:10px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <h3 style="font-size:0.95rem;">🙋 Student questions</h3>
+                <span class="pill pill-accent" id="live-question-count">0 waiting</span>
+              </div>
+              <div id="live-speaking-list"></div>
+              <div id="live-question-queue"><p class="muted">No questions yet.</p></div>
+            </div>
+          ` : ''}
+          <div id="live-qa-feed"></div>
+          <div class="card live-chat">
+            <div class="chat-messages" id="live-chat-messages"></div>
+            ${!isHost ? `
+              <form class="chat-input-row" id="live-question-form">
+                <input type="text" id="live-question-input" placeholder="Ask the lecturer a question…">
+                <button class="btn btn-accent btn-sm" type="submit">🙋 Ask</button>
+              </form>
+            ` : ''}
+            <form class="chat-input-row" id="live-chat-form">
+              <input type="text" id="live-chat-input" placeholder="Message the class…">
+              <button class="btn btn-primary btn-sm" type="submit">Send</button>
+            </form>
           </div>
-          <div id="live-speaking-list"></div>
-          <div id="live-question-queue"><p class="muted">No questions yet.</p></div>
         </div>
-      ` : ''}
-      <div id="live-qa-feed"></div>
-      <div class="card live-chat">
-        <div class="chat-messages" id="live-chat-messages"></div>
-        ${!isHost ? `
-          <form class="chat-input-row" id="live-question-form">
-            <input type="text" id="live-question-input" placeholder="Ask the lecturer a question…">
-            <button class="btn btn-accent btn-sm" type="submit">🙋 Ask</button>
-          </form>
-        ` : ''}
-        <form class="chat-input-row" id="live-chat-form">
-          <input type="text" id="live-chat-input" placeholder="Message the class…">
-          <button class="btn btn-primary btn-sm" type="submit">Send</button>
-        </form>
       </div>
     `;
 
@@ -2099,6 +2115,12 @@
         });
         removeRelayedAudio(studentSocketId);
         live.speakingStudents.delete(studentSocketId);
+        // Clear their question off the queue entirely once they're done speaking --
+        // otherwise it just sat there re-showing "Invite to speak" for someone who'd
+        // already had the floor. They only reappear by raising their hand again.
+        Array.from(live.questions.entries()).forEach(([id, q]) => {
+          if (q.studentSocketId === studentSocketId) live.questions.delete(id);
+        });
         renderSpeakingList();
         renderQuestionQueue();
       });
@@ -2952,6 +2974,8 @@
       : [
           [assignments.filter((a) => !a.mySubmission).length, 'Assignments pending', '#dash-assignments'],
           [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate', '#dash-attendance'],
+          [(liveRecordings || []).length, 'Live class recordings', '#dash-recordings'],
+          [(lessons || []).length, 'Lectures', '#dash-lessons'],
           [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', '#dash-results'],
         ];
 

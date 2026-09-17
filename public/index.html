@@ -100,7 +100,7 @@
       <a href="#departments">Departments</a>
       <a href="#admin">For Schools</a>
       <a href="#pricing">Pricing</a>
-      <a href="apply.html?login=1">My Application</a>
+      <a href="apply.html?from=intro&login=1" data-my-application hidden>My Application</a>
     </nav>
     <div class="nav-right">
       <a class="btn btn-primary btn-sm" href="app.html?from=intro">Open Learnza</a>
@@ -112,10 +112,21 @@
     <a href="#departments">Departments</a>
     <a href="#admin">For Schools</a>
     <a href="#pricing">Pricing</a>
-    <a href="apply.html?login=1">My Application</a>
+    <a href="apply.html?from=intro&login=1" data-my-application hidden>My Application</a>
   </nav>
 </header>
 <script>
+  (function () {
+    // "My Application" only makes sense for someone who has actually started one --
+    // for a first-time visitor it's a dead end (there's nothing to check yet), so it
+    // stays hidden (default in the markup) unless this browser already holds an
+    // applicant session.
+    try {
+      if (localStorage.getItem('applicant_token')) {
+        document.querySelectorAll('[data-my-application]').forEach((el) => { el.hidden = false; });
+      }
+    } catch (e) { /* localStorage unavailable -- leave it hidden */ }
+  })();
   (function () {
     const toggle = document.getElementById('menu-toggle');
     const menu = document.getElementById('mobile-menu');
@@ -138,7 +149,7 @@
     <h1>Every department, every course — with an AI teacher who never misses a class.</h1>
     <p class="lead">Learnza gives students a full department-by-department curriculum with a free e-library, study groups, and CBT-style tests, plus a subscription-based interactive AI Teacher and recorded lectures — while lecturers teach, grade and set assessments, and the school runs admissions, records and staff oversight from one place.</p>
     <div class="hero-actions">
-      <a class="btn btn-accent" href="apply.html">Apply for admission</a>
+      <a class="btn btn-accent" href="apply.html?from=intro">Apply for admission</a>
       <a class="btn btn-ghost" href="app.html?from=intro#register">Learn independently instead</a>
     </div>
     <p class="muted" style="margin-top:14px; font-size:0.85rem;">Already registered, or a lecturer/school admin? <a href="app.html?from=intro" style="text-decoration:underline;">Log in</a>.</p>
@@ -206,7 +217,7 @@
     </div>
     <div class="card" style="margin-top:18px;">
       <div class="flow">
-        <div class="flow-step"><div class="idx">1</div><h4>Application</h4><p>Online screening &amp; acceptance — <a href="apply.html" style="text-decoration:underline;">apply here</a></p></div>
+        <div class="flow-step"><div class="idx">1</div><h4>Application</h4><p>Online screening &amp; acceptance — <a href="apply.html?from=intro" style="text-decoration:underline;">apply here</a></p></div>
         <div class="flow-step"><div class="idx">2</div><h4>Registration</h4><p>Course registration, digital ID issued</p></div>
         <div class="flow-step"><div class="idx">3</div><h4>Study</h4><p>Lessons, library, groups, live classes</p></div>
         <div class="flow-step"><div class="idx">4</div><h4>Assessment</h4><p>CA, mocks, semester exams</p></div>
@@ -255,7 +266,7 @@
         <p>Apply for admission at your school, or sign up free to learn independently.</p>
       </div>
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <a class="btn btn-accent" href="apply.html">Apply for admission</a>
+        <a class="btn btn-accent" href="apply.html?from=intro">Apply for admission</a>
         <a class="btn btn-ghost" href="app.html?from=intro#register" style="border-color:rgba(250,247,240,0.3); color:#faf7f0;">Learn independently</a>
       </div>
     </div>
@@ -264,7 +275,7 @@
 
 <footer class="container">
   <div>© 2026 Learnza</div>
-  <div style="display:flex; gap:16px;"><a href="apply.html?login=1">My Application</a><a href="app.html?from=intro">Open the app</a></div>
+  <div style="display:flex; gap:16px;"><a href="apply.html?from=intro&login=1" data-my-application hidden>My Application</a><a href="app.html?from=intro">Open the app</a></div>
 </footer>
 
 </body>
