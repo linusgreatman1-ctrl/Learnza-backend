@@ -6279,7 +6279,7 @@
           <div><div class="meta">Level</div><div>${esc(a.level)}</div></div>
           <div><div class="meta">Status</div><div>${esc(a.status.replace('_', ' '))}</div></div>
           <div><div class="meta">Applied</div><div class="tabular">${new Date(a.createdAt).toLocaleDateString()}</div></div>
-          <div><div class="meta">O-level result</div><div>${a.olevelResultUrl ? `${esc(a.olevelType || '')} — <a href="${esc(a.olevelResultUrl)}" target="_blank" rel="noopener">View upload</a>` : 'Not uploaded'}</div></div>
+          <div><div class="meta">O-level result</div><div>${a.olevelResultUrl ? `${esc(a.olevelType || '')} — <a href="${esc(a.olevelResultUrl)}" target="_blank" rel="noopener">View upload</a> · <a href="${esc(a.olevelResultUrl)}" download="${esc(a.fullName.replace(/\s+/g, '_'))}_Olevel${(a.olevelResultUrl.match(/\.[a-zA-Z0-9]+$/) || [''])[0]}">Download</a>` : 'Not uploaded'}</div></div>
           <div><div class="meta">Screening question</div><div>${a.iqAnswer != null ? (a.iqCorrect ? 'Answered correctly' : 'Answered') : '—'}</div></div>
           <div><div class="meta">Aptitude test</div><div>${aptitudeStatusHtml}</div></div>
         </div>
