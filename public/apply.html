@@ -65,7 +65,24 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   const view = document.getElementById('view');
-  let token = localStorage.getItem('applicant_token');
+  // Same per-tab session strategy as app.html: localStorage alone is shared by every
+  // tab of the site, so opening a fresh tab to register a *different* applicant was
+  // showing whichever applicant was already logged in via any other tab. sessionStorage
+  // is per-tab and wins when present; the localStorage fallback only kicks in on an
+  // actual reload of this same tab (never on a genuinely new one), and this tab's own
+  // sessionStorage is seeded from it immediately below so it stays independent of
+  // whatever any other tab does after.
+  function isPageReload() {
+    try {
+      const nav = performance.getEntriesByType('navigation')[0];
+      if (nav) return nav.type === 'reload';
+      if (performance.navigation) return performance.navigation.type === 1;
+    } catch { /* Performance/Navigation Timing unavailable */ }
+    return true;
+  }
+  const IS_RELOAD = isPageReload();
+  let token = sessionStorage.getItem('applicant_token') || (IS_RELOAD ? localStorage.getItem('applicant_token') : null);
+  if (token) sessionStorage.setItem('applicant_token', token);
   let examTimerHandle = null;
 
   async function api(path, opts = {}) {
@@ -82,9 +99,15 @@
     return data;
   }
 
-  function setToken(t) { token = t; localStorage.setItem('applicant_token', t); refreshApplicantNotifications(); }
+  function setToken(t) {
+    token = t;
+    sessionStorage.setItem('applicant_token', t);
+    localStorage.setItem('applicant_token', t);
+    refreshApplicantNotifications();
+  }
   function signOut() {
     token = null;
+    sessionStorage.removeItem('applicant_token');
     localStorage.removeItem('applicant_token');
     document.getElementById('apt-notif-bell').hidden = true;
     document.getElementById('apt-notif-panel').hidden = true;
