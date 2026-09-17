@@ -155,7 +155,15 @@
   function renderAptitudeBox(sub, scheduledAt) {
     const box = document.getElementById('aptitude-box');
     if (!box) return;
-    if (sub && sub.submittedAt) {
+    if (sub && sub.submittedAt && !sub.gradedAt) {
+      box.innerHTML = `
+        <div class="card" style="padding:18px;">
+          <div class="muted" style="font-size:0.78rem; text-transform:uppercase; margin-bottom:6px;">Aptitude test</div>
+          <p style="margin-bottom:6px;">Submitted ${new Date(sub.submittedAt).toLocaleString()}</p>
+          <p class="meta">Your school is still grading part of your test -- your score will appear here once that's done.</p>
+        </div>
+      `;
+    } else if (sub && sub.submittedAt) {
       box.innerHTML = `
         <div class="card" style="padding:18px;">
           <div class="muted" style="font-size:0.78rem; text-transform:uppercase; margin-bottom:6px;">Aptitude test</div>
@@ -287,7 +295,9 @@
     document.getElementById('at-questions').innerHTML = test.questions.map((q, qi) => `
       <div class="at-q" data-question="${q.id}">
         <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
-        ${q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+        ${q.questionType === 'THEORY'
+          ? `<textarea data-theory="${q.id}" rows="4" style="width:100%;" placeholder="Type your answer here"></textarea>`
+          : q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
       </div>
     `).join('');
     document.querySelectorAll('.at-opt').forEach((opt) => {
@@ -298,16 +308,23 @@
         answers[q] = Number(opt.dataset.opt);
       });
     });
+    document.querySelectorAll('[data-theory]').forEach((ta) => {
+      ta.addEventListener('input', () => { answers[ta.dataset.theory] = ta.value; });
+    });
     async function doSubmit(auto) {
       if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
-      const payload = Object.entries(answers).map(([questionId, choice]) => ({ questionId, choice }));
+      const payload = test.questions.map((q) => (
+        q.questionType === 'THEORY' ? { questionId: q.id, text: answers[q.id] || '' } : { questionId: q.id, choice: answers[q.id] }
+      )).filter((a) => (a.text !== undefined && a.text !== '') || a.choice !== undefined);
       try {
         const result = await api('/applicant/aptitude-test/submit', { method: 'POST', body: { answers: payload } });
         view.innerHTML = `
           <div class="confirm">
             <span class="pill pill-pass" style="margin-bottom:14px;">Test submitted</span>
             ${auto ? '<p class="muted" style="margin-bottom:8px;">Time was up -- submitted automatically.</p>' : ''}
-            <p style="font-size:1.6rem; font-weight:700;">${result.score}%</p>
+            ${result.pendingGrading
+              ? '<p class="muted">Your school is still grading part of your test -- your score will appear on your dashboard once that\'s done.</p>'
+              : `<p style="font-size:1.6rem; font-weight:700;">${result.score}%</p>`}
             <button class="btn btn-primary" id="to-dash-btn" style="width:100%; justify-content:center; margin-top:16px;">Go to my dashboard</button>
           </div>
         `;

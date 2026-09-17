@@ -5334,6 +5334,71 @@
     return { CA: 'assessment', Test: 'test', Mock: 'mock test', SEMESTER_EXAM: 'semester exam', PAST_QUESTION: 'past question set', Classwork: 'classwork', Quiz: 'quiz' }[allowedTypes[0]] || 'assessment';
   }
 
+  // Shared Objective/Theory question editor block -- used by the lecturer's
+  // assessment composer below and by the admin's aptitude-test composer, so both
+  // read the exact same segmented-toggle UI and question shape.
+  function questionBlock(i, q) {
+    const isTheory = q && q.questionType === 'THEORY';
+    const opts4 = q && !isTheory ? JSON.parse(q.options || '[]') : [];
+    return `<div class="field" data-question-block="${i}">
+      <label>Question ${i + 1}</label>
+      <div class="tabs q-type" data-value="${isTheory ? 'THEORY' : 'OBJECTIVE'}" style="margin:0 0 10px;">
+        <button type="button" class="tab-btn ${!isTheory ? 'active' : ''}" data-val="OBJECTIVE">Objective (multiple choice)</button>
+        <button type="button" class="tab-btn ${isTheory ? 'active' : ''}" data-val="THEORY">Theory (free response)</button>
+      </div>
+      <input type="text" class="q-text" placeholder="Question text" value="${esc(q ? q.text : '')}" required>
+      <div class="q-objective-fields" ${isTheory ? 'hidden' : ''}>
+        <input type="text" class="q-opt" placeholder="Option A" value="${esc(opts4[0] || '')}" style="margin-top:6px;">
+        <input type="text" class="q-opt" placeholder="Option B" value="${esc(opts4[1] || '')}" style="margin-top:6px;">
+        <input type="text" class="q-opt" placeholder="Option C" value="${esc(opts4[2] || '')}" style="margin-top:6px;">
+        <input type="text" class="q-opt" placeholder="Option D" value="${esc(opts4[3] || '')}" style="margin-top:6px;">
+        <select class="q-correct" style="margin-top:6px;">
+          <option value="0" ${q && q.correctIndex === 0 ? 'selected' : ''}>Correct: Option A</option><option value="1" ${q && q.correctIndex === 1 ? 'selected' : ''}>Correct: Option B</option>
+          <option value="2" ${q && q.correctIndex === 2 ? 'selected' : ''}>Correct: Option C</option><option value="3" ${q && q.correctIndex === 3 ? 'selected' : ''}>Correct: Option D</option>
+        </select>
+        <textarea class="q-explanation" placeholder="Briefly explain why this is correct (shown to students when they review mistakes)" style="margin-top:6px; width:100%;" rows="2">${esc(q ? q.explanation || '' : '')}</textarea>
+      </div>
+      <textarea class="q-model-answer" placeholder="Model answer (shown when grading, not to the applicant/student)" style="margin-top:6px; width:100%;" ${isTheory ? '' : 'hidden'} rows="2">${esc(isTheory ? (q.modelAnswer || '') : '')}</textarea>
+    </div>`;
+  }
+  // A visible segmented toggle rather than a native <select> that only ever shows
+  // its current value -- lecturers were missing that Theory was even an option
+  // since nothing on screen hinted a second choice existed behind the dropdown.
+  function wireQuestionTypeToggle(block) {
+    const typeToggle = block.querySelector('.q-type');
+    const objectiveFields = block.querySelector('.q-objective-fields');
+    const modelAnswer = block.querySelector('.q-model-answer');
+    typeToggle.querySelectorAll('.tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        typeToggle.dataset.value = btn.dataset.val;
+        typeToggle.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        const isTheory = btn.dataset.val === 'THEORY';
+        objectiveFields.hidden = isTheory;
+        modelAnswer.hidden = !isTheory;
+      });
+    });
+  }
+  // Reads every question block in a container back into the same shape the backend
+  // expects, filtering out any left fully blank (a stray "+ Add question" click with
+  // nothing typed in it).
+  function readQuestionBlocks(container) {
+    const blocks = container.querySelectorAll('[data-question-block]');
+    return Array.from(blocks).map((b) => {
+      const questionType = b.querySelector('.q-type').dataset.value;
+      const text = b.querySelector('.q-text').value;
+      if (questionType === 'THEORY') {
+        return { questionType, text, modelAnswer: b.querySelector('.q-model-answer').value };
+      }
+      return {
+        questionType,
+        text,
+        options: Array.from(b.querySelectorAll('.q-opt')).map((i) => i.value).filter(Boolean),
+        correctIndex: Number(b.querySelector('.q-correct').value),
+        explanation: b.querySelector('.q-explanation') ? (b.querySelector('.q-explanation').value.trim() || null) : null,
+      };
+    }).filter((q) => q.text && (q.questionType === 'THEORY' || q.options.length >= 2));
+  }
+
   // opts.existing (an already-loaded assessment with its full questions, e.g. from
   // GET /assessments/:id) switches this into edit mode: fields prefill, the course is
   // fixed (can't move a test to a different class), and saving PUTs in place instead
@@ -5344,47 +5409,6 @@
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     let qCount = 1;
-    function questionBlock(i, q) {
-      const isTheory = q && q.questionType === 'THEORY';
-      const opts4 = q && !isTheory ? JSON.parse(q.options || '[]') : [];
-      return `<div class="field" data-question-block="${i}">
-        <label>Question ${i + 1}</label>
-        <div class="tabs q-type" data-value="${isTheory ? 'THEORY' : 'OBJECTIVE'}" style="margin:0 0 10px;">
-          <button type="button" class="tab-btn ${!isTheory ? 'active' : ''}" data-val="OBJECTIVE">Objective (multiple choice)</button>
-          <button type="button" class="tab-btn ${isTheory ? 'active' : ''}" data-val="THEORY">Theory (free response)</button>
-        </div>
-        <input type="text" class="q-text" placeholder="Question text" value="${esc(q ? q.text : '')}" required>
-        <div class="q-objective-fields" ${isTheory ? 'hidden' : ''}>
-          <input type="text" class="q-opt" placeholder="Option A" value="${esc(opts4[0] || '')}" style="margin-top:6px;">
-          <input type="text" class="q-opt" placeholder="Option B" value="${esc(opts4[1] || '')}" style="margin-top:6px;">
-          <input type="text" class="q-opt" placeholder="Option C" value="${esc(opts4[2] || '')}" style="margin-top:6px;">
-          <input type="text" class="q-opt" placeholder="Option D" value="${esc(opts4[3] || '')}" style="margin-top:6px;">
-          <select class="q-correct" style="margin-top:6px;">
-            <option value="0" ${q && q.correctIndex === 0 ? 'selected' : ''}>Correct: Option A</option><option value="1" ${q && q.correctIndex === 1 ? 'selected' : ''}>Correct: Option B</option>
-            <option value="2" ${q && q.correctIndex === 2 ? 'selected' : ''}>Correct: Option C</option><option value="3" ${q && q.correctIndex === 3 ? 'selected' : ''}>Correct: Option D</option>
-          </select>
-          <textarea class="q-explanation" placeholder="Briefly explain why this is correct (shown to students when they review mistakes)" style="margin-top:6px; width:100%;" rows="2">${esc(q ? q.explanation || '' : '')}</textarea>
-        </div>
-        <textarea class="q-model-answer" placeholder="Model answer (shown to the student to self-review against)" style="margin-top:6px; width:100%;" ${isTheory ? '' : 'hidden'} rows="2">${esc(isTheory ? (q.modelAnswer || '') : '')}</textarea>
-      </div>`;
-    }
-    // A visible segmented toggle rather than a native <select> that only ever shows
-    // its current value -- lecturers were missing that Theory was even an option
-    // since nothing on screen hinted a second choice existed behind the dropdown.
-    function wireQuestionTypeToggle(block) {
-      const typeToggle = block.querySelector('.q-type');
-      const objectiveFields = block.querySelector('.q-objective-fields');
-      const modelAnswer = block.querySelector('.q-model-answer');
-      typeToggle.querySelectorAll('.tab-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          typeToggle.dataset.value = btn.dataset.val;
-          typeToggle.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
-          const isTheory = btn.dataset.val === 'THEORY';
-          objectiveFields.hidden = isTheory;
-          modelAnswer.hidden = !isTheory;
-        });
-      });
-    }
     const allowedTypes = opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION'];
     const kindLabel = assessmentKindLabel(allowedTypes);
     const lockedType = existing ? existing.type : (allowedTypes.length === 1 ? allowedTypes[0] : null);
@@ -5446,21 +5470,7 @@
     function close() { backdrop.remove(); container.remove(); }
     container.querySelector('#na-cancel').addEventListener('click', close);
     async function save(send) {
-      const blocks = container.querySelectorAll('[data-question-block]');
-      const questions = Array.from(blocks).map((b) => {
-        const questionType = b.querySelector('.q-type').dataset.value;
-        const text = b.querySelector('.q-text').value;
-        if (questionType === 'THEORY') {
-          return { questionType, text, modelAnswer: b.querySelector('.q-model-answer').value };
-        }
-        return {
-          questionType,
-          text,
-          options: Array.from(b.querySelectorAll('.q-opt')).map((i) => i.value).filter(Boolean),
-          correctIndex: Number(b.querySelector('.q-correct').value),
-          explanation: b.querySelector('.q-explanation').value.trim() || null,
-        };
-      }).filter((q) => q.text && (q.questionType === 'THEORY' || q.options.length >= 2));
+      const questions = readQuestionBlocks(container);
       if (!questions.length) { toast('Add at least one complete question'); return; }
       const title = container.querySelector('#na-title').value;
       try {
@@ -6264,8 +6274,11 @@
   async function renderAdminAdmissionDetail() {
     const { application: a } = await api(`/admin/admissions/${state.view.applicationId}`);
     const sub = a.aptitudeTestSubmission;
+    const needsGrading = sub && sub.submittedAt && !sub.gradedAt;
     const aptitudeStatusHtml = sub && sub.submittedAt
-      ? `${sub.score}% <span class="pill pill-pass" style="margin-left:6px;">Submitted</span>`
+      ? (needsGrading
+          ? `Submitted <span class="pill pill-accent" style="margin-left:6px;">Awaiting grading</span>`
+          : `${sub.score}% <span class="pill pill-pass" style="margin-left:6px;">Submitted</span>`)
       : sub && sub.sentAt
         ? `Sent, awaiting response <span class="pill pill-accent" style="margin-left:6px;">${sub.startedAt ? 'In progress' : 'Not started'}</span>`
         : 'Not sent yet';
@@ -6287,6 +6300,7 @@
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:18px;">
           ${a.status === 'SUBMITTED' ? `<button class="btn btn-ghost btn-sm" data-screen>Screen</button>` : ''}
           ${!sub || !sub.sentAt ? `<button class="btn btn-accent btn-sm" data-send-aptitude>Send aptitude test</button>` : ''}
+          ${needsGrading ? `<button class="btn btn-accent btn-sm" data-grade-aptitude>Grade theory answers</button>` : ''}
           ${['SUBMITTED', 'UNDER_REVIEW'].includes(a.status) ? `<button class="btn btn-primary btn-sm" data-accept>Accept</button><button class="btn btn-ghost btn-sm" data-reject>Reject</button>` : ''}
           ${a.status === 'ACCEPTED' ? `<button class="btn btn-accent btn-sm" data-register>Register as student</button>` : ''}
         </div>
@@ -6301,8 +6315,16 @@
         await api(`/admin/admissions/${a.id}/send-aptitude-test`, { method: 'POST' });
         toast('Aptitude test sent to the applicant');
         render();
-      } catch (err) { toast(err.message); }
+      } catch (err) {
+        // No test bank exists yet -- take the admin straight to where they set
+        // questions, with this applicant carried along so "Save and Send" there
+        // sends to them right away without a second trip back here.
+        if (err.code === 'NO_TEST_BANK') navigate('admin-aptitude-test', { forApplicationId: a.id });
+        else toast(err.message);
+      }
     });
+    const gradeAptitudeBtn = view.querySelector('[data-grade-aptitude]');
+    if (gradeAptitudeBtn) gradeAptitudeBtn.addEventListener('click', () => openGradeAptitudeDialog(a, sub));
     const acceptBtn = view.querySelector('[data-accept]');
     if (acceptBtn) acceptBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/accept`, { method: 'POST' }); toast('Accepted'); render(); });
     const rejectBtn = view.querySelector('[data-reject]');
@@ -6317,79 +6339,127 @@
     });
   }
 
+  // Only the THEORY questions need a decision here -- OBJECTIVE ones are already
+  // auto-graded at submit time. Each still carries a flat 10%, same as OBJECTIVE, so
+  // grading is just "award this one or not" per question, not a numeric score entry.
+  function openGradeAptitudeDialog(a, sub) {
+    const questions = sub.test.questions;
+    const theoryQuestions = questions.filter((q) => q.questionType === 'THEORY');
+    const answers = JSON.parse(sub.answers || '[]');
+    const answerMap = new Map(answers.map((x) => [x.questionId, x]));
+    const existingGrades = sub.theoryGrades ? JSON.parse(sub.theoryGrades) : {};
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:6px;">Grade theory answers</h3>
+      <p class="meta" style="margin-bottom:16px;">${esc(a.fullName)} — objective questions are already auto-graded; each theory question below is worth 10%, same as an objective one.</p>
+      ${theoryQuestions.map((q, i) => {
+        const ans = answerMap.get(q.id);
+        return `
+          <div class="field" data-grade-q="${esc(q.id)}" style="border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px;">
+            <label style="margin-bottom:8px;">${i + 1}. ${esc(q.text)}</label>
+            <div class="meta" style="margin-bottom:4px;">Applicant's answer</div>
+            <div style="white-space:pre-wrap; padding:10px; background:var(--paper); border-radius:8px; margin-bottom:8px;">${esc(ans && ans.text ? ans.text : '(no answer given)')}</div>
+            ${q.modelAnswer ? `<div class="meta" style="margin-bottom:10px;">Model answer: ${esc(q.modelAnswer)}</div>` : ''}
+            <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
+              <input type="checkbox" class="grade-correct" ${existingGrades[q.id] ? 'checked' : ''}>
+              Award full credit (10%)
+            </label>
+          </div>
+        `;
+      }).join('') || '<p class="muted">No theory questions to grade.</p>'}
+      <div style="display:flex; gap:10px; margin-top:6px;">
+        <button class="btn btn-primary" id="grade-save">Save grades</button>
+        <button class="btn btn-ghost" id="grade-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#grade-cancel').addEventListener('click', close);
+    container.querySelector('#grade-save').addEventListener('click', async () => {
+      const grades = theoryQuestions.map((q) => ({
+        questionId: q.id,
+        correct: container.querySelector(`[data-grade-q="${q.id}"] .grade-correct`).checked,
+      }));
+      try {
+        await api(`/admin/admissions/${a.id}/aptitude-test/grade`, { method: 'POST', body: { grades } });
+        toast('Grades saved');
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  // state.view.forApplicationId is set when this screen was reached from "Send
+  // aptitude test" on an application that has no test bank yet (see
+  // renderAdminAdmissionDetail) -- it changes the save options from a single
+  // "Save test" to "Save" (return to that application, still waiting to be sent) and
+  // "Save and Send" (save, then immediately send to that one applicant), structured
+  // like the assignment/assessment composer's Save vs Save-and-Send.
   async function renderAdminAptitudeTest() {
+    const { forApplicationId } = state.view;
     const { test, maxQuestions } = await api('/admin/aptitude-test');
     view.innerHTML = `
       <div class="page-head"><h1>Admission Aptitude Test</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       ${test ? `<p class="meta" style="margin-bottom:14px;">Current test: "${esc(test.title)}" (${test.questions.length} questions). Saving below replaces it with a new version for future sends — already-sent/scored applicants keep their own copy.</p>` : '<p class="meta" style="margin-bottom:14px;">No aptitude test configured yet — you won\'t be able to send one to an applicant until you add questions below.</p>'}
       <p class="meta" id="at-cap-note" style="margin-bottom:14px;"></p>
-      <form id="aptitude-form" class="card" style="padding:20px;">
-        <div class="field"><label>Test title</label><input type="text" id="at-title" value="${test ? esc(test.title) : 'General Aptitude Test'}" required></div>
-        <div id="at-questions">
-          ${(test ? test.questions : [{ text: '', options: ['', '', '', ''], correctIndex: 0 }]).map((q, qi) => questionEditorHtml(qi, q)).join('')}
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="at-add-q" style="margin:10px 0;">+ Add question</button>
-        <button class="btn btn-primary" type="submit" style="display:block;">Save test</button>
-      </form>
+      <div id="at-questions">
+        ${(test ? test.questions : [null]).map((q, qi) => questionBlock(qi, q)).join('')}
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" id="at-add-q" style="margin-bottom:14px;">+ Add question</button>
+      <div class="field" style="max-width:420px;"><label>Test title</label><input type="text" id="at-title" value="${test ? esc(test.title) : 'General Aptitude Test'}" required></div>
+      ${forApplicationId
+        ? '<p class="meta" style="margin-bottom:10px;">"Save and Send" saves this test and sends it to the applicant right away. "Save" keeps it here, ready to send from their admission page whenever you\'re ready.</p>'
+        : ''}
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        ${forApplicationId ? '<button class="btn btn-primary" id="at-save-send">Save and Send</button>' : ''}
+        <button class="btn ${forApplicationId ? 'btn-ghost' : 'btn-primary'}" id="at-save">${forApplicationId ? 'Save' : 'Save test'}</button>
+      </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('admin-admissions'));
-    wireQuestionEditor('at-questions', 'at-add-q');
+    document.getElementById('back-btn').addEventListener('click', () => navigate(forApplicationId ? 'admin-admissions-detail' : 'admin-admissions', forApplicationId ? { applicationId: forApplicationId } : undefined));
+    const questionsEl = document.getElementById('at-questions');
+    let qCount = test ? test.questions.length : 1;
+    questionsEl.querySelectorAll('[data-question-block]').forEach(wireQuestionTypeToggle);
     // Each question is a flat 10% of the applicant's score, so more than 10 would push
     // the total over 100% -- the add-question button disables right at the cap rather
     // than letting the save request fail after the fact.
     function updateCapNote() {
-      const count = document.querySelectorAll('#at-questions .quiz-q').length;
+      const count = questionsEl.querySelectorAll('[data-question-block]').length;
       document.getElementById('at-cap-note').textContent = `${count} / ${maxQuestions} questions (each is worth 10% of the applicant's score).`;
       document.getElementById('at-add-q').disabled = count >= maxQuestions;
     }
-    document.getElementById('at-questions').addEventListener('click', updateCapNote);
-    document.getElementById('at-add-q').addEventListener('click', updateCapNote);
+    document.getElementById('at-add-q').addEventListener('click', () => {
+      if (questionsEl.querySelectorAll('[data-question-block]').length >= maxQuestions) return;
+      const div = document.createElement('div');
+      div.innerHTML = questionBlock(qCount++);
+      const block = div.firstElementChild;
+      questionsEl.appendChild(block);
+      wireQuestionTypeToggle(block);
+      updateCapNote();
+    });
     updateCapNote();
-    document.getElementById('aptitude-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const questions = readQuestionEditor('at-questions');
-      if (!questions.length) return toast('Add at least one question.');
+    async function save(send) {
+      const questions = readQuestionBlocks(view);
+      if (!questions.length) return toast('Add at least one complete question.');
       if (questions.length > maxQuestions) return toast(`At most ${maxQuestions} questions allowed.`);
       try {
         await api('/admin/aptitude-test', { method: 'POST', body: { title: document.getElementById('at-title').value.trim(), questions } });
-        toast('Aptitude test saved');
-        navigate('admin-admissions');
+        if (send && forApplicationId) {
+          await api(`/admin/admissions/${forApplicationId}/send-aptitude-test`, { method: 'POST' });
+          toast('Aptitude test saved and sent to the applicant');
+        } else {
+          toast('Aptitude test saved');
+        }
+        navigate(forApplicationId ? 'admin-admissions-detail' : 'admin-admissions', forApplicationId ? { applicationId: forApplicationId } : undefined);
       } catch (err) { toast(err.message); }
-    });
-  }
-
-  // Shared MCQ-question editor, reused by the aptitude test and (Phase 4) CBT/exam
-  // authoring screens.
-  function questionEditorHtml(qi, q) {
-    return `
-      <div class="card quiz-q" data-q-idx="${qi}">
-        <div class="field"><label>Question ${qi + 1}</label><input type="text" class="q-text" value="${esc(q.text || '')}" required></div>
-        ${[0, 1, 2, 3].map((oi) => `
-          <div class="field" style="display:flex; align-items:center; gap:8px;">
-            <input type="radio" name="q-correct-${qi}" class="q-correct" value="${oi}" ${(q.correctIndex ?? 0) === oi ? 'checked' : ''}>
-            <input type="text" class="q-opt" placeholder="Option ${oi + 1}" value="${esc((q.options && q.options[oi]) || '')}" required style="flex:1;">
-          </div>
-        `).join('')}
-        <button type="button" class="btn btn-ghost btn-sm" data-remove-q>Remove question</button>
-      </div>
-    `;
-  }
-  function wireQuestionEditor(containerId, addBtnId) {
-    const container = document.getElementById(containerId);
-    container.addEventListener('click', (e) => {
-      if (e.target.matches('[data-remove-q]')) e.target.closest('.quiz-q').remove();
-    });
-    document.getElementById(addBtnId).addEventListener('click', () => {
-      const idx = container.querySelectorAll('.quiz-q').length;
-      container.insertAdjacentHTML('beforeend', questionEditorHtml(idx, { text: '', options: ['', '', '', ''], correctIndex: 0 }));
-    });
-  }
-  function readQuestionEditor(containerId) {
-    return Array.from(document.getElementById(containerId).querySelectorAll('.quiz-q')).map((row) => ({
-      text: row.querySelector('.q-text').value.trim(),
-      options: Array.from(row.querySelectorAll('.q-opt')).map((i) => i.value.trim()),
-      correctIndex: Number(row.querySelector('.q-correct:checked')?.value || 0),
-    })).filter((q) => q.text);
+    }
+    document.getElementById('at-save').addEventListener('click', () => save(false));
+    const saveSendBtn = document.getElementById('at-save-send');
+    if (saveSendBtn) saveSendBtn.addEventListener('click', () => save(true));
   }
 
   async function renderAdminStaffRecords() {

@@ -72,9 +72,11 @@ model AptitudeTestQuestion {
   id             String       @id @default(cuid())
   test           AptitudeTest @relation(fields: [testId], references: [id])
   testId         String
+  questionType   String       @default("OBJECTIVE") // OBJECTIVE | THEORY, matching Question's convention
   text           String
-  options        String       // JSON-encoded string array
-  correctIndex   Int
+  options        String?      // JSON-encoded string array -- OBJECTIVE only
+  correctIndex   Int?         // OBJECTIVE only
+  modelAnswer    String?      // THEORY only -- shown to admin when grading, not to the applicant
   order          Int          @default(0)
 
   @@map("AttitudeTestQuestion")
@@ -85,6 +87,9 @@ model AptitudeTestQuestion {
 // waiting. startedAt stamps the instant they open it (the deadline anchor, same
 // server-side-timer pattern as Submission/start in assessments.js); answers/score
 // only get filled in at actual submit time.
+// score/total/gradedAt stay null until every THEORY question (if any) has been
+// graded by admin -- a pure-OBJECTIVE test grades itself instantly at submit time,
+// same as before this field existed, so nothing changes for the common case.
 model AptitudeTestSubmission {
   id            String       @id @default(cuid())
   test          AptitudeTest @relation(fields: [testId], references: [id])
@@ -93,10 +98,12 @@ model AptitudeTestSubmission {
   applicationId String       @unique
   sentAt        DateTime?
   startedAt     DateTime?
-  answers       String?      // JSON-encoded array of chosen option indices
+  answers       String?      // JSON-encoded array of { questionId, choice? (OBJECTIVE), text? (THEORY) }
+  theoryGrades  String?      // JSON-encoded { [questionId]: boolean } -- admin's per-question award for THEORY answers
   score         Int?
   total         Int?
   submittedAt   DateTime?
+  gradedAt      DateTime?
   createdAt     DateTime     @default(now())
 
   @@map("AttitudeTestSubmission")

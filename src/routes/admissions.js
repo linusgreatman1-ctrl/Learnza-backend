@@ -141,7 +141,10 @@ router.get('/admin/admissions', requireAuth, requireRole('ADMIN'), async (req, r
 router.get('/admin/admissions/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const application = await prisma.application.findFirst({
     where: { id: req.params.id, schoolId: req.user.schoolId },
-    include: { department: true, aptitudeTestSubmission: true },
+    include: {
+      department: true,
+      aptitudeTestSubmission: { include: { test: { include: { questions: true } } } },
+    },
   });
   if (!application) return res.status(404).json({ error: 'Application not found' });
   res.json({ application });
@@ -241,9 +244,11 @@ router.post('/admin/aptitude-test', requireAuth, requireRole('ADMIN'), async (re
       title,
       questions: {
         create: questions.map((q, i) => ({
+          questionType: q.questionType === 'THEORY' ? 'THEORY' : 'OBJECTIVE',
           text: q.text,
-          options: JSON.stringify(q.options),
-          correctIndex: q.correctIndex,
+          options: q.questionType === 'THEORY' ? null : JSON.stringify(q.options),
+          correctIndex: q.questionType === 'THEORY' ? null : q.correctIndex,
+          modelAnswer: q.questionType === 'THEORY' ? (q.modelAnswer || null) : null,
           order: i,
         })),
       },
@@ -262,7 +267,7 @@ router.post('/admin/admissions/:id/send-aptitude-test', requireAuth, requireRole
   const application = await prisma.application.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
   if (!application) return res.status(404).json({ error: 'Application not found' });
   const test = await prisma.aptitudeTest.findFirst({ where: { schoolId: req.user.schoolId }, orderBy: { createdAt: 'desc' } });
-  if (!test) return res.status(400).json({ error: 'Set up the aptitude test bank first.' });
+  if (!test) return res.status(400).json({ error: 'Set up the aptitude test bank first.', code: 'NO_TEST_BANK' });
 
   const existing = await prisma.aptitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
   if (existing && (existing.startedAt || existing.submittedAt)) {
@@ -288,7 +293,7 @@ router.get('/applicant/aptitude-test', requireApplicant, async (req, res) => {
   if (!application) return res.status(404).json({ error: 'No application found.' });
   const sub = await prisma.aptitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
   if (!sub || !sub.sentAt) return res.json({ test: null, aptitudeScheduledAt: application.aptitudeScheduledAt });
-  if (sub.submittedAt) return res.json({ submitted: true, score: sub.score, total: sub.total });
+  if (sub.submittedAt) return res.json({ submitted: true, score: sub.score, total: sub.total, gradedAt: sub.gradedAt });
 
   const test = await prisma.aptitudeTest.findUnique({ where: { id: sub.testId }, include: { questions: true } });
   // Opening the test for the first time stamps startedAt -- the deadline anchor from
@@ -299,7 +304,13 @@ router.get('/applicant/aptitude-test', requireApplicant, async (req, res) => {
     test: {
       id: test.id,
       title: test.title,
-      questions: test.questions.map((q) => ({ id: q.id, text: q.text, options: JSON.parse(q.options), order: q.order })),
+      questions: test.questions.map((q) => ({
+        id: q.id,
+        text: q.text,
+        order: q.order,
+        questionType: q.questionType,
+        options: q.questionType === 'THEORY' ? null : JSON.parse(q.options || '[]'),
+      })),
     },
     startedAt, durationMin,
   });
@@ -318,20 +329,73 @@ router.post('/applicant/aptitude-test/submit', requireApplicant, async (req, res
   if (new Date() > deadline) return res.status(400).json({ error: 'Time is up for this test.' });
 
   const { answers } = req.body;
-  const answerMap = new Map((answers || []).map((a) => [a.questionId, a.choice]));
+  const answerMap = new Map((answers || []).map((a) => [a.questionId, a]));
+  const hasTheory = test.questions.some((q) => q.questionType === 'THEORY');
+  // Each question is a flat 10% regardless of bank size (capped at 10 questions on
+  // the way in), not correctCount/total*100 -- matches "one question is 10%". THEORY
+  // questions can't be auto-graded -- if the test has any, score/total/gradedAt stay
+  // null until admin grades them (see /aptitude-test/grade below); a pure-OBJECTIVE
+  // test (the common case, and the only case before THEORY existed) still scores and
+  // grades itself immediately, exactly as before.
   let correctCount = 0;
   for (const q of test.questions) {
-    if (answerMap.get(q.id) === q.correctIndex) correctCount += 1;
+    if (q.questionType === 'THEORY') continue;
+    const a = answerMap.get(q.id);
+    if (a && a.choice === q.correctIndex) correctCount += 1;
   }
-  // Each question is a flat 10% regardless of bank size (capped at 10 questions on
-  // the way in), not correctCount/total*100 -- matches "one question is 10%".
-  const score = correctCount * 10;
+  const total = test.questions.length * 10;
 
   const updated = await prisma.aptitudeTestSubmission.update({
     where: { id: sub.id },
-    data: { answers: JSON.stringify(answers || []), score, total: test.questions.length * 10, submittedAt: new Date() },
+    data: {
+      answers: JSON.stringify(answers || []),
+      submittedAt: new Date(),
+      total,
+      score: hasTheory ? null : correctCount * 10,
+      gradedAt: hasTheory ? null : new Date(),
+    },
   });
-  res.json({ score: updated.score, total: updated.total });
+  res.json({ score: updated.score, total: updated.total, pendingGrading: hasTheory });
+});
+
+// Admin awards each THEORY answer correct/incorrect (each still worth a flat 10%,
+// same as an OBJECTIVE question) once the applicant has submitted -- the one manual
+// step a mixed objective/theory aptitude test needs, mirroring how a mixed
+// Assessment already needs Mark Work before its score is final. A pure-OBJECTIVE
+// test never needs this: it's already fully scored at submit time above.
+router.post('/admin/admissions/:id/aptitude-test/grade', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const application = await prisma.application.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
+  if (!application) return res.status(404).json({ error: 'Application not found' });
+  const sub = await prisma.aptitudeTestSubmission.findUnique({
+    where: { applicationId: application.id },
+    include: { test: { include: { questions: true } } },
+  });
+  if (!sub || !sub.submittedAt) return res.status(400).json({ error: 'This applicant has not submitted the test yet.' });
+
+  const { grades } = req.body; // [{ questionId, correct: boolean }] -- THEORY questions only
+  const gradeMap = new Map((grades || []).map((g) => [g.questionId, !!g.correct]));
+  const answers = JSON.parse(sub.answers || '[]');
+  const answerMap = new Map(answers.map((a) => [a.questionId, a]));
+
+  let correctCount = 0;
+  for (const q of sub.test.questions) {
+    if (q.questionType === 'THEORY') {
+      if (gradeMap.get(q.id)) correctCount += 1;
+    } else {
+      const a = answerMap.get(q.id);
+      if (a && a.choice === q.correctIndex) correctCount += 1;
+    }
+  }
+  const updated = await prisma.aptitudeTestSubmission.update({
+    where: { id: sub.id },
+    data: {
+      score: correctCount * 10,
+      total: sub.test.questions.length * 10,
+      theoryGrades: JSON.stringify(Object.fromEntries(gradeMap)),
+      gradedAt: new Date(),
+    },
+  });
+  res.json({ submission: updated });
 });
 
 async function generateMatricNumber(schoolName, departmentId, deptCode) {
