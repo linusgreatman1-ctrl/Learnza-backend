@@ -258,11 +258,15 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
   res.json({ user: { fullName: user.fullName, email: user.email, matricNumber }, accessCode, tempPassword });
 });
 
-// ---- Admission aptitude test: one bank per school, replaced wholesale on re-create
-// (there's no per-question edit -- posting again just makes a new, newer test; sending
-// it to an applicant always uses the latest one for the school). Capped at 10
-// questions -- each question is worth a flat 10% of the applicant's score, so a bank
-// larger than 10 would push the total over 100%. ----
+// ---- Admission aptitude test: one bank per school. Editable in place for as long
+// as nobody has been sent it yet -- saving again just updates the same bank, so
+// fixing a typo or a missing model answer doesn't spawn a pointless new version.
+// The moment it's actually been sent to at least one applicant, a further save
+// creates a fresh version instead: that applicant's in-progress/completed attempt
+// must keep its own untouched copy of the exact questions it was scored against,
+// so editing the live bank out from under them isn't safe once it's in use.
+// Capped at 10 questions -- each is worth a flat 10% of the applicant's score, so a
+// bank larger than 10 would push the total over 100%. ----
 
 const MAX_APTITUDE_QUESTIONS = 10;
 
@@ -275,6 +279,17 @@ router.get('/admin/aptitude-test', requireAuth, requireRole('ADMIN'), async (req
   res.json({ test, maxQuestions: MAX_APTITUDE_QUESTIONS });
 });
 
+function questionCreateData(questions) {
+  return questions.map((q, i) => ({
+    questionType: q.questionType === 'THEORY' ? 'THEORY' : 'OBJECTIVE',
+    text: q.text,
+    options: q.questionType === 'THEORY' ? null : JSON.stringify(q.options),
+    correctIndex: q.questionType === 'THEORY' ? null : q.correctIndex,
+    modelAnswer: q.questionType === 'THEORY' ? (q.modelAnswer || null) : null,
+    order: i,
+  }));
+}
+
 router.post('/admin/aptitude-test', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const { title, questions } = req.body;
   if (!title || !Array.isArray(questions) || questions.length === 0) {
@@ -283,21 +298,21 @@ router.post('/admin/aptitude-test', requireAuth, requireRole('ADMIN'), async (re
   if (questions.length > MAX_APTITUDE_QUESTIONS) {
     return res.status(400).json({ error: `The aptitude test can have at most ${MAX_APTITUDE_QUESTIONS} questions (each is worth 10%).` });
   }
+
+  const current = await prisma.aptitudeTest.findFirst({ where: { schoolId: req.user.schoolId }, orderBy: { createdAt: 'desc' } });
+  const alreadyUsed = current && (await prisma.aptitudeTestSubmission.findFirst({ where: { testId: current.id } }));
+  if (current && !alreadyUsed) {
+    await prisma.aptitudeTestQuestion.deleteMany({ where: { testId: current.id } });
+    const test = await prisma.aptitudeTest.update({
+      where: { id: current.id },
+      data: { title, questions: { create: questionCreateData(questions) } },
+      include: { questions: true },
+    });
+    return res.json({ test });
+  }
+
   const test = await prisma.aptitudeTest.create({
-    data: {
-      schoolId: req.user.schoolId,
-      title,
-      questions: {
-        create: questions.map((q, i) => ({
-          questionType: q.questionType === 'THEORY' ? 'THEORY' : 'OBJECTIVE',
-          text: q.text,
-          options: q.questionType === 'THEORY' ? null : JSON.stringify(q.options),
-          correctIndex: q.questionType === 'THEORY' ? null : q.correctIndex,
-          modelAnswer: q.questionType === 'THEORY' ? (q.modelAnswer || null) : null,
-          order: i,
-        })),
-      },
-    },
+    data: { schoolId: req.user.schoolId, title, questions: { create: questionCreateData(questions) } },
     include: { questions: true },
   });
   res.json({ test });
