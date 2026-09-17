@@ -571,6 +571,8 @@ model Application {
   iqCorrect      Boolean?   // informational only -- not scored or shown, just visible to admin
   aptitudeScheduledAt DateTime? // the default "expect a test around this time" date shown right after applying (createdAt + 7 days, 2pm) -- purely informational until admin actually sends one
   status         String     @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | ACCEPTED | REJECTED | REGISTERED
+  rejectionReason String?   // admin's stated reason, shown to the applicant on rejection
+  admissionLetterUrl String? // uploaded on accept, or any time after via a standalone upload -- what the applicant downloads from their dashboard
   registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
   registeredUserId String?  @unique
   aptitudeTestSubmission AptitudeTestSubmission?

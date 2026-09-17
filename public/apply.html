@@ -145,11 +145,38 @@
         <span class="status-pill ${pillClass}">${esc(label)}</span>
         <p class="meta" style="margin-top:10px;">${esc(application.department.name)} · ${esc(application.level)}</p>
       </div>
+      ${decisionMessageHtml(application)}
       <div id="aptitude-box"></div>
       <button class="btn btn-ghost" id="signout-btn" style="width:100%; justify-content:center; margin-top:14px;">Sign out</button>
     `;
     document.getElementById('signout-btn').addEventListener('click', signOut);
     renderAptitudeBox(sub, application.aptitudeScheduledAt);
+  }
+
+  // Written as a real admission decision letter would read, not an app notification --
+  // this is the applicant's actual acceptance/rejection, not a status update.
+  function decisionMessageHtml(application) {
+    if (application.status === 'ACCEPTED' || application.status === 'REGISTERED') {
+      const campus = application.school.location ? `, ${esc(application.school.location)} Campus,` : ',';
+      return `
+        <div class="card" style="padding:18px; margin-bottom:14px;">
+          <p style="line-height:1.6;">Congratulations! You have been offered provisional admission to study <strong>${esc(application.department.name)}</strong> at <strong>${esc(application.school.name)}</strong>${campus} for a duration of three (3) academic years.</p>
+          ${application.admissionLetterUrl
+            ? `<a class="btn btn-primary" href="${esc(application.admissionLetterUrl)}" download="${esc(application.fullName.replace(/\s+/g, '_'))}_Admission_Letter${(application.admissionLetterUrl.match(/\.[a-zA-Z0-9]+$/) || [''])[0]}" style="width:100%; justify-content:center; margin-top:14px;">Download your admission letter</a>`
+            : `<p class="meta" style="margin-top:14px;">Your admission letter will appear here as soon as the school uploads it.</p>`}
+        </div>
+      `;
+    }
+    if (application.status === 'REJECTED') {
+      return `
+        <div class="card" style="padding:18px; margin-bottom:14px;">
+          <p style="line-height:1.6;">We regret to inform you that your application for admission was not successful.</p>
+          <p style="line-height:1.6; margin-top:10px;">${application.rejectionReason ? `Reason: ${esc(application.rejectionReason)}` : 'After careful review, the school was unable to offer you admission to your chosen programme at this time.'}</p>
+          <p class="meta" style="margin-top:10px;">We thank you for your interest and wish you the very best in your future endeavours.</p>
+        </div>
+      `;
+    }
+    return '';
   }
 
   function renderAptitudeBox(sub, scheduledAt) {

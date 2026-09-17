@@ -6295,13 +6295,16 @@
           <div><div class="meta">O-level result</div><div>${a.olevelResultUrl ? `${esc(a.olevelType || '')} — <a href="${esc(a.olevelResultUrl)}" target="_blank" rel="noopener">View upload</a> · <a href="${esc(a.olevelResultUrl)}" download="${esc(a.fullName.replace(/\s+/g, '_'))}_Olevel${(a.olevelResultUrl.match(/\.[a-zA-Z0-9]+$/) || [''])[0]}">Download</a>` : 'Not uploaded'}</div></div>
           <div><div class="meta">Screening question</div><div>${a.iqAnswer != null ? (a.iqCorrect ? 'Answered correctly' : 'Answered') : '—'}</div></div>
           <div><div class="meta">Aptitude test</div><div>${aptitudeStatusHtml}</div></div>
+          ${['ACCEPTED', 'REGISTERED', 'REJECTED'].includes(a.status) ? `<div><div class="meta">Admission letter</div><div>${a.admissionLetterUrl ? `<a href="${esc(a.admissionLetterUrl)}" target="_blank" rel="noopener">View</a> · <a href="${esc(a.admissionLetterUrl)}" download="${esc(a.fullName.replace(/\s+/g, '_'))}_Admission_Letter${(a.admissionLetterUrl.match(/\.[a-zA-Z0-9]+$/) || [''])[0]}">Download</a>` : 'Not uploaded yet'}</div></div>` : ''}
         </div>
         ${a.statement ? `<p class="muted" style="margin-top:14px;">${esc(a.statement)}</p>` : ''}
+        ${a.status === 'REJECTED' && a.rejectionReason ? `<p class="meta" style="margin-top:14px;"><strong>Rejection reason:</strong> ${esc(a.rejectionReason)}</p>` : ''}
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:18px;">
           ${a.status === 'SUBMITTED' ? `<button class="btn btn-ghost btn-sm" data-screen>Screen</button>` : ''}
           ${!sub || !sub.sentAt ? `<button class="btn btn-accent btn-sm" data-send-aptitude>Send aptitude test</button>` : ''}
           ${needsGrading ? `<button class="btn btn-accent btn-sm" data-grade-aptitude>Grade theory answers</button>` : ''}
           ${['SUBMITTED', 'UNDER_REVIEW'].includes(a.status) ? `<button class="btn btn-primary btn-sm" data-accept>Accept</button><button class="btn btn-ghost btn-sm" data-reject>Reject</button>` : ''}
+          ${['ACCEPTED', 'REGISTERED'].includes(a.status) ? `<button class="btn btn-ghost btn-sm" data-upload-letter>${a.admissionLetterUrl ? 'Replace' : 'Upload'} admission letter</button>` : ''}
           ${a.status === 'ACCEPTED' ? `<button class="btn btn-accent btn-sm" data-register>Register as student</button>` : ''}
         </div>
       </div>
@@ -6326,14 +6329,113 @@
     const gradeAptitudeBtn = view.querySelector('[data-grade-aptitude]');
     if (gradeAptitudeBtn) gradeAptitudeBtn.addEventListener('click', () => openGradeAptitudeDialog(a, sub));
     const acceptBtn = view.querySelector('[data-accept]');
-    if (acceptBtn) acceptBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/accept`, { method: 'POST' }); toast('Accepted'); render(); });
+    if (acceptBtn) acceptBtn.addEventListener('click', () => openAcceptDialog(a));
     const rejectBtn = view.querySelector('[data-reject]');
-    if (rejectBtn) rejectBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/reject`, { method: 'POST' }); toast('Rejected'); render(); });
+    if (rejectBtn) rejectBtn.addEventListener('click', () => openRejectDialog(a));
+    const uploadLetterBtn = view.querySelector('[data-upload-letter]');
+    if (uploadLetterBtn) uploadLetterBtn.addEventListener('click', () => openUploadAdmissionLetterDialog(a));
     const registerBtn = view.querySelector('[data-register]');
     if (registerBtn) registerBtn.addEventListener('click', async () => {
       try {
         const { user, tempPassword } = await api(`/admin/admissions/${a.id}/register`, { method: 'POST' });
         alert(`Student account created.\n\nName: ${user.fullName}\nMatric number: ${user.matricNumber}\nEmail: ${user.email}\nTemporary password: ${tempPassword}\n\nShare these with the student now — this password won't be shown again.`);
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  // Attaching the admission letter is optional here -- accepting still works with
+  // nothing chosen, and the letter can be added or replaced afterward from the
+  // "Upload admission letter" button on the same admission page (openUploadAdmissionLetterDialog).
+  function openAcceptDialog(a) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:10px;">Accept ${esc(a.fullName)}</h3>
+      <p class="meta" style="margin-bottom:14px;">Attach the admission letter now to send it together with the acceptance, or leave this blank and upload it later from this application's page.</p>
+      <div class="field"><label>Admission letter (optional)</label><input type="file" id="accept-letter-file" accept="application/pdf,image/*"></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="accept-confirm">Accept</button>
+        <button class="btn btn-ghost" id="accept-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#accept-cancel').addEventListener('click', close);
+    container.querySelector('#accept-confirm').addEventListener('click', async () => {
+      const file = container.querySelector('#accept-letter-file').files[0];
+      const fd = new FormData();
+      if (file) fd.append('admissionLetter', file);
+      try {
+        await api(`/admin/admissions/${a.id}/accept`, { method: 'POST', body: fd });
+        toast(file ? 'Accepted — admission letter sent to the applicant' : 'Accepted');
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  function openRejectDialog(a) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:10px;">Reject ${esc(a.fullName)}</h3>
+      <div class="field"><label>Reason (shown to the applicant)</label><textarea id="reject-reason" rows="4" placeholder="e.g. Did not meet the minimum O-level requirement for this programme."></textarea></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="reject-confirm">Reject</button>
+        <button class="btn btn-ghost" id="reject-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#reject-cancel').addEventListener('click', close);
+    container.querySelector('#reject-confirm').addEventListener('click', async () => {
+      const reason = container.querySelector('#reject-reason').value.trim();
+      try {
+        await api(`/admin/admissions/${a.id}/reject`, { method: 'POST', body: { reason: reason || undefined } });
+        toast('Rejected');
+        close();
+        render();
+      } catch (err) { toast(err.message); }
+    });
+  }
+
+  function openUploadAdmissionLetterDialog(a) {
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:10px;">${a.admissionLetterUrl ? 'Replace' : 'Upload'} admission letter</h3>
+      <p class="meta" style="margin-bottom:14px;">${esc(a.fullName)} will be notified once this is uploaded.</p>
+      <div class="field"><label>File</label><input type="file" id="letter-file" accept="application/pdf,image/*" required></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="letter-upload">Upload</button>
+        <button class="btn btn-ghost" id="letter-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#letter-cancel').addEventListener('click', close);
+    container.querySelector('#letter-upload').addEventListener('click', async () => {
+      const file = container.querySelector('#letter-file').files[0];
+      if (!file) return toast('Choose a file first.');
+      const fd = new FormData();
+      fd.append('admissionLetter', file);
+      try {
+        await api(`/admin/admissions/${a.id}/admission-letter`, { method: 'POST', body: fd });
+        toast('Admission letter uploaded');
+        close();
         render();
       } catch (err) { toast(err.message); }
     });

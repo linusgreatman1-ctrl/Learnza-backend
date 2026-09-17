@@ -157,17 +157,62 @@ router.post('/admin/admissions/:id/screen', requireAuth, requireRole('ADMIN'), a
   res.json({ application });
 });
 
-router.post('/admin/admissions/:id/accept', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const application = await prisma.application.update({ where: { id: req.params.id }, data: { status: 'ACCEPTED', decidedAt: new Date() } });
-  notifyApplicantByEmail(application.email, 'Your Learnza application has been accepted',
-    `Hi ${application.fullName},\n\nCongratulations -- your admission application has been accepted. Log in to your applicant dashboard on Learnza to see next steps.\n\n— Learnza`);
+// A formal, school-letterhead register -- these are read by the applicant as an
+// actual admission decision, not an app notification, so they're written the way a
+// real admissions office would write them rather than as a short in-app toast.
+function admissionAcceptedEmailText(app) {
+  const campus = app.school.location ? `, ${app.school.location} Campus,` : ',';
+  return `Dear ${app.fullName},\n\nCongratulations! You have been offered provisional admission to study ${app.department.name} at ${app.school.name}${campus} for a duration of three (3) academic years.\n\nPlease log in to your applicant dashboard on Learnza to download your admission letter and review the instructions in it to complete your registration.\n\nCongratulations once again, and welcome to ${app.school.name}.\n\n— Admissions Office, ${app.school.name}`;
+}
+function admissionRejectedEmailText(app) {
+  const reasonLine = app.rejectionReason
+    ? `Reason: ${app.rejectionReason}`
+    : 'After careful review, we are unable to offer you admission to your chosen programme at this time.';
+  return `Dear ${app.fullName},\n\nWe regret to inform you that your application for admission was not successful.\n\n${reasonLine}\n\nWe thank you for your interest and wish you the very best in your future endeavours.\n\n— Admissions Office`;
+}
+
+// Accepts an optional admission letter upload in the same request -- "so they can be
+// sent together" -- but doesn't require one: admin can accept now and add the letter
+// later from the standalone upload route below.
+router.post('/admin/admissions/:id/accept', requireAuth, requireRole('ADMIN'), upload.single('admissionLetter'), async (req, res) => {
+  const existing = await prisma.application.findFirst({
+    where: { id: req.params.id, schoolId: req.user.schoolId },
+    include: { school: true, department: true },
+  });
+  if (!existing) return res.status(404).json({ error: 'Application not found' });
+
+  let admissionLetterUrl = existing.admissionLetterUrl;
+  if (req.file) ({ url: admissionLetterUrl } = await saveUpload(req.file));
+
+  const application = await prisma.application.update({
+    where: { id: existing.id },
+    data: { status: 'ACCEPTED', decidedAt: new Date(), admissionLetterUrl },
+  });
+  notifyApplicantByEmail(existing.email, 'Your Learnza application has been accepted',
+    admissionAcceptedEmailText({ ...existing, admissionLetterUrl }));
   res.json({ application });
 });
 
 router.post('/admin/admissions/:id/reject', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const application = await prisma.application.update({ where: { id: req.params.id }, data: { status: 'REJECTED', decidedAt: new Date() } });
-  notifyApplicantByEmail(application.email, 'Update on your Learnza application',
-    `Hi ${application.fullName},\n\nAfter review, your admission application was not successful this time. Log in to your applicant dashboard on Learnza for more details.\n\n— Learnza`);
+  const { reason } = req.body;
+  const application = await prisma.application.update({
+    where: { id: req.params.id },
+    data: { status: 'REJECTED', decidedAt: new Date(), rejectionReason: reason || null },
+  });
+  notifyApplicantByEmail(application.email, 'Update on your Learnza application', admissionRejectedEmailText(application));
+  res.json({ application });
+});
+
+// Adds or replaces the admission letter independent of accept -- for an application
+// already accepted without one, or to correct/reissue it later.
+router.post('/admin/admissions/:id/admission-letter', requireAuth, requireRole('ADMIN'), upload.single('admissionLetter'), async (req, res) => {
+  const existing = await prisma.application.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
+  if (!existing) return res.status(404).json({ error: 'Application not found' });
+  if (!req.file) return res.status(400).json({ error: 'Choose a file to upload.' });
+  const { url } = await saveUpload(req.file);
+  const application = await prisma.application.update({ where: { id: existing.id }, data: { admissionLetterUrl: url } });
+  notifyApplicantByEmail(existing.email, 'Your Learnza admission letter is ready',
+    `Dear ${existing.fullName},\n\nYour admission letter is now available. Log in to your applicant dashboard on Learnza to download it.\n\n— Admissions Office`);
   res.json({ application });
 });
 

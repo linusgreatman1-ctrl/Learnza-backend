@@ -26,11 +26,9 @@
   /* Height (not min-height) + hidden overflow so #app-screen itself never grows
      taller than the viewport and the page/body never scrolls -- main.content (and
      .sidebar, below) become the only scrollable regions, each via its own
-     overflow-y:auto. This is what makes #back-btn's position:fixed behave reliably
-     on mobile: a body-level scroll combined with fixed-position children is a known
-     source of the button visually drifting/scrolling during a touch-scroll gesture
-     on iOS/Android, since the browser's dynamic toolbar resize interacts with the
-     page's own scroll in ways it doesn't with an inner div's scroll. */
+     overflow-y:auto. #back-btn's position:sticky (further down) depends on this: a
+     sticky element sticks to its nearest genuinely-scrolling ancestor, so it needs
+     main.content itself to be that ancestor rather than the page/body. */
   #app-screen { display: none; height: 100vh; overflow: hidden; grid-template-columns: 232px 1fr; }
   #app-screen.active { display: grid; }
   .sidebar { border-right: 1px solid var(--line); padding: 20px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -255,44 +253,22 @@
     body { background: #fff; color: #000; }
   }
 
-  /* The back button floats at the top-left corner on every screen size instead of
-     sitting inline in the page-head, where it scrolled away with the rest of the page
-     body and competed for space with the title. Top-left matches the conventional
-     "back" position (a browser/app back chevron), rather than top-right which reads
-     as a generic action slot. It's the same #back-btn element every screen already
-     renders -- only one exists in the DOM at a time -- so a single rule repositions it
-     everywhere without touching each screen's own markup. z-index sits below the
-     mobile nav drawer/backdrop so it's hidden while the sidebar is open. */
+  /* Sticky, not fixed: the back button sits inline in the page-head like any other
+     content until you scroll main.content (its scrolling ancestor, per the
+     containment fix above) far enough that its normal position would pass the top
+     edge -- at that point it "catches" and stays put while you keep scrolling down,
+     same as a normal sticky header. Scroll back up toward the top of the page and it
+     releases, sliding back down to its ordinary spot next to the title instead of
+     staying frozen on screen. z-index sits below the mobile nav drawer/backdrop so
+     it's hidden while the sidebar is open. Being back in normal flow, main.content
+     needs no artificial top padding to clear it -- it occupies real layout space now,
+     so it can never overlap the heading. */
   #back-btn {
-    position: fixed;
+    position: sticky;
+    top: 0;
     z-index: 25;
     box-shadow: var(--shadow);
     white-space: nowrap;
-  }
-  @media (min-width: 761px) {
-    /* Desktop and tablet both keep the grid layout (232px sidebar + content), so the
-       button sits just past the sidebar, roughly where the page-head's title starts. */
-    #back-btn {
-      top: 24px;
-      left: 266px;
-    }
-    /* Extra top padding clears the floating button's own height (~34px) plus a small
-       gap, so it never sits flush against -- or on top of -- the page's own heading
-       text. Kept tight (not a big empty band) -- the button already sits close to
-       the content's natural top. */
-    main.content { padding-top: 62px; }
-  }
-  @media (max-width: 760px) {
-    /* Mobile has its own sticky topbar (~68px tall) up top and no permanent sidebar
-       (it's an overlay drawer), so the button sits just below the topbar instead. The
-       topbar already occupies its own flow space above main.content, so only a small
-       extra gap is needed here to clear the button's own height -- not the topbar's
-       height all over again. */
-    #back-btn {
-      top: 62px;
-      left: 10px;
-    }
-    main.content { padding-top: 34px; }
   }
 </style>
 </head>
