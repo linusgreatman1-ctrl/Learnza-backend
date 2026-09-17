@@ -168,7 +168,13 @@
       panel.querySelectorAll('.notif-item[data-id]').forEach((item) => {
         item.addEventListener('click', async () => {
           try { await api(`/applicant/notifications/${item.dataset.id}/read`, { method: 'POST' }); } catch {}
+          panel.hidden = true;
           refreshApplicantNotifications();
+          // Every notification an applicant gets -- status changed, admission letter
+          // ready, aptitude test sent -- is something to act on from the dashboard
+          // (it shows the current status, the letter download, and the "Start test"
+          // button), so that's the one screen every click opens.
+          renderDashboard();
         });
       });
     } catch { /* silent -- notifications are a convenience, not critical path */ }
