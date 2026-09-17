@@ -3201,11 +3201,11 @@
       <div class="card" style="padding:24px; margin-bottom:22px;">
         ${assignment.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-bottom:10px;">Project</span>' : ''}
         ${assignment.dueAt ? `<div class="meta" style="margin-bottom:10px;">Due ${new Date(assignment.dueAt).toLocaleDateString()}</div>` : ''}
-        <div class="meta" style="margin-bottom:6px;">Instructions</div>
+        <div class="meta" style="margin-bottom:6px;">Questions</div>
         <p style="white-space:pre-wrap;">${esc(assignment.instructions)}</p>
       </div>
 
-      <h3 style="margin-bottom:12px; font-size:1rem;">Your submission</h3>
+      <h3 style="margin-bottom:12px; font-size:1rem;">Answers</h3>
       <div class="card" style="padding:24px;">
         ${mySubmission ? `
           <div class="meta" style="margin-bottom:6px;">Submitted ${new Date(mySubmission.submittedAt).toLocaleDateString()}</div>
