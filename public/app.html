@@ -32,6 +32,11 @@
   #auth-screen {
     min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
   }
+  /* Hidden by default (JS reveals it only once boot logic actually decides to show
+     it) -- previously this login screen had no hidden default, so it painted first
+     on every load/refresh regardless of session state, then got hidden again a
+     moment later for anyone actually logged in. That flash is what this prevents. */
+  #auth-screen.js-hidden { display: none; }
   .auth-box { width: 100%; max-width: 420px; padding: 32px; }
   .auth-box .brand { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 4px; }
   .tabs { display: flex; gap: 4px; background: var(--line); padding: 4px; border-radius: 999px; margin: 18px 0 22px; }
@@ -315,7 +320,7 @@
 </head>
 <body>
 
-<div id="auth-screen">
+<div id="auth-screen" class="js-hidden">
   <div class="card auth-box">
     <div class="brand">Learnza</div>
     <div class="tabs">

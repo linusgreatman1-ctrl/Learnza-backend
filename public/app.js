@@ -7443,7 +7443,6 @@
 
   // ---------- boot ----------
   if (state.token && state.user) {
-    authScreen.style.display = 'none';
     appScreen.classList.add('active');
     loadHeaderContext().then(() => {
       buildSidebar();
@@ -7454,17 +7453,24 @@
       }
     });
     initNotifications();
-  } else if (new URLSearchParams(location.search).get('from') !== 'intro') {
-    // Landed here directly -- a bookmark, a typed URL, or a new tab's own history
-    // autocomplete -- rather than by clicking through from the introduction page.
-    // index.html's own links to this page all carry ?from=intro, so its "Open
-    // Learnza"/"Log in"/"Learn independently" buttons still land straight on this
-    // login screen as always; anything else goes to the introduction page first,
-    // matching the site's intended entry flow instead of skipping straight to a
-    // bare login form.
-    window.location.replace('index.html');
-  } else if (location.hash.includes('register')) {
-    document.querySelector('[data-audience="individual"]').click();
-    document.querySelector('#individual-panel [data-tab="register"]').click();
+  } else {
+    // #auth-screen starts hidden (see app.html) precisely so a logged-in user
+    // refreshing never sees it at all -- it's only revealed once we've actually
+    // decided we're staying on it, right here, instead of painting on every
+    // load/refresh by default and getting hidden again a moment later.
+    authScreen.classList.remove('js-hidden');
+    if (new URLSearchParams(location.search).get('from') !== 'intro') {
+      // Landed here directly -- a bookmark, a typed URL, or a new tab's own history
+      // autocomplete -- rather than by clicking through from the introduction page.
+      // index.html's own links to this page all carry ?from=intro, so its "Open
+      // Learnza"/"Log in"/"Learn independently" buttons still land straight on this
+      // login screen as always; anything else goes to the introduction page first,
+      // matching the site's intended entry flow instead of skipping straight to a
+      // bare login form.
+      window.location.replace('index.html');
+    } else if (location.hash.includes('register')) {
+      document.querySelector('[data-audience="individual"]').click();
+      document.querySelector('#individual-panel [data-tab="register"]').click();
+    }
   }
 })();
