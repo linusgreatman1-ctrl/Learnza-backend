@@ -140,8 +140,14 @@
   #tile-self, #tile-host { grid-column: 1 / -1; aspect-ratio: 16/9; max-height: 60vh; }
   /* Overriding max-height on .expanded alone lost to the #tile-host/#tile-self ID
      rule above (an ID beats a two-class selector regardless of source order), so
-     the expand button visually did nothing -- these ID+class rules win instead. */
-  #tile-self.expanded, #tile-host.expanded { max-height: 85vh; }
+     the expand button visually did nothing -- these ID+class rules win instead.
+     On desktop the video column is narrower than the full page (see .live-layout
+     below), so the tile's height -- driven by aspect-ratio at that narrower width
+     -- often never reaches max-height at all, making a max-height-only bump
+     invisible. Shrinking the aspect-ratio (taller box for the same width) is what
+     actually grows it either way, regardless of which one was the binding
+     constraint. */
+  #tile-self.expanded, #tile-host.expanded { aspect-ratio: 4/3; max-height: 85vh; }
   .video-tile .expand-toggle-btn { position: absolute; top: 6px; right: 6px; z-index: 3; }
   /* Keeps both sides' video pinned in place while everything else (questions, Q&A,
      chat) scrolls underneath it, instead of the video scrolling away with the page. */
