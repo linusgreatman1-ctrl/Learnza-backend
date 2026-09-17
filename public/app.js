@@ -686,7 +686,7 @@
         case 'admin-lab-queue': return renderAdminLabQueue();
         case 'admin-admissions': return renderAdminAdmissions();
         case 'admin-admissions-detail': return renderAdminAdmissionDetail();
-        case 'admin-attitude-test': return renderAdminAttitudeTest();
+        case 'admin-aptitude-test': return renderAdminAptitudeTest();
         case 'admin-staff-records': return renderAdminStaffRecords();
         case 'admin-student-requests': return renderAdminStudentRequests();
         case 'admin-hostel-allocations': return renderAdminHostelAllocations();
@@ -748,9 +748,9 @@
   }
 
   async function renderIndividualCourseDetail() {
-    const [{ course }, { assessments }, subBadge] = await Promise.all([
+    const [{ course }, { lessons }, subBadge] = await Promise.all([
       api(`/individual-courses/${state.view.courseId}`),
-      api(`/individual-courses/${state.view.courseId}/assessments`),
+      api(`/individual-courses/${state.view.courseId}/lessons`),
       subscriptionBadgeHtml(),
     ]);
     view.innerHTML = `
@@ -766,15 +766,18 @@
         <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
       </div>
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; assignments</h3>
-      <p class="muted" style="margin-bottom:12px;">No lecturer here — the app automatically sets you a new assignment every day, a test every week, and a semester exam once a semester. They also show up on your dashboard.</p>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lessons</h3>
+      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated AI Teacher lessons for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
       <div class="card" style="margin-bottom:22px;">
-        ${assessments.map((a) => `
-          <div class="list-row" data-take="${a.id}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${esc(individualAssessmentTypeLabel(a.type))} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
-            <span class="pill pill-accent">Open</span>
+        ${lessons.map((l) => `
+          <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
+            <div>
+              <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
+              <div class="meta">AI Teacher · narrated lesson</div>
+            </div>
+            <span class="pill pill-accent">Lesson ${l.order}</span>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">Nothing yet — check back shortly, the app sets your first assignment automatically.</p>'}
+        `).join('') || '<p class="muted" style="padding:16px;">Nothing yet — check back shortly, the app generates your first lessons automatically.</p>'}
       </div>
 
       <button class="btn btn-ghost btn-sm" id="delete-course-btn" style="color:var(--danger);">Delete this course</button>
@@ -785,8 +788,8 @@
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim(), true);
     });
-    view.querySelectorAll('[data-take]').forEach((row) => {
-      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.take, backTo: 'individual-course-detail', backCourseId: course.id }));
+    view.querySelectorAll('[data-open-lesson]').forEach((el) => {
+      el.addEventListener('click', () => navigate('lesson-player', { courseId: course.id, lessonId: el.dataset.openLesson, isIndividual: true }));
     });
     document.getElementById('delete-course-btn').addEventListener('click', async () => {
       if (!confirm('Delete this course? This cannot be undone.')) return;
@@ -966,8 +969,11 @@
   }
 
   async function renderLessonPlayer() {
-    const { lessons } = await api(`/courses/${state.view.courseId}/lessons`);
-    const lesson = lessons.find((l) => l.id === state.view.lessonId);
+    const { courseId, lessonId, isIndividual } = state.view;
+    const lessonsPath = isIndividual ? `/individual-courses/${courseId}/lessons` : `/courses/${courseId}/lessons`;
+    const backScreen = isIndividual ? 'individual-course-detail' : 'course-detail';
+    const { lessons } = await api(lessonsPath);
+    const lesson = lessons.find((l) => l.id === lessonId);
     if (!lesson) { view.innerHTML = '<p>Lesson not found.</p>'; return; }
 
     if (lesson.locked) {
@@ -980,7 +986,7 @@
           <button class="btn btn-accent" id="go-upgrade-btn">See plans</button>
         </div>
       `;
-      document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: state.view.courseId }));
+      document.getElementById('back-btn').addEventListener('click', () => navigate(backScreen, { courseId }));
       document.getElementById('go-upgrade-btn').addEventListener('click', () => navigate('billing'));
       return;
     }
@@ -6204,7 +6210,7 @@
     const counts = Object.fromEntries(APPLICATION_TABS.map((s) => [s, allApps.filter((a) => a.status === s).length]));
 
     view.innerHTML = `
-      <div class="page-head"><h1>Admissions</h1><button class="btn btn-ghost btn-sm" id="manage-attitude-test-btn">Manage attitude test</button></div>
+      <div class="page-head"><h1>Admissions</h1><button class="btn btn-ghost btn-sm" id="manage-aptitude-test-btn">Manage aptitude test</button></div>
       <div class="grid-cards" style="margin-bottom:20px;">
         ${APPLICATION_TABS.map((s) => `<div class="card course-card" data-status-tile="${s}"><div class="code">${counts[s]}</div><div class="meta">${s.replace('_', ' ')}</div></div>`).join('')}
       </div>
@@ -6221,7 +6227,7 @@
         `).join('') || '<p class="muted">No applications here yet.</p>'}
       </div>
     `;
-    document.getElementById('manage-attitude-test-btn').addEventListener('click', () => navigate('admin-attitude-test'));
+    document.getElementById('manage-aptitude-test-btn').addEventListener('click', () => navigate('admin-aptitude-test'));
     view.querySelectorAll('[data-status-tile]').forEach((el) => {
       el.addEventListener('click', () => navigate('admin-admissions', { status: el.dataset.statusTile }));
     });
@@ -6235,7 +6241,7 @@
 
   async function renderAdminAdmissionDetail() {
     const { application: a } = await api(`/admin/admissions/${state.view.applicationId}`);
-    const sub = a.attitudeTestSubmission;
+    const sub = a.aptitudeTestSubmission;
     const aptitudeStatusHtml = sub && sub.submittedAt
       ? `${sub.score}% <span class="pill pill-pass" style="margin-left:6px;">Submitted</span>`
       : sub && sub.sentAt
@@ -6289,13 +6295,13 @@
     });
   }
 
-  async function renderAdminAttitudeTest() {
-    const { test, maxQuestions } = await api('/admin/attitude-test');
+  async function renderAdminAptitudeTest() {
+    const { test, maxQuestions } = await api('/admin/aptitude-test');
     view.innerHTML = `
       <div class="page-head"><h1>Admission Aptitude Test</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       ${test ? `<p class="meta" style="margin-bottom:14px;">Current test: "${esc(test.title)}" (${test.questions.length} questions). Saving below replaces it with a new version for future sends — already-sent/scored applicants keep their own copy.</p>` : '<p class="meta" style="margin-bottom:14px;">No aptitude test configured yet — you won\'t be able to send one to an applicant until you add questions below.</p>'}
       <p class="meta" id="at-cap-note" style="margin-bottom:14px;"></p>
-      <form id="attitude-form" class="card" style="padding:20px;">
+      <form id="aptitude-form" class="card" style="padding:20px;">
         <div class="field"><label>Test title</label><input type="text" id="at-title" value="${test ? esc(test.title) : 'General Aptitude Test'}" required></div>
         <div id="at-questions">
           ${(test ? test.questions : [{ text: '', options: ['', '', '', ''], correctIndex: 0 }]).map((q, qi) => questionEditorHtml(qi, q)).join('')}
@@ -6317,20 +6323,20 @@
     document.getElementById('at-questions').addEventListener('click', updateCapNote);
     document.getElementById('at-add-q').addEventListener('click', updateCapNote);
     updateCapNote();
-    document.getElementById('attitude-form').addEventListener('submit', async (e) => {
+    document.getElementById('aptitude-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const questions = readQuestionEditor('at-questions');
       if (!questions.length) return toast('Add at least one question.');
       if (questions.length > maxQuestions) return toast(`At most ${maxQuestions} questions allowed.`);
       try {
-        await api('/admin/attitude-test', { method: 'POST', body: { title: document.getElementById('at-title').value.trim(), questions } });
+        await api('/admin/aptitude-test', { method: 'POST', body: { title: document.getElementById('at-title').value.trim(), questions } });
         toast('Aptitude test saved');
         navigate('admin-admissions');
       } catch (err) { toast(err.message); }
     });
   }
 
-  // Shared MCQ-question editor, reused by the attitude test and (Phase 4) CBT/exam
+  // Shared MCQ-question editor, reused by the aptitude test and (Phase 4) CBT/exam
   // authoring screens.
   function questionEditorHtml(qi, q) {
     return `

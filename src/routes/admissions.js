@@ -59,7 +59,7 @@ router.get('/applicant/me', requireApplicant, async (req, res) => {
     include: {
       school: { select: { name: true, location: true } },
       department: { select: { name: true, code: true } },
-      attitudeTestSubmission: true,
+      aptitudeTestSubmission: true,
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -129,7 +129,7 @@ router.get('/admin/admissions', requireAuth, requireRole('ADMIN'), async (req, r
 router.get('/admin/admissions/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const application = await prisma.application.findFirst({
     where: { id: req.params.id, schoolId: req.user.schoolId },
-    include: { department: true, attitudeTestSubmission: true },
+    include: { department: true, aptitudeTestSubmission: true },
   });
   if (!application) return res.status(404).json({ error: 'Application not found' });
   res.json({ application });
@@ -198,8 +198,8 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
 
 const MAX_APTITUDE_QUESTIONS = 10;
 
-router.get('/admin/attitude-test', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const test = await prisma.attitudeTest.findFirst({
+router.get('/admin/aptitude-test', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const test = await prisma.aptitudeTest.findFirst({
     where: { schoolId: req.user.schoolId },
     include: { questions: true },
     orderBy: { createdAt: 'desc' },
@@ -207,7 +207,7 @@ router.get('/admin/attitude-test', requireAuth, requireRole('ADMIN'), async (req
   res.json({ test, maxQuestions: MAX_APTITUDE_QUESTIONS });
 });
 
-router.post('/admin/attitude-test', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.post('/admin/aptitude-test', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const { title, questions } = req.body;
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Title and at least one question are required.' });
@@ -215,7 +215,7 @@ router.post('/admin/attitude-test', requireAuth, requireRole('ADMIN'), async (re
   if (questions.length > MAX_APTITUDE_QUESTIONS) {
     return res.status(400).json({ error: `The aptitude test can have at most ${MAX_APTITUDE_QUESTIONS} questions (each is worth 10%).` });
   }
-  const test = await prisma.attitudeTest.create({
+  const test = await prisma.aptitudeTest.create({
     data: {
       schoolId: req.user.schoolId,
       title,
@@ -234,23 +234,23 @@ router.post('/admin/attitude-test', requireAuth, requireRole('ADMIN'), async (re
 });
 
 // Admin pushes the school's current aptitude test to one specific applicant --
-// creates (or refreshes) their AttitudeTestSubmission row with sentAt set, which is
+// creates (or refreshes) their AptitudeTestSubmission row with sentAt set, which is
 // what the applicant's dashboard polls for to know a test is waiting. Refused once
 // they've already started/finished it, so re-sending can't reset an in-progress or
 // completed attempt.
 router.post('/admin/admissions/:id/send-aptitude-test', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const application = await prisma.application.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } });
   if (!application) return res.status(404).json({ error: 'Application not found' });
-  const test = await prisma.attitudeTest.findFirst({ where: { schoolId: req.user.schoolId }, orderBy: { createdAt: 'desc' } });
+  const test = await prisma.aptitudeTest.findFirst({ where: { schoolId: req.user.schoolId }, orderBy: { createdAt: 'desc' } });
   if (!test) return res.status(400).json({ error: 'Set up the aptitude test bank first.' });
 
-  const existing = await prisma.attitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
+  const existing = await prisma.aptitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
   if (existing && (existing.startedAt || existing.submittedAt)) {
     return res.status(400).json({ error: 'This applicant has already started or completed their test.' });
   }
   const submission = existing
-    ? await prisma.attitudeTestSubmission.update({ where: { id: existing.id }, data: { testId: test.id, sentAt: new Date() } })
-    : await prisma.attitudeTestSubmission.create({ data: { testId: test.id, applicationId: application.id, sentAt: new Date() } });
+    ? await prisma.aptitudeTestSubmission.update({ where: { id: existing.id }, data: { testId: test.id, sentAt: new Date() } })
+    : await prisma.aptitudeTestSubmission.create({ data: { testId: test.id, applicationId: application.id, sentAt: new Date() } });
   res.json({ submission });
 });
 
@@ -264,14 +264,14 @@ function minutesForAptitude(questionCount) {
 router.get('/applicant/aptitude-test', requireApplicant, async (req, res) => {
   const application = await prisma.application.findFirst({ where: { applicantId: req.applicant.id } });
   if (!application) return res.status(404).json({ error: 'No application found.' });
-  const sub = await prisma.attitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
+  const sub = await prisma.aptitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
   if (!sub || !sub.sentAt) return res.json({ test: null, aptitudeScheduledAt: application.aptitudeScheduledAt });
   if (sub.submittedAt) return res.json({ submitted: true, score: sub.score, total: sub.total });
 
-  const test = await prisma.attitudeTest.findUnique({ where: { id: sub.testId }, include: { questions: true } });
+  const test = await prisma.aptitudeTest.findUnique({ where: { id: sub.testId }, include: { questions: true } });
   // Opening the test for the first time stamps startedAt -- the deadline anchor from
   // here on, same server-side-timer pattern as assessments.js's /start.
-  const startedAt = sub.startedAt || (await prisma.attitudeTestSubmission.update({ where: { id: sub.id }, data: { startedAt: new Date() } })).startedAt;
+  const startedAt = sub.startedAt || (await prisma.aptitudeTestSubmission.update({ where: { id: sub.id }, data: { startedAt: new Date() } })).startedAt;
   const durationMin = minutesForAptitude(test.questions.length);
   res.json({
     test: {
@@ -286,12 +286,12 @@ router.get('/applicant/aptitude-test', requireApplicant, async (req, res) => {
 router.post('/applicant/aptitude-test/submit', requireApplicant, async (req, res) => {
   const application = await prisma.application.findFirst({ where: { applicantId: req.applicant.id } });
   if (!application) return res.status(404).json({ error: 'No application found.' });
-  const sub = await prisma.attitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
+  const sub = await prisma.aptitudeTestSubmission.findUnique({ where: { applicationId: application.id } });
   if (!sub || !sub.sentAt) return res.status(400).json({ error: 'No test has been sent to you yet.' });
-  if (sub.submittedAt) return res.status(409).json({ error: 'You have already taken the attitude test.' });
+  if (sub.submittedAt) return res.status(409).json({ error: 'You have already taken the aptitude test.' });
   if (!sub.startedAt) return res.status(400).json({ error: 'Open the test before submitting.' });
 
-  const test = await prisma.attitudeTest.findUnique({ where: { id: sub.testId }, include: { questions: true } });
+  const test = await prisma.aptitudeTest.findUnique({ where: { id: sub.testId }, include: { questions: true } });
   const deadline = new Date(sub.startedAt.getTime() + minutesForAptitude(test.questions.length) * 60000 + 15000); // 15s grace
   if (new Date() > deadline) return res.status(400).json({ error: 'Time is up for this test.' });
 
@@ -305,7 +305,7 @@ router.post('/applicant/aptitude-test/submit', requireApplicant, async (req, res
   // the way in), not correctCount/total*100 -- matches "one question is 10%".
   const score = correctCount * 10;
 
-  const updated = await prisma.attitudeTestSubmission.update({
+  const updated = await prisma.aptitudeTestSubmission.update({
     where: { id: sub.id },
     data: { answers: JSON.stringify(answers || []), score, total: test.questions.length * 10, submittedAt: new Date() },
   });

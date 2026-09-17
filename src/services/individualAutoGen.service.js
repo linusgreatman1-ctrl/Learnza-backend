@@ -96,6 +96,23 @@ async function generateOne(course, studentId, type) {
           },
         },
       });
+    } else if (type === 'LESSONS') {
+      const draft = await quizGen.generateLessons({ courseTitle: course.title });
+      const lessons = draft.lessons || [];
+      if (!lessons.length) return;
+      // Numbered after whatever's already there, not always starting at 1 -- this
+      // runs again later (e.g. a fresh batch) without clobbering earlier lesson order.
+      const existingCount = await prisma.lesson.count({ where: { individualCourseId: course.id } });
+      await prisma.lesson.createMany({
+        data: lessons.map((l, i) => ({
+          individualCourseId: course.id,
+          authorId: studentId,
+          title: l.title || `${course.title} — Lesson ${existingCount + i + 1}`,
+          script: l.script || '',
+          order: existingCount + i,
+          isAiTeacher: true,
+        })),
+      });
     } else if (type === 'SEMESTER_EXAM') {
       const draft = await quizGen.generateSemesterExam({ courseTitle: course.title, topic: course.title });
       await prisma.assessment.create({
@@ -121,15 +138,20 @@ async function generateOne(course, studentId, type) {
 }
 
 async function ensureAutoContentForCourse(course, studentId) {
-  const [lastAssignment, lastTest, lastMock, lastPastQuestion, lastExam] = await Promise.all([
+  const [lastAssignment, lastTest, lastMock, lastPastQuestion, lastExam, lessonCount] = await Promise.all([
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'ASSIGNMENT' }, orderBy: { createdAt: 'desc' } }),
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'CA' }, orderBy: { createdAt: 'desc' } }),
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'Mock' }, orderBy: { createdAt: 'desc' } }),
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'PAST_QUESTION' }, orderBy: { createdAt: 'desc' } }),
     prisma.assessment.findFirst({ where: { individualCourseId: course.id, type: 'SEMESTER_EXAM' }, orderBy: { createdAt: 'desc' } }),
+    prisma.lesson.count({ where: { individualCourseId: course.id } }),
   ]);
 
   const tasks = [];
+  // Lessons are a one-time starter batch, not recurring like the rest -- a fallback
+  // safety net here in case the immediate generation at course-creation time (see
+  // individualCourses.js) never ran or failed (e.g. AI not configured yet then).
+  if (!lessonCount) tasks.push(generateOne(course, studentId, 'LESSONS'));
   if (!lastAssignment || lastAssignment.createdAt < startOfToday()) tasks.push(generateOne(course, studentId, 'ASSIGNMENT'));
   if (!lastTest || Date.now() - lastTest.createdAt.getTime() > WEEK_MS) tasks.push(generateOne(course, studentId, 'CA'));
   if (!lastMock || Date.now() - lastMock.createdAt.getTime() > WEEK_MS) tasks.push(generateOne(course, studentId, 'Mock'));

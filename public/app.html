@@ -263,6 +263,9 @@
       top: 24px;
       left: 266px;
     }
+    /* Extra top padding clears the floating button's own height (~40px) plus a gap,
+       so it never sits flush against -- or on top of -- the page's own heading text. */
+    main.content { padding-top: 76px; }
   }
   @media (max-width: 760px) {
     /* Mobile has its own sticky topbar (~50px tall) up top and no permanent sidebar
@@ -271,6 +274,7 @@
       top: 62px;
       left: 10px;
     }
+    main.content { padding-top: 108px; }
   }
 </style>
 </head>

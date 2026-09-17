@@ -21,7 +21,7 @@ model School {
   applications     Application[]
   semesters        Semester[]
   hostels          Hostel[]
-  attitudeTests    AttitudeTest[]
+  aptitudeTests    AptitudeTest[]
 }
 
 // A school's own term/semester calendar. isCurrent marks the one new activity
@@ -50,27 +50,34 @@ model Hostel {
   applications HostelApplication[]
 }
 
-// A school-owned bank of admission attitude-test questions, taken by an
+// A school-owned bank of admission aptitude-test questions, taken by an
 // applicant during admissions (kept separate from Assessment since that
 // model requires a courseId, which an applicant doesn't have yet).
-model AttitudeTest {
+// @@map keeps the underlying tables named "AttitudeTest*" (their original name,
+// before the wording was corrected to "aptitude") so this rename doesn't touch --
+// or risk losing -- any already-configured test banks or submissions.
+model AptitudeTest {
   id        String                 @id @default(cuid())
   school    School                 @relation(fields: [schoolId], references: [id])
   schoolId  String
   title     String
   createdAt DateTime               @default(now())
-  questions AttitudeTestQuestion[]
-  submissions AttitudeTestSubmission[]
+  questions AptitudeTestQuestion[]
+  submissions AptitudeTestSubmission[]
+
+  @@map("AttitudeTest")
 }
 
-model AttitudeTestQuestion {
+model AptitudeTestQuestion {
   id             String       @id @default(cuid())
-  test           AttitudeTest @relation(fields: [testId], references: [id])
+  test           AptitudeTest @relation(fields: [testId], references: [id])
   testId         String
   text           String
   options        String       // JSON-encoded string array
   correctIndex   Int
   order          Int          @default(0)
+
+  @@map("AttitudeTestQuestion")
 }
 
 // Created the moment admin sends the test to one applicant (sentAt set, no answers
@@ -78,9 +85,9 @@ model AttitudeTestQuestion {
 // waiting. startedAt stamps the instant they open it (the deadline anchor, same
 // server-side-timer pattern as Submission/start in assessments.js); answers/score
 // only get filled in at actual submit time.
-model AttitudeTestSubmission {
+model AptitudeTestSubmission {
   id            String       @id @default(cuid())
-  test          AttitudeTest @relation(fields: [testId], references: [id])
+  test          AptitudeTest @relation(fields: [testId], references: [id])
   testId        String
   application   Application  @relation(fields: [applicationId], references: [id])
   applicationId String       @unique
@@ -91,6 +98,8 @@ model AttitudeTestSubmission {
   total         Int?
   submittedAt   DateTime?
   createdAt     DateTime     @default(now())
+
+  @@map("AttitudeTestSubmission")
 }
 
 // A prospective student's login identity -- created the moment they click "Apply for
@@ -307,8 +316,14 @@ model Enrollment {
 
 model Lesson {
   id          String   @id @default(cuid())
-  course      Course   @relation(fields: [courseId], references: [id])
-  courseId    String
+  // Dual-FK, same pattern as Assessment/StudyGroup/LabDemonstration -- a lesson
+  // belongs to exactly one of a real school Course or an individual learner's own
+  // IndividualCourse, never both. Individual learners have no lecturer to upload
+  // videos, so every one of theirs is AI-generated (isAiTeacher: true, no videoUrl).
+  course      Course?  @relation(fields: [courseId], references: [id])
+  courseId    String?
+  individualCourse IndividualCourse? @relation(fields: [individualCourseId], references: [id])
+  individualCourseId String?
   title       String
   order       Int      @default(0)
   script      String   // narration script read aloud by the AI teacher (text-to-speech, free)
@@ -551,7 +566,7 @@ model Application {
   status         String     @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | ACCEPTED | REJECTED | REGISTERED
   registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
   registeredUserId String?  @unique
-  attitudeTestSubmission AttitudeTestSubmission?
+  aptitudeTestSubmission AptitudeTestSubmission?
   createdAt      DateTime   @default(now())
   decidedAt      DateTime?
 }
@@ -670,6 +685,7 @@ model IndividualCourse {
   assessments Assessment[]
   labDemonstrations LabDemonstration[]
   studyGroups StudyGroup[]
+  lessons     Lesson[]
 }
 
 // Per-class daily attendance, marked by the lecturer teaching that course (distinct
