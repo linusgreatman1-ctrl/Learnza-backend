@@ -26,7 +26,7 @@
   /* Height (not min-height) + hidden overflow so #app-screen itself never grows
      taller than the viewport and the page/body never scrolls -- main.content (and
      .sidebar, below) become the only scrollable regions, each via its own
-     overflow-y:auto. #back-btn's position:sticky (further down) depends on this: a
+     overflow-y:auto. .page-head's position:sticky (further down) depends on this: a
      sticky element sticks to its nearest genuinely-scrolling ancestor, so it needs
      main.content itself to be that ancestor rather than the page/body. */
   #app-screen { display: none; height: 100vh; overflow: hidden; grid-template-columns: 232px 1fr; }
@@ -253,22 +253,27 @@
     body { background: #fff; color: #000; }
   }
 
-  /* Sticky, not fixed: the back button sits inline in the page-head like any other
-     content until you scroll main.content (its scrolling ancestor, per the
-     containment fix above) far enough that its normal position would pass the top
-     edge -- at that point it "catches" and stays put while you keep scrolling down,
-     same as a normal sticky header. Scroll back up toward the top of the page and it
-     releases, sliding back down to its ordinary spot next to the title instead of
-     staying frozen on screen. z-index sits below the mobile nav drawer/backdrop so
-     it's hidden while the sidebar is open. Being back in normal flow, main.content
-     needs no artificial top padding to clear it -- it occupies real layout space now,
-     so it can never overlap the heading. */
-  #back-btn {
+  /* Sticky on the whole header bar, not just the button: sticking a flex ITEM
+     (#back-btn alone) inside a row-flex .page-head turned out unreliable -- sticky
+     positioning along the axis perpendicular to a flex row's own direction is a
+     known rough edge across browser engines, and it simply never caught here. The
+     bar itself is a normal block-level element within main.content's flow, so
+     sticking IT is the well-supported case: .page-head (title + back button
+     together) scrolls normally near the top of a page, catches and stays visible
+     once scrolled down past it, and releases back to its ordinary spot when
+     scrolled back up -- instead of the button staying frozen on screen regardless of
+     scroll. The solid background is required once it's sticky, since content now
+     scrolls underneath it instead of the button floating transparently over nothing.
+     z-index sits below the mobile nav drawer/backdrop so it's hidden while the
+     sidebar is open. #back-btn itself needs no special positioning any more -- it's
+     just a normal flex item inside the now-sticky bar. */
+  .page-head {
     position: sticky;
     top: 0;
     z-index: 25;
-    box-shadow: var(--shadow);
-    white-space: nowrap;
+    background: var(--paper);
+    padding-top: 4px;
+    padding-bottom: 4px;
   }
 </style>
 </head>
