@@ -108,7 +108,7 @@
   .live-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); margin-bottom: 18px; }
   .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 8px; animation: live-pulse 1.4s infinite; }
   @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-  .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 8px; }
   .video-tile { position: relative; background: #0b1220; border-radius: 10px; overflow: hidden; aspect-ratio: 4/3; }
   .video-tile video { width: 100%; height: 100%; object-fit: cover; }
   .video-tile .label { position: absolute; bottom: 6px; left: 8px; font-size: 0.75rem; color: #fff; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 999px; }
@@ -116,8 +116,15 @@
      each the only thing on screen -- so both get a wide hero treatment instead of
      sharing the small grid cell size used for the (video-less) student tiles. */
   #tile-self, #tile-host { grid-column: 1 / -1; aspect-ratio: 16/9; max-height: 60vh; }
-  .video-tile.expanded { max-height: 85vh; }
+  /* Overriding max-height on .expanded alone lost to the #tile-host/#tile-self ID
+     rule above (an ID beats a two-class selector regardless of source order), so
+     the expand button visually did nothing -- these ID+class rules win instead. */
+  #tile-self.expanded, #tile-host.expanded { max-height: 85vh; }
   .video-tile .expand-toggle-btn { position: absolute; top: 6px; right: 6px; z-index: 3; }
+  /* Keeps both sides' video pinned in place while everything else (questions, Q&A,
+     chat) scrolls underneath it, instead of the video scrolling away with the page. */
+  .live-stage { position: sticky; top: 0; z-index: 20; background: var(--paper); padding-bottom: 6px; }
+  .live-stage .page-head { position: static; padding: 14px 0 4px; margin-bottom: 8px; }
   .live-chat { display: flex; flex-direction: column; height: 300px; }
   .live-chat .chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 

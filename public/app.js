@@ -1716,20 +1716,23 @@
   async function renderLiveClass() {
     const { courseId, liveClassId, isHost, title } = state.view;
     view.innerHTML = `
-      <div class="page-head">
-        <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span class="pill pill-muted" id="live-watching-pill">👀 0 watching</span>
-          <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+      <div class="live-stage">
+        <div class="page-head">
+          <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="pill pill-muted" id="live-watching-pill">👀 0 watching</span>
+            <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
+          </div>
         </div>
+        <div class="video-grid" id="video-grid"></div>
       </div>
-      <div class="video-grid" id="video-grid"></div>
       ${isHost ? `
-        <div class="card" style="padding:14px 18px; margin-bottom:16px;">
+        <div class="card" style="padding:12px 16px; margin-bottom:10px;">
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
             <h3 style="font-size:0.95rem;">🙋 Student questions</h3>
             <span class="pill pill-accent" id="live-question-count">0 waiting</span>
           </div>
+          <div id="live-speaking-list"></div>
           <div id="live-question-queue"><p class="muted">No questions yet.</p></div>
         </div>
       ` : ''}
@@ -1796,6 +1799,10 @@
     }
   }
 
+  // A student only becomes inviteable once they've raised their hand by sending a
+  // question -- there's no standing "Invite to speak" on every connected student
+  // (that used to show automatically the moment anyone joined, cluttering the host's
+  // screen with a control for students who had said nothing).
   function renderQuestionQueue() {
     const box = document.getElementById('live-question-queue');
     const countPill = document.getElementById('live-question-count');
@@ -1805,6 +1812,11 @@
     box.innerHTML = items.length ? items.map((q) => `
       <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:8px;" data-question-row="${q.id}">
         <div><div style="font-weight:600;">${esc(q.studentName)}</div><p style="margin-top:4px;">${esc(q.text)}</p></div>
+        <div style="display:flex; gap:8px; width:100%;">
+          ${live.speakingStudents.has(q.studentSocketId)
+            ? '<span class="pill pill-accent">🎤 Speaking now</span>'
+            : `<button class="btn btn-accent btn-sm invite-speak-btn" data-invite-speak="${q.studentSocketId}" data-student-name="${esc(q.studentName)}">🎤 Invite to speak</button>`}
+        </div>
         <form class="answer-form" data-answer-for="${q.id}" style="display:flex; gap:8px; width:100%;">
           <input type="text" class="answer-input" placeholder="Type your answer…" style="flex:1;">
           <button class="btn btn-primary btn-sm" type="submit">Answer</button>
@@ -1819,6 +1831,36 @@
         live.socket.emit('live:answer-question', { liveClassId: live.liveClassId, questionId: form.dataset.answerFor, answer: input.value.trim() });
         live.questions.delete(form.dataset.answerFor);
         renderQuestionQueue();
+      });
+    });
+    box.querySelectorAll('[data-invite-speak]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const studentSocketId = btn.dataset.inviteSpeak;
+        live.socket.emit('live:invite-to-speak', { liveClassId: live.liveClassId, studentSocketId });
+        live.speakingStudents.set(studentSocketId, btn.dataset.studentName);
+        renderSpeakingList();
+        renderQuestionQueue();
+      });
+    });
+  }
+
+  // Host-side: everyone currently invited to speak, with a direct way to cut any of
+  // them off and keep teaching -- kept separate from the question queue itself so
+  // this control survives answering (which removes the question) or the queue
+  // otherwise re-rendering.
+  function renderSpeakingList() {
+    const box = document.getElementById('live-speaking-list');
+    if (!box || !live) return;
+    const entries = Array.from(live.speakingStudents.entries());
+    box.innerHTML = entries.map(([studentSocketId, name]) => `
+      <div class="list-row" style="padding:8px 0;">
+        <span>🎤 ${esc(name)} is speaking</span>
+        <button class="btn btn-ghost btn-sm" data-stop-speaking="${studentSocketId}">🛑 Stop speaking</button>
+      </div>
+    `).join('');
+    box.querySelectorAll('[data-stop-speaking]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        live.socket.emit('live:stop-speaking', { liveClassId: live.liveClassId, studentSocketId: btn.dataset.stopSpeaking });
       });
     });
   }
@@ -1852,10 +1894,6 @@
     tile.querySelector('video').srcObject = stream;
   }
 
-  function removeVideoTile(id) {
-    document.getElementById('tile-' + id)?.remove();
-  }
-
   // Student-side: a toggle on their one video tile (the lecturer's feed) to grow it
   // beyond its already-larger default size, and shrink it back -- CSS-only (see
   // .video-tile.expanded in app.html), so it works the same on every browser without
@@ -1871,38 +1909,6 @@
       btn.textContent = expanded ? '⤡ Collapse' : '⤢ Expand';
     });
     tile.appendChild(btn);
-  }
-
-  // Host-side: one button per student tile to call them on to speak. While a student
-  // is speaking, the SAME button turns into "Stop speaking" (still clickable, not
-  // disabled) so the lecturer always has a direct way to cut them off and carry on
-  // teaching -- rather than depending entirely on the student's own client correctly
-  // signaling live:stop-speaking (a dropped signal, e.g. around a brief reconnect,
-  // previously left the lecturer with no recourse at all). resetInviteToSpeakButton()
-  // (also called on live:speaker-stopped, from either side) puts it back to "Invite".
-  function addInviteToSpeakButton(studentSocketId) {
-    const tile = document.getElementById('tile-' + studentSocketId);
-    if (!tile || tile.querySelector('.invite-speak-btn')) return;
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-accent btn-sm invite-speak-btn';
-    btn.dataset.speaking = 'false';
-    btn.style.cssText = 'position:absolute; bottom:6px; right:6px; z-index:2;';
-    btn.textContent = '🎤 Invite to speak';
-    btn.addEventListener('click', () => {
-      if (btn.dataset.speaking === 'true') {
-        live.socket.emit('live:stop-speaking', { liveClassId: live.liveClassId, studentSocketId });
-        resetInviteToSpeakButton(studentSocketId);
-      } else {
-        live.socket.emit('live:invite-to-speak', { liveClassId: live.liveClassId, studentSocketId });
-        btn.textContent = '🛑 Stop speaking';
-        btn.dataset.speaking = 'true';
-      }
-    });
-    tile.appendChild(btn);
-  }
-  function resetInviteToSpeakButton(studentSocketId) {
-    const btn = document.querySelector(`#tile-${studentSocketId} .invite-speak-btn`);
-    if (btn) { btn.textContent = '🎤 Invite to speak'; btn.dataset.speaking = 'false'; btn.disabled = false; }
   }
 
   // Student-side: plays one classmate's relayed audio through a hidden <audio>
@@ -1997,6 +2003,7 @@
       live.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       live.speakerInboundPcs = new Map(); // speaking student's socket id -> pc receiving their mic
       live.relayPcs = new Map(); // "speakerId:listenerId" -> pc sending that speaker's audio on to one listener
+      live.speakingStudents = new Map(); // studentSocketId -> studentName, for renderSpeakingList
       addVideoTile('self', 'You (host)', live.localStream, true);
 
       // Record the lecturer's own camera/mic locally throughout the class -- there's
@@ -2014,17 +2021,19 @@
         live.recorder = null;
       }
 
-      socket.on('student:joined', async ({ studentSocketId, studentName }) => {
+      // A connected student gets no tile and no standing invite control -- students
+      // never send video (only audio, and only once actually invited), so there's
+      // nothing to show for them here. They become inviteable by raising their hand
+      // (asking a question), which surfaces its own "Invite to speak" -- see
+      // renderQuestionQueue.
+      socket.on('student:joined', async ({ studentSocketId }) => {
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         live.peers.set(studentSocketId, pc);
         live.localStream.getTracks().forEach((track) => pc.addTrack(track, live.localStream));
         pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: studentSocketId, candidate: e.candidate }); };
-        pc.onconnectionstatechange = () => { if (['disconnected', 'closed', 'failed'].includes(pc.connectionState)) removeVideoTile(studentSocketId); };
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('webrtc:offer', { to: studentSocketId, offer });
-        addVideoTile(studentSocketId, studentName + ' (joining…)', new MediaStream());
-        addInviteToSpeakButton(studentSocketId);
       });
       socket.on('webrtc:answer', async ({ from, answer, purpose, speakerId }) => {
         if (purpose === 'relay') { const pc = live.relayPcs.get(`${speakerId}:${from}`); if (pc) await pc.setRemoteDescription(answer); return; }
@@ -2089,7 +2098,9 @@
           if (key.startsWith(`${studentSocketId}:`)) { pc.close(); live.relayPcs.delete(key); }
         });
         removeRelayedAudio(studentSocketId);
-        resetInviteToSpeakButton(studentSocketId);
+        live.speakingStudents.delete(studentSocketId);
+        renderSpeakingList();
+        renderQuestionQueue();
       });
     } else {
       live.relayReceivePcs = new Map(); // speakerId -> pc receiving that speaker's relayed audio
