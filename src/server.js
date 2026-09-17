@@ -3,6 +3,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/auth');
@@ -29,6 +30,11 @@ const { attachLiveNamespace } = require('./realtime/live');
 
 const app = express();
 
+// app.js alone is 400+KB and was being sent completely uncompressed -- on a slow
+// connection that's several real seconds of transfer time on every load, made worse
+// by the no-cache header just below forcing a fresh fetch far more often. gzip
+// typically shrinks JS/HTML/CSS by 70-80%, which is the actual load-time fix here.
+app.use(compression());
 app.use(cors());
 // `verify` stashes the raw body bytes on the request so payment-webhook signature
 // checks (HMAC over the exact bytes sent) work even though we still want express
