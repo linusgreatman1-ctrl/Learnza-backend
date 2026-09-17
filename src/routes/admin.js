@@ -405,7 +405,13 @@ async function updateSchoolUser(req, res, role, fields) {
   const user = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role } });
   if (!user) return null;
   const data = {};
-  for (const key of fields) if (req.body[key] !== undefined) data[key] = req.body[key] || null;
+  for (const key of fields) {
+    if (req.body[key] === undefined) continue;
+    // yearOfStudy is the one Int column among these edit fields -- every other one is
+    // a plain String column, but the <select> it comes from submits its value as a
+    // string regardless, which Prisma rejects outright for an Int field.
+    data[key] = key === 'yearOfStudy' ? (req.body[key] ? Number(req.body[key]) : null) : (req.body[key] || null);
+  }
   const updated = await prisma.user.update({ where: { id: user.id }, data });
   return updated;
 }
