@@ -263,18 +263,23 @@
       top: 24px;
       left: 266px;
     }
-    /* Extra top padding clears the floating button's own height (~40px) plus a gap,
-       so it never sits flush against -- or on top of -- the page's own heading text. */
-    main.content { padding-top: 76px; }
+    /* Extra top padding clears the floating button's own height (~34px) plus a small
+       gap, so it never sits flush against -- or on top of -- the page's own heading
+       text. Kept tight (not a big empty band) -- the button already sits close to
+       the content's natural top. */
+    main.content { padding-top: 62px; }
   }
   @media (max-width: 760px) {
-    /* Mobile has its own sticky topbar (~50px tall) up top and no permanent sidebar
-       (it's an overlay drawer), so the button sits just below the topbar instead. */
+    /* Mobile has its own sticky topbar (~68px tall) up top and no permanent sidebar
+       (it's an overlay drawer), so the button sits just below the topbar instead. The
+       topbar already occupies its own flow space above main.content, so only a small
+       extra gap is needed here to clear the button's own height -- not the topbar's
+       height all over again. */
     #back-btn {
       top: 62px;
       left: 10px;
     }
-    main.content { padding-top: 108px; }
+    main.content { padding-top: 34px; }
   }
 </style>
 </head>
