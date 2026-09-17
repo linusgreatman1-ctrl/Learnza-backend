@@ -445,7 +445,7 @@
         <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
         ${q.questionType === 'THEORY'
           ? `<textarea data-theory="${q.id}" rows="4" style="width:100%;" placeholder="Type your answer here"></textarea>`
-          : q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+          : q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}"><strong>${esc(String.fromCharCode(65 + oi))}.</strong> ${esc(opt)}</div>`).join('')}
       </div>
     `).join('');
     document.querySelectorAll('.at-opt').forEach((opt) => {
