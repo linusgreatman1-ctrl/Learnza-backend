@@ -44,7 +44,12 @@
   .sidebar-backdrop { display: none; }
 
   main.content { padding: 30px 34px; overflow-y: auto; min-width: 0; }
-  .page-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
+  /* Negative margin pulls the bar up flush with main.content's own top edge (past its
+     30px/34px padding, re-added below as the bar's own padding instead) so nothing
+     scrolled can ever peek through a gap above it once it's stuck -- without this, a
+     sliver of whatever content is currently scrolled to that padding band shows
+     through above the sticky bar instead of the bar covering all the way to the top. */
+  .page-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: -30px -34px 22px; padding: 30px 34px 4px; }
   .page-head h1 { font-size: 1.5rem; }
   @media (min-width: 761px) {
     /* Clear the fixed .notif-bell-desktop (top:16px right:22px, 40px wide) so it never
@@ -244,6 +249,7 @@
       display: block; position: fixed; inset: 0; background: rgba(20,32,51,0.45); z-index: 40;
     }
     main.content { padding: 20px 18px; }
+    .page-head { margin: -20px -18px 22px; padding: 20px 18px 4px; }
   }
 
   @media print {
