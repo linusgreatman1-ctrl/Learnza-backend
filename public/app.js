@@ -603,10 +603,14 @@
       banner.remove();
       navigate(...parseNotificationLink(n.link));
     });
-    banner.querySelector('[data-dismiss]').addEventListener('click', () => banner.remove());
-    // Left unread if dismissed (still sitting in the bell for later) -- only
-    // auto-removed from screen so it doesn't linger forever if ignored.
-    setTimeout(() => banner.remove(), 45000);
+    // Dismissing (or letting it time out) marks the notification read, same as
+    // "Join now" -- leaving it unread meant the popup came right back on every
+    // refresh (shownLiveNotifIds is only an in-memory guard for the current page
+    // load) and on every 20s re-poll, since the unread filter in refreshNotifications
+    // would just pick it straight back up. It still stays visible in the bell.
+    const markSeen = () => { api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {}); };
+    banner.querySelector('[data-dismiss]').addEventListener('click', () => { markSeen(); banner.remove(); });
+    setTimeout(() => { markSeen(); banner.remove(); }, 45000);
   }
 
   function toggleNotifPanel(force) {
