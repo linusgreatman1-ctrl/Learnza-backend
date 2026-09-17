@@ -6244,7 +6244,7 @@
     const counts = Object.fromEntries(APPLICATION_TABS.map((s) => [s, allApps.filter((a) => a.status === s).length]));
 
     view.innerHTML = `
-      <div class="page-head"><h1>Admissions</h1><button class="btn btn-ghost btn-sm" id="manage-aptitude-test-btn">Manage aptitude test</button></div>
+      <div class="page-head"><h1>Admissions</h1><div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" id="upload-admission-letter-btn">Upload admission letter</button><button class="btn btn-ghost btn-sm" id="manage-aptitude-test-btn">Manage aptitude test</button></div></div>
       <div class="grid-cards" style="margin-bottom:20px;">
         ${APPLICATION_TABS.map((s) => `<div class="card course-card" data-status-tile="${s}"><div class="code">${counts[s]}</div><div class="meta">${s.replace('_', ' ')}</div></div>`).join('')}
       </div>
@@ -6262,6 +6262,7 @@
       </div>
     `;
     document.getElementById('manage-aptitude-test-btn').addEventListener('click', () => navigate('admin-aptitude-test'));
+    document.getElementById('upload-admission-letter-btn').addEventListener('click', () => openAdmissionLetterPickerDialog(allApps));
     view.querySelectorAll('[data-status-tile]').forEach((el) => {
       el.addEventListener('click', () => navigate('admin-admissions', { status: el.dataset.statusTile }));
     });
@@ -6270,6 +6271,48 @@
     });
     view.querySelectorAll('[data-app-id]').forEach((card) => {
       card.addEventListener('click', () => navigate('admin-admissions-detail', { applicationId: card.dataset.appId }));
+    });
+  }
+
+  // A shortcut from the admissions list itself -- pick the applicant here instead of
+  // opening their page first just to reach the same upload button there. Skips
+  // rejected applicants (nothing to send them); everyone else can get a letter staged
+  // any time, whether or not they've been accepted yet.
+  function openAdmissionLetterPickerDialog(allApps) {
+    const eligible = allApps.filter((a) => a.status !== 'REJECTED');
+    const container = document.createElement('div');
+    container.className = 'card';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
+    container.innerHTML = `
+      <h3 style="margin-bottom:14px;">Upload admission letter</h3>
+      <div class="field">
+        <label>Applicant</label>
+        <select id="ual-applicant">${eligible.map((a) => `<option value="${a.id}">${esc(a.fullName)} — ${esc(a.status.replace('_', ' '))}${a.admissionLetterUrl ? ' (already has one)' : ''}</option>`).join('') || '<option value="">No applicants yet</option>'}</select>
+      </div>
+      <div class="field"><label>File</label><input type="file" id="ual-file" accept="application/pdf,image/*" required></div>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button class="btn btn-primary" id="ual-upload">Upload</button>
+        <button class="btn btn-ghost" id="ual-cancel">Cancel</button>
+      </div>
+    `;
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    document.body.appendChild(backdrop);
+    document.body.appendChild(container);
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#ual-cancel').addEventListener('click', close);
+    container.querySelector('#ual-upload').addEventListener('click', async () => {
+      const applicationId = container.querySelector('#ual-applicant').value;
+      const file = container.querySelector('#ual-file').files[0];
+      if (!applicationId) return toast('No applicant to upload for.');
+      if (!file) return toast('Choose a file first.');
+      const fd = new FormData();
+      fd.append('admissionLetter', file);
+      try {
+        await api(`/admin/admissions/${applicationId}/admission-letter`, { method: 'POST', body: fd });
+        toast('Admission letter uploaded');
+        close();
+      } catch (err) { toast(err.message); }
     });
   }
 
