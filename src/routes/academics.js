@@ -19,9 +19,12 @@ router.get('/schools', async (req, res) => {
 // list -- used to drive the semester switcher in every dashboard header.
 router.get('/semesters', requireAuth, async (req, res) => {
   if (!req.user.schoolId) return res.json({ semesters: [] });
+  // Chronological (creation) order, not newest-first -- semesters are created in
+  // sequence as the school year progresses, so this is what puts "First Semester"
+  // before "Second Semester" instead of showing whichever was set up most recently.
   const semesters = await prisma.semester.findMany({
     where: { schoolId: req.user.schoolId },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: 'asc' },
   });
   res.json({ semesters });
 });

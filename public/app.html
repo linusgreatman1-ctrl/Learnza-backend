@@ -166,6 +166,24 @@
     .lesson-stage .smart-board-wrap { display: flex; flex-direction: column; }
     .lesson-stage .smart-board { flex: 1; }
   }
+  /* On mobile/tablet there's no room for avatar + board side by side, and stacking
+     them (board always visible below the teacher) meant the teacher was permanently
+     shrunk out of the way. Instead the board overlays the same area as the teacher,
+     appearing only while there's an actual diagram/equation/graph to show (the
+     .board-visual class, toggled by setBoardContent() in app.js) and disappearing the
+     moment the teacher moves back to plain narration -- so the teacher is visible by
+     default and only covered for as long as a visual is actually up. */
+  @media (max-width: 899px) {
+    .lesson-stage { position: relative; }
+    .ai-avatar-box { min-height: 240px; }
+    .lesson-stage .smart-board-wrap {
+      position: absolute; top: 0; left: 0; right: 0; height: 240px;
+      z-index: 4; display: flex; flex-direction: column;
+      opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+    }
+    .lesson-stage .smart-board-wrap.board-visual { opacity: 1; pointer-events: auto; }
+    .lesson-stage .smart-board { flex: 1; overflow-y: auto; }
+  }
 
   /* Settings screen -- grouped sections of toggle/arrow rows, matching PassNow's
      settings layout (uppercase section labels + a card of stacked rows). */
@@ -222,6 +240,24 @@
     #app-screen.active { display: block; }
     main.content { padding: 0; }
     body { background: #fff; color: #000; }
+  }
+
+  /* On mobile/tablet, the back button floats at the side of the screen instead of
+     sitting inline in the page-head, where it scrolls away with the rest of the page
+     body and competes for space with the title. It's the same #back-btn element every
+     screen already renders -- only one exists in the DOM at a time -- so a single rule
+     repositions it everywhere without touching each screen's own markup. z-index sits
+     below the mobile nav drawer/backdrop so it's hidden while the sidebar is open. */
+  @media (max-width: 1024px) {
+    #back-btn {
+      position: fixed;
+      top: 50%;
+      left: 10px;
+      transform: translateY(-50%);
+      z-index: 25;
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
   }
 </style>
 </head>

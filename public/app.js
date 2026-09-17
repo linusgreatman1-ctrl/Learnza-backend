@@ -424,6 +424,7 @@
       ['admin-student-requests', 'Student Requests'],
       ['admin-hostel-allocations', 'Hostels'],
       ['admin-results', 'Results'],
+      ['admin-bulk-message', 'Bulk SMS/Email'],
       ['settings', 'Settings'],
       ['switch-public-app', '🌐 Switch to Public App'],
     ],
@@ -659,15 +660,15 @@
         case 'lect-library': return renderLibrary(true);
         case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM', 'PAST_QUESTION'], allowedTypes: ['CA', 'Test', 'Mock'] });
         case 'lect-assessments': return renderAssessments(true, { heading: 'Assessments', typeFilter: ['PAST_QUESTION'], defaultType: 'PAST_QUESTION', allowedTypes: ['PAST_QUESTION'] });
+        case 'lect-classwork-quiz': return renderAssessments(true, { heading: 'Classwork / Quiz', typeFilter: ['Classwork', 'Quiz'], defaultType: 'Classwork', allowedTypes: ['Classwork', 'Quiz'] });
+        case 'lect-mark-work': return renderMarkWorkHub();
         case 'lect-semester-exam': return renderLecturerSemesterExam();
         case 'lect-assessment-results': return renderAssessmentResults();
         case 'lect-attendance-hub': return renderLecturerAttendanceHub();
         case 'lect-attendance': return renderLecturerAttendance();
         case 'lect-assignments-hub': return renderLecturerAssignmentsHub();
-        case 'lect-assignments': return renderLecturerAssignments();
         case 'lect-assignment-submissions': return renderAssignmentSubmissions();
         case 'lect-results-hub': return renderLecturerResultsHub();
-        case 'lect-results': return renderLecturerResults();
         case 'lect-students': return renderLecturerStudentsHub();
         case 'lect-class-roster': return renderLecturerClassRoster();
         case 'lect-student-detail': return renderLecturerStudentDetail();
@@ -692,6 +693,7 @@
         case 'admin-results': return renderAdminResults();
         case 'admin-student-results': return renderAdminStudentResults();
         case 'admin-student-activity': return renderAdminStudentActivity();
+        case 'admin-bulk-message': return renderAdminBulkMessage();
         default: view.innerHTML = '<p>Not found.</p>';
       }
     }
@@ -1108,6 +1110,19 @@
     }).join('');
   }
 
+  // On mobile/tablet the smart board overlays the avatar box instead of stacking below
+  // it (CSS in app.html), so the teacher is covered only while there's actually a
+  // diagram/equation/graph to show, and visible again the instant the board goes back
+  // to plain narration text (or the next thing on the board is text-only). Desktop's
+  // side-by-side layout is unaffected either way -- the class just does nothing there.
+  function setBoardContent(board, actions) {
+    board.innerHTML = renderBoardActionsHtml(actions);
+    mountBoardActions(board, actions);
+    const wrap = board.closest('.smart-board-wrap');
+    const hasVisual = (actions || []).some((a) => a.type === 'DIAGRAM' || a.type === 'EQUATION' || a.type === 'GRAPH');
+    if (wrap) wrap.classList.toggle('board-visual', hasVisual);
+  }
+
   function mountBoardActions(containerEl, actions) {
     (actions || []).forEach((a, i) => {
       const el = containerEl.querySelector(`[data-idx="${i}"]`);
@@ -1401,8 +1416,7 @@
       const section = plan.sections[idx];
       sectionMeta.textContent = `Section ${idx + 1} of ${plan.sections.length}`;
       sectionTitleEl.textContent = section.title;
-      board.innerHTML = renderBoardActionsHtml(section.boardActions);
-      mountBoardActions(board, section.boardActions);
+      setBoardContent(board, section.boardActions);
       boardStatus.textContent = 'AI Teacher — writing on the board';
       return section;
     }
@@ -1447,8 +1461,7 @@
         log.scrollTop = log.scrollHeight;
         // Every answer lands on the board itself, not just the chat log underneath it.
         const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
-        board.innerHTML = renderBoardActionsHtml(answerBoardActions);
-        mountBoardActions(board, answerBoardActions);
+        setBoardContent(board, answerBoardActions);
         boardStatus.textContent = 'AI Teacher — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
@@ -1487,7 +1500,7 @@
     // server-side); either way the explanation is spoken before the lesson resumes.
     async function runCheckQuestion(question) {
       boardStatus.textContent = 'AI Teacher — checking your understanding';
-      board.innerHTML = renderBoardActionsHtml([{ type: 'TEXT', content: question }]);
+      setBoardContent(board, [{ type: 'TEXT', content: question }]);
       await speakAsync(`Quick question to check you're following: ${question}`, avatarRing);
       if (stopped) return;
       const box = document.getElementById('check-question-box');
@@ -1535,7 +1548,7 @@
       try {
         const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
         boardStatus.textContent = result.correct ? 'AI Teacher — well done!' : 'AI Teacher — explaining';
-        board.innerHTML = renderBoardActionsHtml([{ type: 'TEXT', content: `${result.correct ? "Correct! " : 'Not quite — '}${result.feedback}` }]);
+        setBoardContent(board, [{ type: 'TEXT', content: `${result.correct ? "Correct! " : 'Not quite — '}${result.feedback}` }]);
         await speakAsync(`${result.correct ? "That's correct! " : 'Not quite. '}${result.feedback}`, avatarRing);
       } catch (err) {
         toast(aiErrorMessage(err));
@@ -3170,8 +3183,7 @@
       stepMeta.textContent = `Step ${idx + 1} of ${demo.steps.length}`;
       stepTitleEl.textContent = step.title;
       const actions = labStepBoardActions(step);
-      board.innerHTML = renderBoardActionsHtml(actions);
-      mountBoardActions(board, actions);
+      setBoardContent(board, actions);
       boardStatus.textContent = 'AI Teacher — writing on the board';
       return step;
     }
@@ -3215,8 +3227,7 @@
         log.scrollTop = log.scrollHeight;
         // Every answer lands on the board itself, not just the chat log underneath it.
         const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
-        board.innerHTML = renderBoardActionsHtml(answerBoardActions);
-        mountBoardActions(board, answerBoardActions);
+        setBoardContent(board, answerBoardActions);
         boardStatus.textContent = 'AI Teacher — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
@@ -4226,11 +4237,6 @@
         </div>
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>
-      <div style="display:flex; gap:12px; margin-bottom:22px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="open-attendance-btn">🗓️ Class attendance</button>
-        <button class="btn btn-ghost" id="open-assignments-btn">📋 Assignments</button>
-        <button class="btn btn-ghost" id="open-results-btn">📊 Student results</button>
-      </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
         <form id="lesson-form">
@@ -4252,9 +4258,6 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
     document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
-    document.getElementById('open-attendance-btn').addEventListener('click', () => navigate('lect-attendance', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
-    document.getElementById('open-assignments-btn').addEventListener('click', () => navigate('lect-assignments', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
-    document.getElementById('open-results-btn').addEventListener('click', () => navigate('lect-results', { courseId: course.id, courseTitle: course.title, courseCode: course.code }));
     document.getElementById('go-live-btn').addEventListener('click', async () => {
       const title = prompt('Title your live class:', `${course.code} live session`);
       if (!title || !title.trim()) return;
@@ -4299,15 +4302,18 @@
 
   // ================= LECTURER: ATTENDANCE, ASSIGNMENTS, RESULTS =================
 
+  // Reached only from the Class Attendance sidebar hub now -- attendance/assignments/
+  // results were removed from the course page itself, which only ever offered a
+  // confusing second route to the exact same screens the sidebar hubs already cover.
   async function renderLecturerAttendance() {
-    const { courseId, courseTitle, courseCode, backTo } = state.view;
+    const { courseId, courseTitle, courseCode } = state.view;
     const todayIso = new Date().toISOString().slice(0, 10);
     const dateStr = state.view.date || todayIso;
     const { roster } = await api(`/courses/${courseId}/attendance?date=${dateStr}`);
     view.innerHTML = `
       <div class="page-head">
         <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Class attendance — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">${backTo === 'lect-attendance-hub' ? '← Back' : '← Back to course'}</button>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
       </div>
       <div class="card" style="padding:16px 20px; margin-bottom:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <label style="display:flex; align-items:center; gap:8px;">
@@ -4327,9 +4333,9 @@
         `).join('') || '<p class="muted" style="padding:16px;">No students enrolled yet.</p>'}
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate(backTo === 'lect-attendance-hub' ? 'lect-attendance-hub' : 'lect-lessons', backTo === 'lect-attendance-hub' ? {} : { courseId }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-attendance-hub'));
     document.getElementById('att-date').addEventListener('change', (e) => {
-      navigate('lect-attendance', { courseId, courseTitle, courseCode, backTo, date: e.target.value });
+      navigate('lect-attendance', { courseId, courseTitle, courseCode, date: e.target.value });
     });
     view.querySelectorAll('[data-mark]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -4339,65 +4345,21 @@
             method: 'POST',
             body: { studentId: row.dataset.student, status: btn.dataset.mark, date: dateStr },
           });
-          navigate('lect-attendance', { courseId, courseTitle, courseCode, backTo, date: dateStr });
+          navigate('lect-attendance', { courseId, courseTitle, courseCode, date: dateStr });
         } catch (err) { toast(err.message); }
       });
     });
   }
 
-  async function renderLecturerAssignments() {
-    const { courseId, courseTitle, courseCode } = state.view;
-    const { assignments } = await api(`/courses/${courseId}/assignments`);
-    view.innerHTML = `
-      <div class="page-head">
-        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Assignments — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
-      </div>
-      <div class="card" style="padding:20px; margin-bottom:22px;">
-        <h3 style="margin-bottom:12px; font-size:1rem;">Post a new assignment</h3>
-        <form id="assignment-form">
-          <div class="field"><label>Kind</label><select id="asg-kind"><option value="ASSIGNMENT">Assignment</option><option value="PROJECT">Project</option></select></div>
-          <div class="field"><label>Title</label><input type="text" id="asg-title" required></div>
-          <div class="field"><label>Instructions</label><textarea id="asg-instructions" required></textarea></div>
-          <div class="field"><label>Due date (optional)</label><input type="date" id="asg-due"></div>
-          <button class="btn btn-primary" type="submit">Post assignment</button>
-        </form>
-      </div>
-      <div class="card">
-        ${assignments.map((a) => `
-          <div class="list-row" data-open="${a.id}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(a.title)} ${a.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-left:6px;">Project</span>' : ''}</div><div class="meta">${a._count.submissions} submission${a._count.submissions === 1 ? '' : 's'}${a.dueAt ? ' · due ' + new Date(a.dueAt).toLocaleDateString() : ''}</div></div>
-            <span class="pill pill-accent">View submissions</span>
-          </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No assignments posted yet.</p>'}
-      </div>
-    `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
-    document.getElementById('assignment-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const title = document.getElementById('asg-title').value.trim();
-      const instructions = document.getElementById('asg-instructions').value.trim();
-      const dueAt = document.getElementById('asg-due').value || null;
-      const kind = document.getElementById('asg-kind').value;
-      try {
-        await api(`/courses/${courseId}/assignments`, { method: 'POST', body: { title, instructions, dueAt, kind } });
-        toast(kind === 'PROJECT' ? 'Project posted' : 'Assignment posted');
-        navigate('lect-assignments', { courseId, courseTitle, courseCode });
-      } catch (err) { toast(err.message); }
-    });
-    view.querySelectorAll('[data-open]').forEach((el) => {
-      const a = assignments.find((x) => x.id === el.dataset.open);
-      el.addEventListener('click', () => navigate('lect-assignment-submissions', { assignmentId: a.id, assignmentTitle: a.title, courseId, courseTitle, courseCode, backTo: 'lect-assignments' }));
-    });
-  }
-
+  // Reached only from the Assignments sidebar hub now (same reasoning as attendance
+  // above).
   async function renderAssignmentSubmissions() {
-    const { assignmentId, assignmentTitle, courseId, courseTitle, courseCode, backTo } = state.view;
+    const { assignmentId, assignmentTitle, courseId, courseTitle, courseCode } = state.view;
     const { submissions } = await api(`/assignments/${assignmentId}/submissions`);
     view.innerHTML = `
       <div class="page-head">
         <h1>${esc(assignmentTitle || 'Submissions')}</h1>
-        <button class="btn btn-ghost btn-sm" id="back-btn">${backTo === 'lect-assignments-hub' ? '← Back' : '← Back to assignments'}</button>
+        <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
       </div>
       <div class="card">
         ${submissions.map((s) => `
@@ -4418,7 +4380,7 @@
         `).join('') || '<p class="muted" style="padding:16px;">No submissions yet.</p>'}
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate(backTo === 'lect-assignments-hub' ? 'lect-assignments-hub' : 'lect-assignments', backTo === 'lect-assignments-hub' ? {} : { courseId, courseTitle, courseCode }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-assignments-hub'));
     view.querySelectorAll('.mark-form').forEach((form) => {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -4427,79 +4389,9 @@
         try {
           await api(`/assignment-submissions/${form.dataset.sub}/mark`, { method: 'POST', body: { score, feedback } });
           toast('Marked');
-          navigate('lect-assignment-submissions', { assignmentId, assignmentTitle, courseId, courseTitle, courseCode, backTo });
+          navigate('lect-assignment-submissions', { assignmentId, assignmentTitle, courseId, courseTitle, courseCode });
         } catch (err) { toast(err.message); }
       });
-    });
-  }
-
-  async function renderLecturerResults() {
-    const { courseId, courseTitle, courseCode } = state.view;
-    const [{ results }, { count }] = await Promise.all([
-      api(`/courses/${courseId}/results`),
-      api(`/courses/${courseId}/enrollment-count`),
-    ]);
-    const { roster } = await api(`/courses/${courseId}/attendance`);
-    view.innerHTML = `
-      <div class="page-head">
-        <div><div class="muted tabular">${esc(courseCode || '')}</div><h1>Student results — ${esc(courseTitle || '')}</h1></div>
-        <button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button>
-      </div>
-      <p class="muted" style="margin-bottom:18px;">${count} student${count === 1 ? '' : 's'} enrolled</p>
-      <div class="card" style="padding:20px; margin-bottom:22px;">
-        <div class="page-head" style="margin-bottom:12px;">
-          <h3 style="font-size:1rem;">Create new result</h3>
-          ${results.some((r) => !r.sentAt) ? `<button class="btn btn-ghost btn-sm" id="publish-drafts-btn">📤 Publish results (${results.filter((r) => !r.sentAt).length} draft${results.filter((r) => !r.sentAt).length === 1 ? '' : 's'})</button>` : ''}
-        </div>
-        <form id="result-form">
-          <div class="field"><label>Student</label><select id="res-student">${roster.map((r) => `<option value="${r.student.id}">${esc(r.student.fullName)} (${esc(r.student.matricNumber || '—')})</option>`).join('')}</select></div>
-          <div class="field"><label>Semester</label><input type="text" id="res-term" placeholder="e.g. 1st Semester 2025/2026" required></div>
-          <div class="field"><label>Score</label><input type="number" id="res-score" required></div>
-          <div class="field"><label>Grade (optional)</label><input type="text" id="res-grade" placeholder="e.g. A"></div>
-          <div class="field"><label>Remark (optional)</label><input type="text" id="res-remark"></div>
-          <p class="meta" style="margin:8px 0;">"Save and Send" delivers it right away. "Save" keeps it as a draft to send later.</p>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn btn-primary" type="submit" id="res-save-send">Save and Send</button>
-            <button class="btn btn-ghost" type="button" id="res-save">Save</button>
-          </div>
-        </form>
-      </div>
-      <div class="card" style="overflow-x:auto;">
-        <table class="data-table">
-          <thead><tr><th>Student</th><th>Semester</th><th>Score</th><th>Grade</th><th>Status</th></tr></thead>
-          <tbody>
-            ${results.map((r) => `<tr><td>${esc(r.student.fullName)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-lessons', { courseId }));
-    async function saveResult(send) {
-      try {
-        await api(`/courses/${courseId}/results`, {
-          method: 'POST',
-          body: {
-            studentId: document.getElementById('res-student').value,
-            send,
-            term: document.getElementById('res-term').value.trim(),
-            score: document.getElementById('res-score').value,
-            grade: document.getElementById('res-grade').value.trim() || null,
-            remark: document.getElementById('res-remark').value.trim() || null,
-          },
-        });
-        toast(send ? 'Result saved and sent' : 'Result saved as a draft');
-        navigate('lect-results', { courseId, courseTitle, courseCode });
-      } catch (err) { toast(err.message); }
-    }
-    document.getElementById('result-form').addEventListener('submit', (e) => { e.preventDefault(); saveResult(true); });
-    document.getElementById('res-save').addEventListener('click', () => saveResult(false));
-    const publishBtn = document.getElementById('publish-drafts-btn');
-    if (publishBtn) publishBtn.addEventListener('click', async () => {
-      try {
-        const { count } = await api(`/courses/${courseId}/results/publish`, { method: 'POST' });
-        toast(count ? `${count} result${count === 1 ? '' : 's'} sent to students` : 'Nothing to publish');
-        navigate('lect-results', { courseId, courseTitle, courseCode });
-      } catch (err) { toast(err.message); }
     });
   }
 
@@ -4526,11 +4418,11 @@
       </div>
       <h3 style="margin-bottom:10px; font-size:1rem;">Quick actions</h3>
       <div class="grid-cards" style="margin-bottom:26px;">
-        <div class="card course-card" data-jump-nav="lect-lessons-entry" style="cursor:pointer;"><div class="code">📹</div><div class="meta">Upload Lesson</div></div>
+        <div class="card course-card" data-jump-nav="lect-lessons-entry" style="cursor:pointer;"><div class="code">📹</div><div class="meta">Upload Lecture</div></div>
         <div class="card course-card" data-jump-nav="lect-tests" style="cursor:pointer;"><div class="code">📝</div><div class="meta">Create Test</div></div>
         <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">👥</div><div class="meta">My Students</div></div>
-        <div class="card course-card" data-jump-nav="lect-assignments-hub" style="cursor:pointer;"><div class="code">📋</div><div class="meta">Classwork / Quiz</div></div>
-        <div class="card course-card" data-jump-nav="lect-assignments-hub" style="cursor:pointer;"><div class="code">✅</div><div class="meta">Mark Work</div></div>
+        <div class="card course-card" data-jump-nav="lect-classwork-quiz" style="cursor:pointer;"><div class="code">📋</div><div class="meta">Classwork / Quiz</div></div>
+        <div class="card course-card" data-jump-nav="lect-mark-work" style="cursor:pointer;"><div class="code">✅</div><div class="meta">Mark Work</div></div>
         <div class="card course-card" data-jump-nav="lect-attendance-hub" style="cursor:pointer;"><div class="code">🗓️</div><div class="meta">Attendance</div></div>
         <div class="card course-card" id="dash-announce-btn" style="cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></div>
       </div>
@@ -4550,8 +4442,8 @@
     document.getElementById('dash-announce-btn').addEventListener('click', () => openAnnounceDialog(courses));
   }
 
-  // "Upload Lesson" has no cross-course hub of its own (a lesson always belongs to one
-  // course, and the upload form lives on that course's own page) -- this just asks
+  // "Upload Lecture" has no cross-course hub of its own (a lecture always belongs to
+  // one course, and the upload form lives on that course's own page) -- this just asks
   // which class first, then goes straight there, instead of making the lecturer find
   // "My Courses" themselves.
   function openLessonCoursePicker(courses) {
@@ -4560,7 +4452,7 @@
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(420px,92vw); height:fit-content; padding:24px; z-index:200;';
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">Upload a lesson to which class?</h3>
+      <h3 style="margin-bottom:14px;">Upload a lecture to which class?</h3>
       <div class="field"><select id="lp-course">${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
       <div style="display:flex; gap:10px; margin-top:10px;">
         <button class="btn btn-primary" id="lp-go">Continue</button>
@@ -4571,8 +4463,13 @@
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     document.body.appendChild(backdrop);
     document.body.appendChild(container);
-    container.querySelector('#lp-cancel').addEventListener('click', () => { backdrop.remove(); container.remove(); });
-    container.querySelector('#lp-go').addEventListener('click', () => navigate('lect-lessons', { courseId: container.querySelector('#lp-course').value }));
+    function close() { backdrop.remove(); container.remove(); }
+    container.querySelector('#lp-cancel').addEventListener('click', close);
+    container.querySelector('#lp-go').addEventListener('click', () => {
+      const courseId = container.querySelector('#lp-course').value;
+      close();
+      navigate('lect-lessons', { courseId });
+    });
   }
 
   // A quick broadcast to everyone enrolled in one class -- delivered as a regular
@@ -4775,7 +4672,7 @@
       </div>
     `;
     view.querySelectorAll('[data-open]').forEach((el) => {
-      el.addEventListener('click', () => navigate('lect-attendance', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code, backTo: 'lect-attendance-hub' }));
+      el.addEventListener('click', () => navigate('lect-attendance', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
     });
   }
 
@@ -4806,10 +4703,83 @@
     view.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-assignment-submissions', {
         assignmentId: el.dataset.open, courseId: el.dataset.course, courseTitle: el.dataset.courseTitle, courseCode: el.dataset.courseCode,
-        backTo: 'lect-assignments-hub',
       }));
     });
     document.getElementById('new-assignment-btn').addEventListener('click', () => openNewAssignmentDialog(courses));
+  }
+
+  // A single ungraded-work inbox, distinct from "Classwork / Quiz" (which is for
+  // *setting* work) -- covers Assignment submissions (manually marked, one holistic
+  // score) and Assessment theory-question answers (Classwork/Quiz/Test/Exam alike;
+  // objective questions there are already auto-graded on submit, but theory answers
+  // never are, so without this they'd sit ungraded indefinitely).
+  async function renderMarkWorkHub() {
+    const [{ submissions: assignmentSubs }, { submissions: theorySubs }] = await Promise.all([
+      api('/lecturer/unmarked-assignment-submissions'),
+      api('/lecturer/theory-submissions'),
+    ]);
+    view.innerHTML = `
+      <div class="page-head"><h1>Mark Work</h1></div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Assignments &amp; Projects</h3>
+      <div class="card" style="margin-bottom:26px;">
+        ${assignmentSubs.map((s) => `
+          <div class="list-row" data-open-assignment="${s.assignment.id}" data-assignment-title="${esc(s.assignment.title)}" data-course="${s.assignment.course.id}" data-course-title="${esc(s.assignment.course.title)}" data-course-code="${esc(s.assignment.course.code)}" style="cursor:pointer;">
+            <div>
+              <div style="font-weight:600;">${esc(s.student.fullName)} — ${esc(s.assignment.title)} ${s.assignment.kind === 'PROJECT' ? '<span class="pill pill-muted" style="margin-left:6px;">Project</span>' : ''}</div>
+              <div class="meta">${esc(s.assignment.course.code)} · submitted ${new Date(s.submittedAt).toLocaleDateString()}</div>
+            </div>
+            <span class="pill pill-accent">Mark</span>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">Nothing awaiting a mark.</p>'}
+      </div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Classwork, Quiz, Test &amp; Exam — written answers</h3>
+      <p class="muted" style="margin-bottom:14px;">Objective (multiple-choice) questions are graded automatically on submit. Written answers need a score from you.</p>
+      <div id="theory-list">
+        ${theorySubs.map((s) => `
+          <div class="card" style="padding:18px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+              <div>
+                <div style="font-weight:600;">${esc(s.student.fullName)} — ${esc(s.assessment.title)}</div>
+                <div class="meta">${esc(s.assessment.type)} · ${esc(s.assessment.course.code)}</div>
+              </div>
+            </div>
+            ${s.theoryAnswers.map((q, i) => `
+              <div style="${i < s.theoryAnswers.length - 1 ? 'margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--line);' : 'margin-bottom:12px;'}">
+                <div style="font-weight:600; margin-bottom:6px;">${i + 1}. ${esc(q.text)}</div>
+                <div class="meta">Student's answer</div>
+                <p style="margin-bottom:8px;">${esc(q.myAnswer || '(no answer)')}</p>
+                ${q.modelAnswer ? `<div class="meta">Model answer</div><p>${esc(q.modelAnswer)}</p>` : ''}
+              </div>
+            `).join('')}
+            <form class="mark-theory-form" data-sub="${s.id}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <input type="number" class="theory-score" placeholder="Score" style="width:90px;" required>
+              <span class="meta">out of</span>
+              <input type="number" class="theory-max" placeholder="Max" style="width:90px;" required>
+              <button class="btn btn-primary btn-sm" type="submit">Save mark</button>
+            </form>
+          </div>
+        `).join('') || '<p class="muted" style="padding:16px;">Nothing awaiting a mark.</p>'}
+      </div>
+    `;
+    view.querySelectorAll('[data-open-assignment]').forEach((row) => {
+      row.addEventListener('click', () => navigate('lect-assignment-submissions', {
+        assignmentId: row.dataset.openAssignment, assignmentTitle: row.dataset.assignmentTitle,
+        courseId: row.dataset.course, courseTitle: row.dataset.courseTitle, courseCode: row.dataset.courseCode,
+      }));
+    });
+    view.querySelectorAll('.mark-theory-form').forEach((form) => {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const theoryScore = form.querySelector('.theory-score').value;
+        const theoryMaxScore = form.querySelector('.theory-max').value;
+        try {
+          await api(`/submissions/${form.dataset.sub}/mark-theory`, { method: 'POST', body: { theoryScore, theoryMaxScore } });
+          toast('Marked');
+          render();
+        } catch (err) { toast(err.message); }
+      });
+    });
   }
 
   // Assignment/Project creation gets the same theory/objective question-drafting body
@@ -5005,14 +4975,15 @@
   // choices offered here mirror that split instead of listing every type always.
   // "Assignment" was removed entirely -- that's the real Assignment/Project model
   // and its own screen (free-text instructions + manual marking), not an Assessment.
-  const ASSESSMENT_TYPE_LABELS = { CA: 'CA', Test: 'Test', Mock: 'Mock', SEMESTER_EXAM: 'Semester Exam', PAST_QUESTION: 'Past Question' };
+  const ASSESSMENT_TYPE_LABELS = { CA: 'CA', Test: 'Test', Mock: 'Mock', SEMESTER_EXAM: 'Semester Exam', PAST_QUESTION: 'Past Question', Classwork: 'Classwork', Quiz: 'Quiz' };
   // Singular, human label for whichever type this dialog is scoped to -- drives the
   // dialog title and save-button wording so it reads "New test"/"Edit test" instead of
   // always the generic "New assessment", which is what the lecturer was actually
   // seeing on the Tests/Semester Exam pages regardless of which one they were on.
   function assessmentKindLabel(allowedTypes) {
+    if (allowedTypes.length === 2 && allowedTypes.includes('Classwork') && allowedTypes.includes('Quiz')) return 'classwork/quiz';
     if (allowedTypes.length !== 1) return 'assessment';
-    return { CA: 'assessment', Test: 'test', Mock: 'mock test', SEMESTER_EXAM: 'semester exam', PAST_QUESTION: 'past question set' }[allowedTypes[0]] || 'assessment';
+    return { CA: 'assessment', Test: 'test', Mock: 'mock test', SEMESTER_EXAM: 'semester exam', PAST_QUESTION: 'past question set', Classwork: 'classwork', Quiz: 'quiz' }[allowedTypes[0]] || 'assessment';
   }
 
   // opts.existing (an already-loaded assessment with its full questions, e.g. from
@@ -6364,6 +6335,84 @@
         close();
         render();
       } catch (err) { toast(err.message); }
+    });
+  }
+
+  // Broadcasts to a whole audience at once (all students, all academic staff, all
+  // non-academic staff, or everyone), optionally narrowed to one department. In-app
+  // notification always sends (no setup needed); Email/SMS are opt-in channels that
+  // may come back only partially configured -- the result banner reports exactly how
+  // many went out per channel rather than a single pass/fail.
+  async function renderAdminBulkMessage() {
+    const deptOptions = await departmentOptionsHtml();
+    view.innerHTML = `
+      <div class="page-head"><h1>Bulk SMS/Email</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Send a message to every student, every academic (lecturer) or non-academic staff member, or the whole school -- by in-app notification, email, and/or SMS.</p>
+      <div class="card" style="padding:20px;">
+        <form id="bulk-msg-form">
+          <div class="field">
+            <label>Audience</label>
+            <select id="bm-audience">
+              <option value="STUDENTS">All students</option>
+              <option value="ACADEMIC_STAFF">All academic staff (lecturers)</option>
+              <option value="NON_ACADEMIC_STAFF">All non-academic staff</option>
+              <option value="EVERYONE">Everyone</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Department (optional -- narrows the audience above)</label>
+            <select id="bm-department"><option value="">All departments</option>${deptOptions}</select>
+          </div>
+          <div class="field">
+            <label>Channels</label>
+            <div style="display:flex; gap:16px; flex-wrap:wrap; padding:8px 0;">
+              <label style="display:flex; align-items:center; gap:6px; font-weight:500;"><input type="checkbox" id="bm-ch-inapp" checked> In-app notification</label>
+              <label style="display:flex; align-items:center; gap:6px; font-weight:500;"><input type="checkbox" id="bm-ch-email"> Email</label>
+              <label style="display:flex; align-items:center; gap:6px; font-weight:500;"><input type="checkbox" id="bm-ch-sms"> SMS</label>
+            </div>
+          </div>
+          <div class="field"><label>Subject (used for in-app/email; SMS has no subject line)</label><input type="text" id="bm-subject" placeholder="e.g. Resumption date changed"></div>
+          <div class="field"><label>Message</label><textarea id="bm-body" required rows="5"></textarea></div>
+          <button class="btn btn-primary" type="submit" id="bm-send-btn">Send</button>
+        </form>
+        <div id="bm-result" style="margin-top:16px;"></div>
+      </div>
+    `;
+    document.getElementById('bulk-msg-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const channels = [];
+      if (document.getElementById('bm-ch-inapp').checked) channels.push('IN_APP');
+      if (document.getElementById('bm-ch-email').checked) channels.push('EMAIL');
+      if (document.getElementById('bm-ch-sms').checked) channels.push('SMS');
+      if (!channels.length) return toast('Pick at least one channel.');
+      const body = document.getElementById('bm-body').value.trim();
+      if (!body) return toast('Write a message first.');
+      const btn = document.getElementById('bm-send-btn');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      try {
+        const result = await api('/admin/bulk-message', {
+          method: 'POST',
+          body: {
+            audience: document.getElementById('bm-audience').value,
+            departmentId: document.getElementById('bm-department').value || null,
+            channels,
+            subject: document.getElementById('bm-subject').value.trim(),
+            body,
+          },
+        });
+        const lines = [`Sent to ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}.`];
+        if (channels.includes('IN_APP')) lines.push(`In-app: ${result.inApp} notified.`);
+        if (channels.includes('EMAIL')) lines.push(result.emailError ? `Email: ${result.emailError}` : `Email: ${result.email} sent${result.emailSkipped ? `, ${result.emailSkipped} skipped (no address on file)` : ''}.`);
+        if (channels.includes('SMS')) lines.push(result.smsError ? `SMS: ${result.smsError}` : `SMS: ${result.sms} sent${result.smsSkipped ? `, ${result.smsSkipped} skipped (no number on file)` : ''}.`);
+        document.getElementById('bm-result').innerHTML = `<div class="hint-box">${lines.map(esc).join('<br>')}</div>`;
+        toast('Message sent');
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send';
+      }
     });
   }
 

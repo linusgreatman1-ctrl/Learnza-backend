@@ -396,6 +396,9 @@ model Submission {
   score        Int?       // null until submitted (a started-but-not-submitted row has startedAt set, score null)
   total        Int?
   submittedAt  DateTime?
+  theoryScore    Int?      // lecturer-entered, for the theory questions only -- never auto-graded
+  theoryMaxScore Int?
+  markedAt       DateTime? // set once a lecturer has reviewed the theory answers (or there were none to review)
 
   @@unique([assessmentId, studentId])
 }

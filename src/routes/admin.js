@@ -3,11 +3,72 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { generateAccessCode } = require('../utils');
-const { notify } = require('../services/notification.service');
+const { notify, notifyMany } = require('../services/notification.service');
 const { getCurrentSemesterId } = require('../semester');
+const bulkMessage = require('../services/bulkMessage.service');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('ADMIN'));
+
+// ---- Bulk SMS/Email: one message to every student, every academic (lecturer) or
+// non-academic staff member, or the whole school -- an in-app notification always
+// goes out (needs no configuration); Email/SMS are opt-in channels the admin picks,
+// and fail per-recipient (missing address/number, or the channel not configured at
+// all) without blocking the others.
+router.post('/bulk-message', async (req, res) => {
+  const { audience, departmentId, channels, subject, body } = req.body;
+  if (!body || !body.trim()) return res.status(400).json({ error: 'Write a message first.' });
+  if (!Array.isArray(channels) || !channels.length) return res.status(400).json({ error: 'Pick at least one channel.' });
+
+  const roleFilter = {
+    STUDENTS: { role: 'STUDENT' },
+    ACADEMIC_STAFF: { role: 'LECTURER' },
+    NON_ACADEMIC_STAFF: { role: 'STAFF' },
+    EVERYONE: { role: { in: ['STUDENT', 'LECTURER', 'STAFF'] } },
+  }[audience];
+  if (!roleFilter) return res.status(400).json({ error: 'Pick a valid audience.' });
+
+  const recipients = await prisma.user.findMany({
+    where: { schoolId: req.user.schoolId, status: 'ACTIVE', ...roleFilter, ...(departmentId ? { departmentId } : {}) },
+    select: { id: true, email: true, phone: true, fullName: true },
+  });
+  if (!recipients.length) return res.json({ recipientCount: 0, inApp: 0, email: 0, sms: 0, emailSkipped: 0, smsSkipped: 0 });
+
+  const result = { recipientCount: recipients.length, inApp: 0, email: 0, sms: 0, emailSkipped: 0, smsSkipped: 0 };
+
+  if (channels.includes('IN_APP')) {
+    await notifyMany(recipients.map((r) => r.id), subject || 'Message from school admin', body, 'my-dashboard');
+    result.inApp = recipients.length;
+  }
+
+  if (channels.includes('EMAIL')) {
+    if (!bulkMessage.emailConfigured()) {
+      result.emailSkipped = recipients.length;
+      result.emailError = 'Email is not configured yet -- ask your developer to set SMTP_HOST/SMTP_USER/SMTP_PASS.';
+    } else {
+      for (const r of recipients) {
+        if (!r.email) { result.emailSkipped++; continue; }
+        try { await bulkMessage.sendEmail(r.email, subject || 'Message from your school', body); result.email++; }
+        catch { result.emailSkipped++; }
+      }
+    }
+  }
+
+  if (channels.includes('SMS')) {
+    if (!bulkMessage.smsConfigured()) {
+      result.smsSkipped = recipients.length;
+      result.smsError = 'SMS is not configured yet -- ask your developer to set TERMII_API_KEY/TERMII_SENDER_ID.';
+    } else {
+      for (const r of recipients) {
+        if (!r.phone) { result.smsSkipped++; continue; }
+        try { await bulkMessage.sendSms(r.phone, body); result.sms++; }
+        catch { result.smsSkipped++; }
+      }
+    }
+  }
+
+  res.json(result);
+});
 
 router.get('/school', async (req, res) => {
   const school = await prisma.school.findUnique({ where: { id: req.user.schoolId } });

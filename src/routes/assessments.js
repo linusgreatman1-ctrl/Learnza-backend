@@ -3,7 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const gamification = require('../services/gamification.service');
 const { getCurrentSemesterId } = require('../semester');
-const { notifyMany } = require('../services/notification.service');
+const { notify, notifyMany } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -244,6 +244,58 @@ router.post('/assessments/:id/practice-submit', requireAuth, requireRole('STUDEN
     return { questionId: q.id, questionType: 'OBJECTIVE', correctIndex: q.correctIndex, chosen: chosen ?? null, correct, explanation: q.explanation };
   });
   res.json({ score, total: objectiveCount, corrections });
+});
+
+// Every submitted attempt with at least one theory question that hasn't been reviewed
+// yet -- theory answers are never auto-graded (assessments.js:submit only scores
+// OBJECTIVE questions), so without this inbox they'd sit ungraded indefinitely. Powers
+// the "Mark Work" hub alongside the equivalent Assignment-submissions inbox.
+router.get('/lecturer/theory-submissions', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const submissions = await prisma.submission.findMany({
+    where: {
+      submittedAt: { not: null },
+      markedAt: null,
+      assessment: { authorId: req.user.id, questions: { some: { questionType: 'THEORY' } } },
+    },
+    include: {
+      assessment: {
+        select: { id: true, title: true, type: true, course: { select: { code: true, title: true } }, questions: { where: { questionType: 'THEORY' } } },
+      },
+      student: { select: { fullName: true, matricNumber: true } },
+    },
+    orderBy: { submittedAt: 'asc' },
+  });
+  res.json({
+    submissions: submissions.map((s) => {
+      const answers = JSON.parse(s.answers || '[]');
+      const theoryAnswers = s.assessment.questions.map((q) => {
+        const mine = answers.find((a) => a.questionId === q.id);
+        return { questionId: q.id, text: q.text, myAnswer: mine ? mine.text : null, modelAnswer: q.modelAnswer };
+      });
+      return {
+        id: s.id, student: s.student,
+        assessment: { id: s.assessment.id, title: s.assessment.title, type: s.assessment.type, course: s.assessment.course },
+        theoryAnswers,
+      };
+    }),
+  });
+});
+
+// The score/max the lecturer enters for the theory portion only -- kept separate from
+// the auto-graded objective `score`/`total` rather than merged into one number, since
+// the two are graded through entirely different mechanisms.
+router.post('/submissions/:id/mark-theory', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const { theoryScore, theoryMaxScore } = req.body;
+  if (theoryScore === undefined || theoryScore === null || theoryMaxScore === undefined || theoryMaxScore === null) {
+    return res.status(400).json({ error: 'A score and max score are required.' });
+  }
+  const submission = await prisma.submission.update({
+    where: { id: req.params.id },
+    data: { theoryScore: Number(theoryScore), theoryMaxScore: Number(theoryMaxScore), markedAt: new Date() },
+    include: { assessment: { select: { title: true } } },
+  });
+  await notify(submission.studentId, 'Written answers marked', `${submission.assessment.title}: ${theoryScore}/${theoryMaxScore} for the written questions.`, 'student-results');
+  res.json({ submission });
 });
 
 router.get('/students/me/progress', requireAuth, requireRole('STUDENT'), async (req, res) => {

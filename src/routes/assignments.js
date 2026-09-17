@@ -69,6 +69,20 @@ router.post('/assignments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
   res.json({ submission });
 });
 
+// Every not-yet-marked submission across every course this lecturer teaches -- powers
+// the "Mark Work" hub as a single inbox instead of checking each assignment one by one.
+router.get('/lecturer/unmarked-assignment-submissions', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const submissions = await prisma.assignmentSubmission.findMany({
+    where: { status: { not: 'MARKED' }, assignment: { authorId: req.user.id } },
+    include: {
+      assignment: { select: { id: true, title: true, kind: true, course: { select: { id: true, code: true, title: true } } } },
+      student: { select: { fullName: true, matricNumber: true } },
+    },
+    orderBy: { submittedAt: 'asc' },
+  });
+  res.json({ submissions });
+});
+
 // Lecturer: submissions for one assignment, to mark.
 router.get('/assignments/:id/submissions', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const submissions = await prisma.assignmentSubmission.findMany({
