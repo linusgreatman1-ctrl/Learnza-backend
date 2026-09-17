@@ -73,16 +73,40 @@ model AttitudeTestQuestion {
   order          Int          @default(0)
 }
 
+// Created the moment admin sends the test to one applicant (sentAt set, no answers
+// yet) -- this is what the applicant's dashboard checks for to know a test is
+// waiting. startedAt stamps the instant they open it (the deadline anchor, same
+// server-side-timer pattern as Submission/start in assessments.js); answers/score
+// only get filled in at actual submit time.
 model AttitudeTestSubmission {
   id            String       @id @default(cuid())
   test          AttitudeTest @relation(fields: [testId], references: [id])
   testId        String
   application   Application  @relation(fields: [applicationId], references: [id])
   applicationId String       @unique
-  answers       String       // JSON-encoded array of chosen option indices
-  score         Int
-  total         Int
-  submittedAt   DateTime     @default(now())
+  sentAt        DateTime?
+  startedAt     DateTime?
+  answers       String?      // JSON-encoded array of chosen option indices
+  score         Int?
+  total         Int?
+  submittedAt   DateTime?
+  createdAt     DateTime     @default(now())
+}
+
+// A prospective student's login identity -- created the moment they click "Apply for
+// Admission" and set up an account, before they've filled in any actual application
+// details. Lets them log back into their own small dashboard later to check status,
+// take the aptitude test when the school sends it, etc. Distinct from User: an
+// applicant isn't affiliated with any school yet (that only happens once accepted and
+// registered, via Application.registeredUserId).
+model Applicant {
+  id           String        @id @default(cuid())
+  fullName     String
+  email        String        @unique
+  phone        String
+  passwordHash String
+  createdAt    DateTime      @default(now())
+  applications Application[]
 }
 
 model User {
@@ -508,6 +532,8 @@ model LabAttempt {
 // creates the real User row and links back here via registeredUserId.
 model Application {
   id             String     @id @default(cuid())
+  applicant      Applicant? @relation(fields: [applicantId], references: [id])
+  applicantId    String?
   school         School     @relation(fields: [schoolId], references: [id])
   schoolId       String
   department     Department @relation(fields: [departmentId], references: [id])
@@ -517,6 +543,11 @@ model Application {
   phone          String
   level          String     // e.g. NCE 1
   statement      String?    // short "why this programme" note
+  olevelType     String?    // WAEC | NECO | GCE | OTHER
+  olevelResultUrl String?   // uploaded result document/photo
+  iqAnswer       String?    // the single generic IQ-style question, answered as part of applying
+  iqCorrect      Boolean?   // informational only -- not scored or shown, just visible to admin
+  aptitudeScheduledAt DateTime? // the default "expect a test around this time" date shown right after applying (createdAt + 7 days, 2pm) -- purely informational until admin actually sends one
   status         String     @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | ACCEPTED | REJECTED | REGISTERED
   registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
   registeredUserId String?  @unique

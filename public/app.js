@@ -6236,6 +6236,11 @@
   async function renderAdminAdmissionDetail() {
     const { application: a } = await api(`/admin/admissions/${state.view.applicationId}`);
     const sub = a.attitudeTestSubmission;
+    const aptitudeStatusHtml = sub && sub.submittedAt
+      ? `${sub.score}% <span class="pill pill-pass" style="margin-left:6px;">Submitted</span>`
+      : sub && sub.sentAt
+        ? `Sent, awaiting response <span class="pill pill-accent" style="margin-left:6px;">${sub.startedAt ? 'In progress' : 'Not started'}</span>`
+        : 'Not sent yet';
     view.innerHTML = `
       <div class="page-head"><h1>${esc(a.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       <div class="card" style="padding:24px; max-width:560px; margin-bottom:18px;">
@@ -6246,11 +6251,14 @@
           <div><div class="meta">Level</div><div>${esc(a.level)}</div></div>
           <div><div class="meta">Status</div><div>${esc(a.status.replace('_', ' '))}</div></div>
           <div><div class="meta">Applied</div><div class="tabular">${new Date(a.createdAt).toLocaleDateString()}</div></div>
-          <div><div class="meta">Attitude test</div><div>${sub ? `${sub.score} / ${sub.total}` : 'Not taken yet'}</div></div>
+          <div><div class="meta">O-level result</div><div>${a.olevelResultUrl ? `${esc(a.olevelType || '')} — <a href="${esc(a.olevelResultUrl)}" target="_blank" rel="noopener">View upload</a>` : 'Not uploaded'}</div></div>
+          <div><div class="meta">Screening question</div><div>${a.iqAnswer != null ? (a.iqCorrect ? 'Answered correctly' : 'Answered') : '—'}</div></div>
+          <div><div class="meta">Aptitude test</div><div>${aptitudeStatusHtml}</div></div>
         </div>
         ${a.statement ? `<p class="muted" style="margin-top:14px;">${esc(a.statement)}</p>` : ''}
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:18px;">
           ${a.status === 'SUBMITTED' ? `<button class="btn btn-ghost btn-sm" data-screen>Screen</button>` : ''}
+          ${!sub || !sub.sentAt ? `<button class="btn btn-accent btn-sm" data-send-aptitude>Send aptitude test</button>` : ''}
           ${['SUBMITTED', 'UNDER_REVIEW'].includes(a.status) ? `<button class="btn btn-primary btn-sm" data-accept>Accept</button><button class="btn btn-ghost btn-sm" data-reject>Reject</button>` : ''}
           ${a.status === 'ACCEPTED' ? `<button class="btn btn-accent btn-sm" data-register>Register as student</button>` : ''}
         </div>
@@ -6259,6 +6267,14 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('admin-admissions'));
     const screenBtn = view.querySelector('[data-screen]');
     if (screenBtn) screenBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/screen`, { method: 'POST' }); toast('Marked under review'); render(); });
+    const sendAptitudeBtn = view.querySelector('[data-send-aptitude]');
+    if (sendAptitudeBtn) sendAptitudeBtn.addEventListener('click', async () => {
+      try {
+        await api(`/admin/admissions/${a.id}/send-aptitude-test`, { method: 'POST' });
+        toast('Aptitude test sent to the applicant');
+        render();
+      } catch (err) { toast(err.message); }
+    });
     const acceptBtn = view.querySelector('[data-accept]');
     if (acceptBtn) acceptBtn.addEventListener('click', async () => { await api(`/admin/admissions/${a.id}/accept`, { method: 'POST' }); toast('Accepted'); render(); });
     const rejectBtn = view.querySelector('[data-reject]');
@@ -6274,12 +6290,13 @@
   }
 
   async function renderAdminAttitudeTest() {
-    const { test } = await api('/admin/attitude-test');
+    const { test, maxQuestions } = await api('/admin/attitude-test');
     view.innerHTML = `
-      <div class="page-head"><h1>Admission Attitude Test</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
-      ${test ? `<p class="meta" style="margin-bottom:14px;">Current test: "${esc(test.title)}" (${test.questions.length} questions). Saving below replaces it with a new version for future applicants — past scores stay as they were.</p>` : '<p class="meta" style="margin-bottom:14px;">No attitude test configured yet — applicants won\'t see one to take until you add questions below.</p>'}
+      <div class="page-head"><h1>Admission Aptitude Test</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      ${test ? `<p class="meta" style="margin-bottom:14px;">Current test: "${esc(test.title)}" (${test.questions.length} questions). Saving below replaces it with a new version for future sends — already-sent/scored applicants keep their own copy.</p>` : '<p class="meta" style="margin-bottom:14px;">No aptitude test configured yet — you won\'t be able to send one to an applicant until you add questions below.</p>'}
+      <p class="meta" id="at-cap-note" style="margin-bottom:14px;"></p>
       <form id="attitude-form" class="card" style="padding:20px;">
-        <div class="field"><label>Test title</label><input type="text" id="at-title" value="${test ? esc(test.title) : 'General Attitude Test'}" required></div>
+        <div class="field"><label>Test title</label><input type="text" id="at-title" value="${test ? esc(test.title) : 'General Aptitude Test'}" required></div>
         <div id="at-questions">
           ${(test ? test.questions : [{ text: '', options: ['', '', '', ''], correctIndex: 0 }]).map((q, qi) => questionEditorHtml(qi, q)).join('')}
         </div>
@@ -6289,13 +6306,25 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('admin-admissions'));
     wireQuestionEditor('at-questions', 'at-add-q');
+    // Each question is a flat 10% of the applicant's score, so more than 10 would push
+    // the total over 100% -- the add-question button disables right at the cap rather
+    // than letting the save request fail after the fact.
+    function updateCapNote() {
+      const count = document.querySelectorAll('#at-questions .quiz-q').length;
+      document.getElementById('at-cap-note').textContent = `${count} / ${maxQuestions} questions (each is worth 10% of the applicant's score).`;
+      document.getElementById('at-add-q').disabled = count >= maxQuestions;
+    }
+    document.getElementById('at-questions').addEventListener('click', updateCapNote);
+    document.getElementById('at-add-q').addEventListener('click', updateCapNote);
+    updateCapNote();
     document.getElementById('attitude-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const questions = readQuestionEditor('at-questions');
       if (!questions.length) return toast('Add at least one question.');
+      if (questions.length > maxQuestions) return toast(`At most ${maxQuestions} questions allowed.`);
       try {
         await api('/admin/attitude-test', { method: 'POST', body: { title: document.getElementById('at-title').value.trim(), questions } });
-        toast('Attitude test saved');
+        toast('Aptitude test saved');
         navigate('admin-admissions');
       } catch (err) { toast(err.message); }
     });

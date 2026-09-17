@@ -9,153 +9,328 @@
 <link rel="stylesheet" href="style.css">
 <style>
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .apply-box { width: 100%; max-width: 480px; padding: 32px; }
+  .apply-box { width: 100%; max-width: 520px; padding: 32px; }
   .apply-box .brand { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 4px; }
   .confirm { text-align: center; padding: 20px 0; }
   .at-q { padding: 16px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; }
   .at-opt { padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; cursor: pointer; }
   .at-opt.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .status-pill { display: inline-block; padding: 6px 14px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; }
+  .tabs { display: flex; gap: 4px; background: var(--line); padding: 4px; border-radius: 999px; }
+  .tab-btn { flex: 1; border: none; background: transparent; padding: 8px 10px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); cursor: pointer; }
+  .tab-btn.active { background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow); }
+  .error-box { background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 14px; }
 </style>
 </head>
 <body>
 
-<div class="card apply-box">
+<div class="card apply-box" id="box">
   <div class="brand">Learnza</div>
   <div class="muted" style="font-size:0.85rem; margin-bottom:18px;">Apply for admission</div>
-
-  <div id="apply-error"></div>
-
-  <form id="apply-form">
-    <div class="field"><label>School</label><select id="ap-school"></select></div>
-    <div class="field"><label>Full name</label><input type="text" id="ap-name" required></div>
-    <div class="field"><label>Email</label><input type="email" id="ap-email" required></div>
-    <div class="field"><label>Phone</label><input type="tel" id="ap-phone" required></div>
-    <div class="field"><label>Department</label><select id="ap-department"></select></div>
-    <div class="field"><label>Level</label>
-      <select id="ap-level"><option>NCE 1</option><option>NCE 2</option><option>NCE 3</option></select>
-    </div>
-    <div class="field"><label>Why this programme? (optional)</label><textarea id="ap-statement"></textarea></div>
-    <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Submit application</button>
-  </form>
-
-  <div id="apply-confirm" class="confirm" style="display:none;">
-    <span class="pill pill-pass" style="margin-bottom:14px;">Application received</span>
-    <p>Thanks — the school admin will review your application. You'll be contacted at the email you provided once a decision is made.</p>
-    <a class="btn btn-ghost" href="index.html" style="margin-top:16px;">Back to Learnza</a>
-  </div>
-
-  <div id="attitude-test-box" style="display:none;">
-    <span class="pill pill-pass" style="margin-bottom:14px;">Application received</span>
-    <p class="muted" style="margin-bottom:16px;">This school asks applicants to take a short attitude test. Answer below to see your score instantly — the school keeps a record of it alongside your application.</p>
-    <div id="at-questions"></div>
-    <button class="btn btn-primary" id="at-submit-btn" style="width:100%; justify-content:center;">Submit test</button>
-  </div>
-
-  <div id="attitude-test-result" class="confirm" style="display:none;">
-    <span class="pill pill-pass" style="margin-bottom:14px;">Test submitted</span>
-    <p id="at-score-text" style="font-size:1.3rem;"></p>
-    <a class="btn btn-ghost" href="index.html" style="margin-top:16px;">Back to Learnza</a>
-  </div>
+  <div id="view"></div>
 </div>
 
 <script>
-  (function () {
-    function esc(s) {
-      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+(function () {
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  const view = document.getElementById('view');
+  let token = localStorage.getItem('applicant_token');
+  let examTimerHandle = null;
+
+  async function api(path, opts = {}) {
+    const headers = Object.assign({}, opts.headers || {});
+    let body = opts.body;
+    if (body && !(body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(body);
     }
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch('/api' + path, { method: opts.method || 'GET', headers, body });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    return data;
+  }
 
-    async function loadDepartments(schoolId) {
-      const deptRes = await fetch('/api/departments?schoolId=' + schoolId);
-      const { departments } = await deptRes.json();
-      document.getElementById('ap-department').innerHTML = departments
-        .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
-    }
+  function setToken(t) { token = t; localStorage.setItem('applicant_token', t); }
+  function signOut() { token = null; localStorage.removeItem('applicant_token'); renderAuth(); }
 
-    async function init() {
-      const schoolsRes = await fetch('/api/schools');
-      const { schools } = await schoolsRes.json();
-      const schoolSelect = document.getElementById('ap-school');
-      schoolSelect.innerHTML = schools.map((s) => `<option value="${s.id}">${esc(s.name)}${s.location ? ` (${esc(s.location)})` : ''}</option>`).join('');
-      if (!schools.length) return;
-      await loadDepartments(schoolSelect.value);
-      schoolSelect.addEventListener('change', () => loadDepartments(schoolSelect.value));
-    }
-    init();
+  // ---------------- Auth (create account / log in) ----------------
 
-    let applicationId = null;
-    const atAnswers = {};
-
-    document.getElementById('apply-form').addEventListener('submit', async (e) => {
+  function renderAuth(mode) {
+    mode = mode || 'register';
+    view.innerHTML = `
+      <div id="auth-error"></div>
+      <div class="tabs" style="margin-bottom:18px;">
+        <button class="tab-btn ${mode === 'register' ? 'active' : ''}" data-mode="register">Create account</button>
+        <button class="tab-btn ${mode === 'login' ? 'active' : ''}" data-mode="login">Log in</button>
+      </div>
+      ${mode === 'register' ? `
+        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Create your applicant account first -- you'll use it to fill in and track your application from your own dashboard.</p>
+        <form id="auth-form">
+          <div class="field"><label>Full name</label><input type="text" id="rg-name" required></div>
+          <div class="field"><label>Email</label><input type="email" id="rg-email" required></div>
+          <div class="field"><label>Phone</label><input type="tel" id="rg-phone" required></div>
+          <div class="field"><label>Password</label><input type="password" id="rg-password" required minlength="6"></div>
+          <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Create account</button>
+        </form>
+      ` : `
+        <form id="auth-form">
+          <div class="field"><label>Email</label><input type="email" id="lg-email" required></div>
+          <div class="field"><label>Password</label><input type="password" id="lg-password" required></div>
+          <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
+        </form>
+      `}
+      <a class="btn btn-ghost" href="index.html" style="width:100%; justify-content:center; margin-top:14px;">Back to Learnza</a>
+    `;
+    view.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => renderAuth(btn.dataset.mode)));
+    document.getElementById('auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const errorBox = document.getElementById('apply-error');
+      const errorBox = document.getElementById('auth-error');
       errorBox.innerHTML = '';
       try {
-        const res = await fetch('/api/admissions/apply', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            schoolId: document.getElementById('ap-school').value,
-            departmentId: document.getElementById('ap-department').value,
-            fullName: document.getElementById('ap-name').value,
-            email: document.getElementById('ap-email').value,
-            phone: document.getElementById('ap-phone').value,
-            level: document.getElementById('ap-level').value,
-            statement: document.getElementById('ap-statement').value,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Something went wrong');
-        applicationId = data.application.id;
-        document.getElementById('apply-form').style.display = 'none';
-
-        const testRes = await fetch(`/api/admissions/${applicationId}/attitude-test`);
-        const testData = await testRes.json();
-        if (testData.test) {
-          showAttitudeTest(testData.test);
-        } else {
-          document.getElementById('apply-confirm').style.display = 'block';
-        }
+        const data = mode === 'register'
+          ? await api('/applicant/register', { method: 'POST', body: {
+              fullName: document.getElementById('rg-name').value.trim(),
+              email: document.getElementById('rg-email').value.trim(),
+              phone: document.getElementById('rg-phone').value.trim(),
+              password: document.getElementById('rg-password').value,
+            } })
+          : await api('/applicant/login', { method: 'POST', body: {
+              email: document.getElementById('lg-email').value.trim(),
+              password: document.getElementById('lg-password').value,
+            } });
+        setToken(data.token);
+        renderDashboard();
       } catch (err) {
         errorBox.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
       }
     });
+  }
 
-    function showAttitudeTest(test) {
-      const box = document.getElementById('attitude-test-box');
-      box.style.display = 'block';
-      document.getElementById('at-questions').innerHTML = test.questions.map((q, qi) => `
-        <div class="at-q" data-question="${q.id}">
-          <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
-          ${q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
-        </div>
-      `).join('');
-      box.querySelectorAll('.at-opt').forEach((opt) => {
-        opt.addEventListener('click', () => {
-          const q = opt.dataset.q;
-          box.querySelectorAll(`.at-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
-          opt.classList.add('selected');
-          atAnswers[q] = Number(opt.dataset.opt);
-        });
-      });
-      document.getElementById('at-submit-btn').addEventListener('click', async () => {
-        const payload = Object.entries(atAnswers).map(([questionId, choice]) => ({ questionId, choice }));
-        try {
-          const res = await fetch(`/api/admissions/${applicationId}/attitude-test/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ answers: payload }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Something went wrong');
-          box.style.display = 'none';
-          document.getElementById('at-score-text').textContent = `Your score: ${data.submission.score} / ${data.submission.total}`;
-          document.getElementById('attitude-test-result').style.display = 'block';
-        } catch (err) {
-          document.getElementById('apply-error').innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-        }
-      });
+  // ---------------- Dashboard: status, or the "Apply" entry point ----------------
+
+  const STATUS_LABEL = {
+    SUBMITTED: ['Pending', 'pill-accent'],
+    UNDER_REVIEW: ['Under review', 'pill-accent'],
+    ACCEPTED: ['Accepted', 'pill-pass'],
+    REJECTED: ['Not successful', 'pill-danger'],
+    REGISTERED: ['Accepted — registered', 'pill-pass'],
+  };
+
+  async function renderDashboard() {
+    view.innerHTML = '<p class="muted">Loading…</p>';
+    let data;
+    try { data = await api('/applicant/me'); } catch (err) { return renderAuth(); }
+    const { applicant, application } = data;
+    if (!application) {
+      view.innerHTML = `
+        <p>Welcome, ${esc(applicant.fullName)}.</p>
+        <p class="muted" style="margin:10px 0 18px;">You haven't applied yet. Fill in your application details, upload your O-level result, and answer a short screening question to get started.</p>
+        <button class="btn btn-primary" id="apply-btn" style="width:100%; justify-content:center;">Apply for Admission</button>
+        <button class="btn btn-ghost" id="signout-btn" style="width:100%; justify-content:center; margin-top:10px;">Sign out</button>
+      `;
+      document.getElementById('apply-btn').addEventListener('click', renderApplyForm);
+      document.getElementById('signout-btn').addEventListener('click', signOut);
+      return;
     }
-  })();
+
+    const [label, pillClass] = STATUS_LABEL[application.status] || [application.status, 'pill-muted'];
+    const sub = application.attitudeTestSubmission;
+    view.innerHTML = `
+      <p>Welcome, ${esc(applicant.fullName)}.</p>
+      <div class="card" style="padding:18px; margin:14px 0;">
+        <div class="muted" style="font-size:0.78rem; text-transform:uppercase; margin-bottom:6px;">Application status</div>
+        <span class="status-pill ${pillClass}">${esc(label)}</span>
+        <p class="meta" style="margin-top:10px;">${esc(application.department.name)} · ${esc(application.level)}</p>
+      </div>
+      <div id="aptitude-box"></div>
+      <button class="btn btn-ghost" id="signout-btn" style="width:100%; justify-content:center; margin-top:14px;">Sign out</button>
+    `;
+    document.getElementById('signout-btn').addEventListener('click', signOut);
+    renderAptitudeBox(sub, application.aptitudeScheduledAt);
+  }
+
+  function renderAptitudeBox(sub, scheduledAt) {
+    const box = document.getElementById('aptitude-box');
+    if (!box) return;
+    if (sub && sub.submittedAt) {
+      box.innerHTML = `
+        <div class="card" style="padding:18px;">
+          <div class="muted" style="font-size:0.78rem; text-transform:uppercase; margin-bottom:6px;">Aptitude test</div>
+          <p style="font-size:1.3rem; font-weight:700;">${sub.score}%</p>
+          <p class="meta">Submitted ${new Date(sub.submittedAt).toLocaleString()}</p>
+        </div>
+      `;
+    } else if (sub && sub.sentAt) {
+      box.innerHTML = `
+        <div class="card" style="padding:18px;">
+          <div class="muted" style="font-size:0.78rem; text-transform:uppercase; margin-bottom:6px;">Aptitude test</div>
+          <p style="margin-bottom:12px;">Your school has sent your aptitude test. Once you start, the timer runs at 1 minute per question and cannot be paused.</p>
+          <button class="btn btn-accent" id="start-test-btn" style="width:100%; justify-content:center;">Start test</button>
+        </div>
+      `;
+      document.getElementById('start-test-btn').addEventListener('click', renderAptitudeTest);
+    } else {
+      box.innerHTML = `
+        <div class="card" style="padding:18px;">
+          <div class="muted" style="font-size:0.78rem; text-transform:uppercase; margin-bottom:6px;">Aptitude test</div>
+          <p>The school hasn't sent your aptitude test yet. Expect it around <strong>${scheduledAt ? new Date(scheduledAt).toLocaleString() : 'a week after applying'}</strong> -- it will appear here, online, the moment it's sent.</p>
+        </div>
+      `;
+    }
+  }
+
+  // ---------------- Application form (O-level result + screening question) ----------------
+
+  async function renderApplyForm() {
+    view.innerHTML = '<p class="muted">Loading…</p>';
+    const [{ schools }, { question }] = await Promise.all([api('/schools'), api('/iq-question')]);
+    let departments = [];
+    async function loadDepartments(schoolId) {
+      const { departments: d } = await api('/departments?schoolId=' + schoolId);
+      departments = d;
+      document.getElementById('ap-department').innerHTML = d.map((dep) => `<option value="${dep.id}">${esc(dep.name)}</option>`).join('');
+    }
+    view.innerHTML = `
+      <div id="apply-error"></div>
+      <form id="apply-form">
+        <div class="field"><label>School</label><select id="ap-school">${schools.map((s) => `<option value="${s.id}">${esc(s.name)}${s.location ? ` (${esc(s.location)})` : ''}</option>`).join('')}</select></div>
+        <div class="field"><label>Department</label><select id="ap-department"></select></div>
+        <div class="field"><label>Level</label>
+          <select id="ap-level"><option>NCE 1</option><option>NCE 2</option><option>NCE 3</option></select>
+        </div>
+        <div class="field"><label>O-level result type</label>
+          <select id="ap-olevel-type">
+            <option value="WAEC">WAEC</option>
+            <option value="NECO">NECO</option>
+            <option value="GCE">GCE</option>
+            <option value="OTHER">Other equivalent</option>
+          </select>
+        </div>
+        <div class="field"><label>Upload O-level result</label><input type="file" id="ap-olevel-file" accept="image/*,.pdf" required></div>
+        <div class="field"><label>Why this programme? (optional)</label><textarea id="ap-statement"></textarea></div>
+        <div class="field">
+          <label>${esc(question.text)}</label>
+          <div id="iq-options">
+            ${question.options.map((opt, i) => `<div class="at-opt" data-opt="${i}">${esc(opt)}</div>`).join('')}
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center; margin-top:6px;" type="submit">Submit application</button>
+      </form>
+    `;
+    if (schools.length) await loadDepartments(schools[0].id);
+    document.getElementById('ap-school').addEventListener('change', (e) => loadDepartments(e.target.value));
+    let iqChoice = null;
+    view.querySelectorAll('#iq-options .at-opt').forEach((opt) => {
+      opt.addEventListener('click', () => {
+        view.querySelectorAll('#iq-options .at-opt').forEach((o) => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        iqChoice = opt.dataset.opt;
+      });
+    });
+    document.getElementById('apply-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorBox = document.getElementById('apply-error');
+      errorBox.innerHTML = '';
+      const file = document.getElementById('ap-olevel-file').files[0];
+      if (!file) { errorBox.innerHTML = '<div class="error-box">Upload your O-level result.</div>'; return; }
+      if (iqChoice === null) { errorBox.innerHTML = '<div class="error-box">Answer the screening question.</div>'; return; }
+      const fd = new FormData();
+      fd.append('schoolId', document.getElementById('ap-school').value);
+      fd.append('departmentId', document.getElementById('ap-department').value);
+      fd.append('level', document.getElementById('ap-level').value);
+      fd.append('olevelType', document.getElementById('ap-olevel-type').value);
+      fd.append('statement', document.getElementById('ap-statement').value);
+      fd.append('iqChoice', iqChoice);
+      fd.append('olevelResult', file);
+      try {
+        const data = await api('/admissions/apply', { method: 'POST', body: fd });
+        renderApplySuccess(data.aptitudeScheduledAt);
+      } catch (err) {
+        errorBox.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+      }
+    });
+  }
+
+  function renderApplySuccess(scheduledAt) {
+    view.innerHTML = `
+      <div class="confirm">
+        <span class="pill pill-pass" style="margin-bottom:14px;">Application received</span>
+        <p>Thanks — your application is in. Expect to write an online aptitude test from your dashboard around <strong>${new Date(scheduledAt).toLocaleString()}</strong>. The school will send it here when it's ready, with the timer starting the moment you open it.</p>
+        <p class="muted" style="margin-top:12px;">While you wait, your application shows as Pending in your dashboard.</p>
+        <button class="btn btn-primary" id="to-dash-btn" style="width:100%; justify-content:center; margin-top:16px;">Go to my dashboard</button>
+      </div>
+    `;
+    document.getElementById('to-dash-btn').addEventListener('click', renderDashboard);
+  }
+
+  // ---------------- Timed aptitude test ----------------
+
+  async function renderAptitudeTest() {
+    view.innerHTML = '<p class="muted">Loading…</p>';
+    const data = await api('/applicant/aptitude-test');
+    if (data.submitted) return renderDashboard();
+    if (!data.test) return renderDashboard();
+    const { test, startedAt, durationMin } = data;
+    const deadline = new Date(startedAt).getTime() + durationMin * 60000;
+    const answers = {};
+    view.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.1rem;">${esc(test.title)}</h3>
+        <span class="pill pill-accent tabular" id="at-timer">--:--</span>
+      </div>
+      <div id="at-questions"></div>
+      <button class="btn btn-primary" id="at-submit-btn" style="width:100%; justify-content:center; margin-top:10px;">Submit test</button>
+    `;
+    document.getElementById('at-questions').innerHTML = test.questions.map((q, qi) => `
+      <div class="at-q" data-question="${q.id}">
+        <div style="font-weight:600; margin-bottom:6px;">${qi + 1}. ${esc(q.text)}</div>
+        ${q.options.map((opt, oi) => `<div class="at-opt" data-q="${q.id}" data-opt="${oi}">${esc(opt)}</div>`).join('')}
+      </div>
+    `).join('');
+    document.querySelectorAll('.at-opt').forEach((opt) => {
+      opt.addEventListener('click', () => {
+        const q = opt.dataset.q;
+        document.querySelectorAll(`.at-opt[data-q="${q}"]`).forEach((o) => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        answers[q] = Number(opt.dataset.opt);
+      });
+    });
+    async function doSubmit(auto) {
+      if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
+      const payload = Object.entries(answers).map(([questionId, choice]) => ({ questionId, choice }));
+      try {
+        const result = await api('/applicant/aptitude-test/submit', { method: 'POST', body: { answers: payload } });
+        view.innerHTML = `
+          <div class="confirm">
+            <span class="pill pill-pass" style="margin-bottom:14px;">Test submitted</span>
+            ${auto ? '<p class="muted" style="margin-bottom:8px;">Time was up -- submitted automatically.</p>' : ''}
+            <p style="font-size:1.6rem; font-weight:700;">${result.score}%</p>
+            <button class="btn btn-primary" id="to-dash-btn" style="width:100%; justify-content:center; margin-top:16px;">Go to my dashboard</button>
+          </div>
+        `;
+        document.getElementById('to-dash-btn').addEventListener('click', renderDashboard);
+      } catch (err) {
+        alert(err.message);
+        renderDashboard();
+      }
+    }
+    document.getElementById('at-submit-btn').addEventListener('click', () => doSubmit(false));
+    const timerEl = document.getElementById('at-timer');
+    function tick() {
+      const msLeft = deadline - Date.now();
+      if (msLeft <= 0) { timerEl.textContent = '0:00'; doSubmit(true); return; }
+      const totalSec = Math.floor(msLeft / 1000);
+      timerEl.textContent = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+    }
+    tick();
+    examTimerHandle = setInterval(tick, 1000);
+  }
+
+  if (token) renderDashboard(); else renderAuth();
+})();
 </script>
 </body>
 </html>
