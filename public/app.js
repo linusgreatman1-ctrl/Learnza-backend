@@ -1787,7 +1787,11 @@
         if (recordingBlob && recordingBlob.size > 0) uploadLiveRecording(liveClassId, recordingBlob);
       }
       teardownLive();
-      navigate('course-detail', { courseId });
+      // The lecturer goes back to the course they were just teaching (to upload
+      // materials, see the recording land, etc). A student instead goes to their own
+      // dashboard, not the course page.
+      if (isHost) navigate('course-detail', { courseId });
+      else navigate('my-dashboard');
     });
     document.getElementById('live-chat-form').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1988,7 +1992,11 @@
     socket.on('live:ended', ({ durationMin } = {}) => {
       toast(durationMin ? `The live class has ended — it lasted ${durationMin} minute${durationMin === 1 ? '' : 's'}.` : 'The live class has ended.');
       teardownLive();
-      navigate('course-detail', { courseId });
+      // A student lands on their own dashboard once class ends, not the course page.
+      // The host doesn't rely on this at all -- their own "End class" click already
+      // navigates them straight to the course page before this broadcast even arrives.
+      if (isHost) navigate('course-detail', { courseId });
+      else navigate('my-dashboard');
     });
     socket.on('live:watching-count', ({ count }) => {
       const pill = document.getElementById('live-watching-pill');
