@@ -649,8 +649,15 @@
     // lecturer is live" notification could sit unseen until the student happened to
     // open the bell. Re-polling periodically is also what lets showLiveClassPopup
     // (inside refreshNotifications) catch a class going live while already logged in,
-    // not just at the moment of login.
+    // not just at the moment of login. Kept as a fallback even now that a socket push
+    // (below) delivers new ones instantly -- covers the gap around a reconnect, or a
+    // browser that killed the socket in a background tab.
     setInterval(refreshNotifications, 20000);
+    // Real-time push so a new notification shows up the instant it's created instead
+    // of waiting for the next poll -- the same live-class popup and bell badge, just
+    // triggered immediately rather than up to 20s late.
+    const notifSocket = io('/notifications', { auth: { token: state.token } });
+    notifSocket.on('notification:new', () => refreshNotifications());
   }
 
   const view = document.getElementById('view');

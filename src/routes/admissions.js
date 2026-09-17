@@ -6,6 +6,7 @@ const { generateAccessCode } = require('../utils');
 const { notifySchoolAdmins } = require('../services/notification.service');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const { sendEmail } = require('../services/bulkMessage.service');
+const { pushToApplicant } = require('../realtime/notifications');
 
 const router = express.Router();
 const upload = memoryUpload(10);
@@ -28,7 +29,8 @@ async function notifyApplicantByEmail(email, subject, text) {
 // is a no-op for the rare row without one rather than a hard requirement.
 async function notifyApplicant(applicantId, title, body) {
   if (!applicantId) return;
-  await prisma.applicantNotification.create({ data: { applicantId, title, body } });
+  const notification = await prisma.applicantNotification.create({ data: { applicantId, title, body } });
+  pushToApplicant(applicantId, notification);
 }
 
 // A generic, platform-level screening question -- not school-specific and not

@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { pushToUser } = require('../realtime/notifications');
 
 // A user who's muted notifications in Settings still exists and can still be notified
 // later once unmuted -- this just skips creating the row while muted, checked here
@@ -6,16 +7,22 @@ const prisma = require('../db');
 async function notify(userId, title, body, link) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { notificationsMuted: true } });
   if (user && user.notificationsMuted) return;
-  await prisma.notification.create({ data: { userId, title, body, link: link || null } });
+  const notification = await prisma.notification.create({ data: { userId, title, body, link: link || null } });
+  pushToUser(userId, notification);
 }
 
 async function notifyMany(userIds, title, body, link) {
   if (!userIds.length) return;
   const active = await prisma.user.findMany({ where: { id: { in: userIds }, notificationsMuted: false }, select: { id: true } });
   if (!active.length) return;
-  await prisma.notification.createMany({
-    data: active.map((u) => ({ userId: u.id, title, body, link: link || null })),
-  });
+  // createMany doesn't return the created rows, and each recipient needs their own
+  // real notification id/createdAt to push (not just a shared "something happened"
+  // ping) -- individual creates are the price of that, but this only ever runs for a
+  // single class/course's roster, not the whole school.
+  await Promise.all(active.map(async (u) => {
+    const notification = await prisma.notification.create({ data: { userId: u.id, title, body, link: link || null } });
+    pushToUser(u.id, notification);
+  }));
 }
 
 // Every score a lecturer releases (assignment mark, published formal result) also

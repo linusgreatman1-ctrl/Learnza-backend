@@ -21,6 +21,7 @@
 <title>Apply — Learnza</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 <style>
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
   .apply-box { width: 100%; max-width: 520px; padding: 32px; }
@@ -117,14 +118,24 @@
     sessionStorage.setItem('applicant_token', t);
     localStorage.setItem('applicant_token', t);
     refreshApplicantNotifications();
+    connectNotificationSocket();
   }
+  let notifSocket = null;
   function signOut() {
     token = null;
     sessionStorage.removeItem('applicant_token');
     localStorage.removeItem('applicant_token');
     document.getElementById('apt-notif-bell').hidden = true;
     document.getElementById('apt-notif-panel').hidden = true;
+    if (notifSocket) { notifSocket.disconnect(); notifSocket = null; }
     renderAuth();
+  }
+  // Real-time push, same as the main app's bell -- a status change shows up the
+  // instant it happens instead of waiting for the 20s poll below.
+  function connectNotificationSocket() {
+    if (!token || notifSocket) return;
+    notifSocket = io('/notifications', { auth: { token } });
+    notifSocket.on('notification:new', () => refreshApplicantNotifications());
   }
 
   // ---------------- Notification bell -- the in-app counterpart to the emails
@@ -499,7 +510,7 @@
   // browser, ?login=1 opens straight on the Log in tab instead of Create account, since
   // they're checking on an existing application, not starting a new one.
   const startedFromLoginLink = new URLSearchParams(location.search).get('login') === '1';
-  if (token) { renderDashboard(); refreshApplicantNotifications(); } else renderAuth(startedFromLoginLink ? 'login' : 'register');
+  if (token) { renderDashboard(); refreshApplicantNotifications(); connectNotificationSocket(); } else renderAuth(startedFromLoginLink ? 'login' : 'register');
 })();
 </script>
 </body>

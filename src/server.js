@@ -27,6 +27,7 @@ const notificationsRoutes = require('./routes/notifications');
 const resultsRoutes = require('./routes/results');
 const dashboardRoutes = require('./routes/dashboard');
 const { attachLiveNamespace } = require('./realtime/live');
+const { attachNotificationsNamespace } = require('./realtime/notifications');
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
 attachLiveNamespace(io);
+attachNotificationsNamespace(io);
 
 const PORT = process.env.PORT || 4100;
 server.listen(PORT, () => console.log(`Learnza API listening on port ${PORT}`));
