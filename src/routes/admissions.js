@@ -288,6 +288,13 @@ function minutesForAptitude(questionCount) {
   return Math.max(1, questionCount); // 1 minute per question, same convention as assessments.js
 }
 
+// Trims, lowercases, and collapses internal whitespace so "Paris", " paris ", and
+// "Paris\n" all match -- an exact match otherwise, same strictness as an objective
+// question's correctIndex, just for typed text instead of a picked option.
+function normalizeAnswerText(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 router.get('/applicant/aptitude-test', requireApplicant, async (req, res) => {
   const application = await prisma.application.findFirst({ where: { applicantId: req.applicant.id } });
   if (!application) return res.status(404).json({ error: 'No application found.' });
@@ -330,16 +337,24 @@ router.post('/applicant/aptitude-test/submit', requireApplicant, async (req, res
 
   const { answers } = req.body;
   const answerMap = new Map((answers || []).map((a) => [a.questionId, a]));
-  const hasTheory = test.questions.some((q) => q.questionType === 'THEORY');
   // Each question is a flat 10% regardless of bank size (capped at 10 questions on
   // the way in), not correctCount/total*100 -- matches "one question is 10%". THEORY
-  // questions can't be auto-graded -- if the test has any, score/total/gradedAt stay
-  // null until admin grades them (see /aptitude-test/grade below); a pure-OBJECTIVE
-  // test (the common case, and the only case before THEORY existed) still scores and
-  // grades itself immediately, exactly as before.
+  // questions auto-grade too, the same way OBJECTIVE ones do: admin types the correct
+  // answer into the question (modelAnswer) when setting up the test, and the
+  // applicant's typed answer is compared against it (trimmed, case- and
+  // whitespace-insensitive) -- an exact match either way, just like matching a
+  // multiple-choice index. A question only falls back to manual grading (see
+  // /aptitude-test/grade below) if admin left its correct answer blank when composing
+  // it -- there's nothing to auto-match against in that case.
   let correctCount = 0;
+  let hasUngraded = false;
   for (const q of test.questions) {
-    if (q.questionType === 'THEORY') continue;
+    if (q.questionType === 'THEORY') {
+      if (!q.modelAnswer) { hasUngraded = true; continue; }
+      const given = answerMap.get(q.id);
+      if (given && normalizeAnswerText(given.text) === normalizeAnswerText(q.modelAnswer)) correctCount += 1;
+      continue;
+    }
     const a = answerMap.get(q.id);
     if (a && a.choice === q.correctIndex) correctCount += 1;
   }
@@ -351,11 +366,11 @@ router.post('/applicant/aptitude-test/submit', requireApplicant, async (req, res
       answers: JSON.stringify(answers || []),
       submittedAt: new Date(),
       total,
-      score: hasTheory ? null : correctCount * 10,
-      gradedAt: hasTheory ? null : new Date(),
+      score: hasUngraded ? null : correctCount * 10,
+      gradedAt: hasUngraded ? null : new Date(),
     },
   });
-  res.json({ score: updated.score, total: updated.total, pendingGrading: hasTheory });
+  res.json({ score: updated.score, total: updated.total, pendingGrading: hasUngraded });
 });
 
 // Admin awards each THEORY answer correct/incorrect (each still worth a flat 10%,
@@ -372,7 +387,9 @@ router.post('/admin/admissions/:id/aptitude-test/grade', requireAuth, requireRol
   });
   if (!sub || !sub.submittedAt) return res.status(400).json({ error: 'This applicant has not submitted the test yet.' });
 
-  const { grades } = req.body; // [{ questionId, correct: boolean }] -- THEORY questions only
+  const { grades } = req.body; // [{ questionId, correct: boolean }] -- THEORY questions only,
+  // an explicit override; any THEORY question not included here keeps its auto-match
+  // result (below) rather than being silently zeroed out.
   const gradeMap = new Map((grades || []).map((g) => [g.questionId, !!g.correct]));
   const answers = JSON.parse(sub.answers || '[]');
   const answerMap = new Map(answers.map((a) => [a.questionId, a]));
@@ -380,7 +397,12 @@ router.post('/admin/admissions/:id/aptitude-test/grade', requireAuth, requireRol
   let correctCount = 0;
   for (const q of sub.test.questions) {
     if (q.questionType === 'THEORY') {
-      if (gradeMap.get(q.id)) correctCount += 1;
+      if (gradeMap.has(q.id)) {
+        if (gradeMap.get(q.id)) correctCount += 1;
+      } else if (q.modelAnswer) {
+        const given = answerMap.get(q.id);
+        if (given && normalizeAnswerText(given.text) === normalizeAnswerText(q.modelAnswer)) correctCount += 1;
+      }
     } else {
       const a = answerMap.get(q.id);
       if (a && a.choice === q.correctIndex) correctCount += 1;

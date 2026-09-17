@@ -5358,7 +5358,7 @@
         </select>
         <textarea class="q-explanation" placeholder="Briefly explain why this is correct (shown to students when they review mistakes)" style="margin-top:6px; width:100%;" rows="2">${esc(q ? q.explanation || '' : '')}</textarea>
       </div>
-      <textarea class="q-model-answer" placeholder="Model answer (shown when grading, not to the applicant/student)" style="margin-top:6px; width:100%;" ${isTheory ? '' : 'hidden'} rows="2">${esc(isTheory ? (q.modelAnswer || '') : '')}</textarea>
+      <textarea class="q-model-answer" placeholder="Correct / model answer (not shown to the student or applicant)" style="margin-top:6px; width:100%;" ${isTheory ? '' : 'hidden'} rows="2">${esc(isTheory ? (q.modelAnswer || '') : '')}</textarea>
     </div>`;
   }
   // A visible segmented toggle rather than a native <select> that only ever shows
@@ -6342,6 +6342,11 @@
   // Only the THEORY questions need a decision here -- OBJECTIVE ones are already
   // auto-graded at submit time. Each still carries a flat 10%, same as OBJECTIVE, so
   // grading is just "award this one or not" per question, not a numeric score entry.
+  // Mirrors the backend's normalizeAnswerText exactly, so a checkbox's default state
+  // here always matches what auto-grading already decided at submit time.
+  function normalizeAnswerText(s) {
+    return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
   function openGradeAptitudeDialog(a, sub) {
     const questions = sub.test.questions;
     const theoryQuestions = questions.filter((q) => q.questionType === 'THEORY');
@@ -6353,17 +6358,21 @@
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
       <h3 style="margin-bottom:6px;">Grade theory answers</h3>
-      <p class="meta" style="margin-bottom:16px;">${esc(a.fullName)} — objective questions are already auto-graded; each theory question below is worth 10%, same as an objective one.</p>
+      <p class="meta" style="margin-bottom:16px;">${esc(a.fullName)} — objective questions, and any theory question with a correct answer typed in, are already auto-graded below (uncheck to override). Only questions left without a correct answer genuinely need your decision.</p>
       ${theoryQuestions.map((q, i) => {
         const ans = answerMap.get(q.id);
+        const autoMatch = q.modelAnswer ? normalizeAnswerText(ans && ans.text) === normalizeAnswerText(q.modelAnswer) : null;
+        const checked = q.id in existingGrades ? existingGrades[q.id] : (autoMatch !== null ? autoMatch : false);
         return `
           <div class="field" data-grade-q="${esc(q.id)}" style="border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px;">
             <label style="margin-bottom:8px;">${i + 1}. ${esc(q.text)}</label>
             <div class="meta" style="margin-bottom:4px;">Applicant's answer</div>
             <div style="white-space:pre-wrap; padding:10px; background:var(--paper); border-radius:8px; margin-bottom:8px;">${esc(ans && ans.text ? ans.text : '(no answer given)')}</div>
-            ${q.modelAnswer ? `<div class="meta" style="margin-bottom:10px;">Model answer: ${esc(q.modelAnswer)}</div>` : ''}
+            ${q.modelAnswer
+              ? `<div class="meta" style="margin-bottom:10px;">Correct answer: ${esc(q.modelAnswer)} ${autoMatch ? '<span class="pill pill-pass" style="margin-left:4px;">Auto-matched</span>' : '<span class="pill pill-muted" style="margin-left:4px;">No match</span>'}</div>`
+              : `<div class="meta" style="margin-bottom:10px;">No correct answer was set for this question — your decision here is final.</div>`}
             <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer;">
-              <input type="checkbox" class="grade-correct" ${existingGrades[q.id] ? 'checked' : ''}>
+              <input type="checkbox" class="grade-correct" ${checked ? 'checked' : ''}>
               Award full credit (10%)
             </label>
           </div>
@@ -6406,6 +6415,7 @@
     view.innerHTML = `
       <div class="page-head"><h1>Admission Aptitude Test</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       ${test ? `<p class="meta" style="margin-bottom:14px;">Current test: "${esc(test.title)}" (${test.questions.length} questions). Saving below replaces it with a new version for future sends — already-sent/scored applicants keep their own copy.</p>` : '<p class="meta" style="margin-bottom:14px;">No aptitude test configured yet — you won\'t be able to send one to an applicant until you add questions below.</p>'}
+      <p class="meta" style="margin-bottom:14px;">Theory questions auto-score too — type the correct answer into "Correct / model answer" and the applicant's typed answer is matched against it (case and spacing don't matter, but wording otherwise has to match). Leave it blank if a question has no single right answer, and you'll grade that one yourself once the applicant submits.</p>
       <p class="meta" id="at-cap-note" style="margin-bottom:14px;"></p>
       <div id="at-questions">
         ${(test ? test.questions : [null]).map((q, qi) => questionBlock(qi, q)).join('')}
