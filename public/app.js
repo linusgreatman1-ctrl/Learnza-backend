@@ -562,9 +562,51 @@
           refreshNotifications();
         });
       });
+      // "X is teaching live" shouldn't wait for the student to think to open the bell
+      // -- pop it on screen directly too, on top of whatever they're currently doing.
+      notifications
+        .filter((n) => !n.read && n.link && n.link.startsWith('live-class'))
+        .forEach(showLiveClassPopup);
     } catch {
       // silent -- notifications are a convenience, not critical path
     }
+  }
+
+  // Shown at most once per notification id per page load (a poll re-fetching the same
+  // still-unread notification a minute later shouldn't pop it again). Stacks above any
+  // other popup the same way toast-stack stacks toasts, in case more than one course
+  // goes live at once.
+  const shownLiveNotifIds = new Set();
+  function showLiveClassPopup(n) {
+    if (shownLiveNotifIds.has(n.id)) return;
+    shownLiveNotifIds.add(n.id);
+    let stack = document.getElementById('live-popup-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'live-popup-stack';
+      stack.style.cssText = 'position:fixed; top:76px; left:50%; transform:translateX(-50%); z-index:110; display:flex; flex-direction:column; gap:10px; width:min(420px,92vw); align-items:stretch;';
+      document.body.appendChild(stack);
+    }
+    const banner = document.createElement('div');
+    banner.className = 'live-banner';
+    banner.style.cssText = 'margin-bottom:0; box-shadow:var(--shadow);';
+    banner.innerHTML = `
+      <div><span class="live-dot"></span><strong>${esc(n.title)}</strong><div class="meta" style="margin-top:2px; color:inherit;">${esc(n.body)}</div></div>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        <button class="btn btn-accent btn-sm" data-join>Join now</button>
+        <button class="btn btn-ghost btn-sm" data-dismiss>✕</button>
+      </div>
+    `;
+    stack.appendChild(banner);
+    banner.querySelector('[data-join]').addEventListener('click', async () => {
+      try { await api(`/notifications/${n.id}/read`, { method: 'POST' }); } catch {}
+      banner.remove();
+      navigate(...parseNotificationLink(n.link));
+    });
+    banner.querySelector('[data-dismiss]').addEventListener('click', () => banner.remove());
+    // Left unread if dismissed (still sitting in the bell for later) -- only
+    // auto-removed from screen so it doesn't linger forever if ignored.
+    setTimeout(() => banner.remove(), 45000);
   }
 
   function toggleNotifPanel(force) {
@@ -586,6 +628,12 @@
       if (!panel.hidden && !panel.contains(e.target) && !e.target.closest('.notif-bell')) toggleNotifPanel(false);
     });
     refreshNotifications();
+    // Nothing previously re-checked notifications after the initial load -- a "your
+    // lecturer is live" notification could sit unseen until the student happened to
+    // open the bell. Re-polling periodically is also what lets showLiveClassPopup
+    // (inside refreshNotifications) catch a class going live while already logged in,
+    // not just at the moment of login.
+    setInterval(refreshNotifications, 20000);
   }
 
   const view = document.getElementById('view');
