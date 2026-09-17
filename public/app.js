@@ -5161,10 +5161,14 @@
   async function renderLecturerResultsHub() {
     const { courses } = await ensureLectCourses();
     const rows = await Promise.all(courses.map(async (c) => ({ course: c, results: (await api(`/courses/${c.id}/results`)).results })));
+    const totalDrafts = rows.reduce((sum, { results }) => sum + results.filter((r) => !r.sentAt).length, 0);
     view.innerHTML = `
       <div class="page-head">
         <h1>Student Results</h1>
-        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Create new result</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${totalDrafts ? `<button class="btn btn-primary btn-sm" id="send-all-btn">📤 Send all to all students (${totalDrafts})</button>` : ''}
+          <button class="btn btn-accent btn-sm" id="new-result-btn">+ Create new result</button>
+        </div>
       </div>
       ${rows.map(({ course, results }) => {
         const draftCount = results.filter((r) => !r.sentAt).length;
@@ -5189,6 +5193,24 @@
       }).join('') || '<p class="muted">No courses yet.</p>'}
     `;
     document.getElementById('new-result-btn').addEventListener('click', () => openPublishResultDialog(courses));
+    const sendAllBtn = document.getElementById('send-all-btn');
+    if (sendAllBtn) sendAllBtn.addEventListener('click', async () => {
+      sendAllBtn.disabled = true;
+      sendAllBtn.textContent = 'Sending…';
+      try {
+        const coursesWithDrafts = rows.filter(({ results }) => results.some((r) => !r.sentAt));
+        const counts = await Promise.all(coursesWithDrafts.map(({ course }) =>
+          api(`/courses/${course.id}/results/publish`, { method: 'POST' }).then((r) => r.count)
+        ));
+        const total = counts.reduce((sum, c) => sum + c, 0);
+        toast(total ? `${total} result${total === 1 ? '' : 's'} sent to students` : 'Nothing to send');
+        render();
+      } catch (err) {
+        toast(err.message);
+        sendAllBtn.disabled = false;
+        sendAllBtn.textContent = `📤 Send all to all students (${totalDrafts})`;
+      }
+    });
     view.querySelectorAll('[data-publish]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         try {
