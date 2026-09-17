@@ -120,10 +120,27 @@ function attachLiveNamespace(io) {
       });
     });
 
-    // Relay SDP/ICE between two specific sockets; the server never inspects the payload.
-    socket.on('webrtc:offer', ({ to, offer }) => nsp.to(to).emit('webrtc:offer', { from: socket.id, offer }));
-    socket.on('webrtc:answer', ({ to, answer }) => nsp.to(to).emit('webrtc:answer', { from: socket.id, answer }));
-    socket.on('webrtc:ice-candidate', ({ to, candidate }) => nsp.to(to).emit('webrtc:ice-candidate', { from: socket.id, candidate }));
+    // Relay SDP/ICE between two specific sockets; the server never inspects the
+    // payload beyond `to` -- everything else (offer/answer/candidate, plus any
+    // `purpose`/`speakerId` tag a caller adds to distinguish the main video
+    // connection from a "invite to speak" mic connection or a relayed-audio
+    // connection) passes through untouched.
+    socket.on('webrtc:offer', ({ to, ...rest }) => nsp.to(to).emit('webrtc:offer', { ...rest, from: socket.id }));
+    socket.on('webrtc:answer', ({ to, ...rest }) => nsp.to(to).emit('webrtc:answer', { ...rest, from: socket.id }));
+    socket.on('webrtc:ice-candidate', ({ to, ...rest }) => nsp.to(to).emit('webrtc:ice-candidate', { ...rest, from: socket.id }));
+
+    // Teacher calls on a specific student to speak (mirrors PassNow's "invite to
+    // speak", raising the student's mic to the whole class through the teacher's own
+    // connections rather than a full mesh). live:stop-speaking can come from either
+    // the teacher (cutting them off) or the student themselves (done talking).
+    socket.on('live:invite-to-speak', ({ liveClassId, studentSocketId }) => {
+      if (teacherSocketByLiveClass.get(liveClassId) !== socket.id) return;
+      nsp.to(studentSocketId).emit('live:invited-to-speak');
+    });
+    socket.on('live:stop-speaking', ({ liveClassId, studentSocketId }) => {
+      if (teacherSocketByLiveClass.get(liveClassId) !== socket.id && socket.id !== studentSocketId) return;
+      nsp.to(`live:${liveClassId}`).emit('live:speaker-stopped', { studentSocketId });
+    });
 
     socket.on('chat:message', ({ liveClassId, text }) => {
       if (!text || !text.trim() || socket.liveClassId !== liveClassId) return;

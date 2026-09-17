@@ -266,19 +266,6 @@
     window.location.href = 'index.html';
   });
 
-  // Lets an admin/lecturer see the public marketing site the way an actual visitor
-  // would. This signs them out first -- previously the link just opened index.html in
-  // a new tab while staying logged in, so its own "Open Learnza"/"Log in" links quietly
-  // resumed the same admin/lecturer session instead of showing a real login screen.
-  // The sessionStorage flag (untouched by clearSession, which only removes vp_token/
-  // vp_user) survives the navigation within this same tab so the login screen can show
-  // a one-line explanation instead of just appearing with no context.
-  function switchToPublicApp() {
-    sessionStorage.setItem('vp_from_public_switch', '1');
-    clearSession();
-    window.speechSynthesis && window.speechSynthesis.cancel();
-    window.location.href = 'index.html';
-  }
 
   async function onAuthed(token, user) {
     state.token = token;
@@ -409,7 +396,7 @@
       ['staff-profile', 'My Staff Profile'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
-      ['switch-public-app', '🌐 Switch to Public App'],
+      ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
     ],
     ADMIN: [
       ['admin-dashboard', 'My Dashboard'],
@@ -426,7 +413,7 @@
       ['admin-results', 'Results'],
       ['admin-bulk-message', 'Bulk SMS/Email'],
       ['settings', 'Settings'],
-      ['switch-public-app', '🌐 Switch to Public App'],
+      ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
     ],
   };
 
@@ -496,11 +483,7 @@
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
     nav.querySelectorAll('.nav-item').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (btn.dataset.screen === 'switch-public-app') return switchToPublicApp();
-        navigate(btn.dataset.screen);
-        closeMobileNav();
-      });
+      btn.addEventListener('click', () => { navigate(btn.dataset.screen); closeMobileNav(); });
     });
   }
 
@@ -673,6 +656,7 @@
         case 'lect-class-roster': return renderLecturerClassRoster();
         case 'lect-student-detail': return renderLecturerStudentDetail();
         case 'staff-profile': return renderStaffProfile();
+        case 'preview-student-dashboard': return renderPreviewStudentDashboard();
 
         case 'admin-dashboard': return renderAdminDashboard();
         case 'admin-directory': return renderAdminDirectory();
@@ -1616,8 +1600,15 @@
   function teardownLive() {
     if (!live) return;
     live.peers.forEach((pc) => pc.close());
+    live.speakerInboundPcs?.forEach((pc) => pc.close());
+    live.relayPcs?.forEach((pc) => pc.close());
+    live.relayReceivePcs?.forEach((pc) => pc.close());
+    if (live.speakPc) live.speakPc.close();
+    if (live.speakMicStream) live.speakMicStream.getTracks().forEach((t) => t.stop());
     if (live.localStream) live.localStream.getTracks().forEach((t) => t.stop());
     if (live.socket) live.socket.disconnect();
+    document.getElementById('speaking-banner')?.remove();
+    document.querySelectorAll('[id^="relay-audio-"]').forEach((el) => el.remove());
     live = null;
   }
 
@@ -1756,6 +1747,67 @@
     document.getElementById('tile-' + id)?.remove();
   }
 
+  // Host-side: one button per student tile to call them on to speak. Disabled while
+  // waiting/active so a double-click can't fire two mic connections for the same
+  // student; resetInviteToSpeakButton() (called on live:speaker-stopped) restores it.
+  function addInviteToSpeakButton(studentSocketId) {
+    const tile = document.getElementById('tile-' + studentSocketId);
+    if (!tile || tile.querySelector('.invite-speak-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-accent btn-sm invite-speak-btn';
+    btn.style.cssText = 'position:absolute; bottom:6px; right:6px; z-index:2;';
+    btn.textContent = '🎤 Invite to speak';
+    btn.addEventListener('click', () => {
+      live.socket.emit('live:invite-to-speak', { liveClassId: live.liveClassId, studentSocketId });
+      btn.textContent = '🎤 Speaking…';
+      btn.disabled = true;
+    });
+    tile.appendChild(btn);
+  }
+  function resetInviteToSpeakButton(studentSocketId) {
+    const btn = document.querySelector(`#tile-${studentSocketId} .invite-speak-btn`);
+    if (btn) { btn.textContent = '🎤 Invite to speak'; btn.disabled = false; }
+  }
+
+  // Student-side: plays one classmate's relayed audio through a hidden <audio>
+  // element keyed by their socket id, so a second speaker later gets its own element
+  // instead of stealing the first one's.
+  function playRelayedAudio(speakerId, stream) {
+    let el = document.getElementById('relay-audio-' + speakerId);
+    if (!el) {
+      el = document.createElement('audio');
+      el.id = 'relay-audio-' + speakerId;
+      el.autoplay = true;
+      el.hidden = true;
+      document.body.appendChild(el);
+    }
+    el.srcObject = stream;
+  }
+  function removeRelayedAudio(speakerId) {
+    document.getElementById('relay-audio-' + speakerId)?.remove();
+  }
+
+  // Student-side: banner shown while this student's own mic is live to the class,
+  // with a button to end it themselves rather than waiting for the teacher to.
+  function showSpeakingBanner() {
+    if (document.getElementById('speaking-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'speaking-banner';
+    banner.className = 'live-banner';
+    banner.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:80;';
+    banner.innerHTML = `<span>🎤 You're speaking to the class</span><button class="btn btn-ghost btn-sm" id="stop-speaking-btn">Stop speaking</button>`;
+    document.body.appendChild(banner);
+    document.getElementById('stop-speaking-btn').addEventListener('click', () => {
+      live.socket.emit('live:stop-speaking', { liveClassId: live.liveClassId, studentSocketId: live.socket.id });
+      stopSpeaking();
+    });
+  }
+  function stopSpeaking() {
+    document.getElementById('speaking-banner')?.remove();
+    if (live.speakMicStream) { live.speakMicStream.getTracks().forEach((t) => t.stop()); live.speakMicStream = null; }
+    if (live.speakPc) { live.speakPc.close(); live.speakPc = null; }
+  }
+
   function appendLiveChat(from, role, text) {
     const box = document.getElementById('live-chat-messages');
     if (!box) return;
@@ -1807,6 +1859,8 @@
 
     if (isHost) {
       live.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      live.speakerInboundPcs = new Map(); // speaking student's socket id -> pc receiving their mic
+      live.relayPcs = new Map(); // "speakerId:listenerId" -> pc sending that speaker's audio on to one listener
       addVideoTile('self', 'You (host)', live.localStream, true);
 
       socket.on('student:joined', async ({ studentSocketId, studentName }) => {
@@ -1819,17 +1873,88 @@
         await pc.setLocalDescription(offer);
         socket.emit('webrtc:offer', { to: studentSocketId, offer });
         addVideoTile(studentSocketId, studentName + ' (joining…)', new MediaStream());
+        addInviteToSpeakButton(studentSocketId);
       });
-      socket.on('webrtc:answer', async ({ from, answer }) => {
+      socket.on('webrtc:answer', async ({ from, answer, purpose, speakerId }) => {
+        if (purpose === 'relay') { const pc = live.relayPcs.get(`${speakerId}:${from}`); if (pc) await pc.setRemoteDescription(answer); return; }
         const pc = live.peers.get(from);
         if (pc) await pc.setRemoteDescription(answer);
       });
-      socket.on('webrtc:ice-candidate', async ({ from, candidate }) => {
+      socket.on('webrtc:ice-candidate', async ({ from, candidate, purpose, speakerId }) => {
+        if (purpose === 'speak') { const pc = live.speakerInboundPcs.get(from); if (pc) { try { await pc.addIceCandidate(candidate); } catch {} } return; }
+        if (purpose === 'relay') { const pc = live.relayPcs.get(`${speakerId}:${from}`); if (pc) { try { await pc.addIceCandidate(candidate); } catch {} } return; }
         const pc = live.peers.get(from);
         if (pc) { try { await pc.addIceCandidate(candidate); } catch {} }
       });
+
+      // A student's "invite to speak" mic connection arrives as an ordinary offer,
+      // distinguished only by purpose:'speak' -- a fresh, separate connection from
+      // their main (receive-only) video pc, so accepting it can never disturb that
+      // already-working connection. Once their audio arrives, it's relayed out to
+      // every OTHER connected student via its own small relay connection each,
+      // mirroring PassNow's "the whole class hears the student who's speaking"
+      // without renegotiating any of the existing per-student video connections.
+      socket.on('webrtc:offer', async ({ from: studentSocketId, offer, purpose }) => {
+        if (purpose !== 'speak') return;
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        live.speakerInboundPcs.set(studentSocketId, pc);
+        pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: studentSocketId, candidate: e.candidate, purpose: 'speak' }); };
+        pc.ontrack = (e) => {
+          const audioTrack = e.streams[0].getAudioTracks()[0];
+          if (!audioTrack) return;
+          live.peers.forEach((_listenerMainPc, listenerId) => {
+            if (listenerId === studentSocketId) return;
+            relaySpeakerToListener(studentSocketId, listenerId, audioTrack, e.streams[0]);
+          });
+        };
+        await pc.setRemoteDescription(offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc:answer', { to: studentSocketId, answer, purpose: 'speak' });
+      });
+
+      function relaySpeakerToListener(speakerId, listenerId, audioTrack, stream) {
+        const key = `${speakerId}:${listenerId}`;
+        if (live.relayPcs.has(key)) return;
+        const relayPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        live.relayPcs.set(key, relayPc);
+        relayPc.addTrack(audioTrack, stream);
+        relayPc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: listenerId, candidate: e.candidate, purpose: 'relay', speakerId }); };
+        (async () => {
+          const offer = await relayPc.createOffer();
+          await relayPc.setLocalDescription(offer);
+          socket.emit('webrtc:offer', { to: listenerId, offer, purpose: 'relay', speakerId });
+        })();
+      }
+
+      socket.on('live:speaker-stopped', ({ studentSocketId }) => {
+        live.speakerInboundPcs.get(studentSocketId)?.close();
+        live.speakerInboundPcs.delete(studentSocketId);
+        live.relayPcs.forEach((pc, key) => {
+          if (key.startsWith(`${studentSocketId}:`)) { pc.close(); live.relayPcs.delete(key); }
+        });
+        resetInviteToSpeakButton(studentSocketId);
+      });
     } else {
-      socket.on('webrtc:offer', async ({ from, offer }) => {
+      live.relayReceivePcs = new Map(); // speakerId -> pc receiving that speaker's relayed audio
+      live.speakPc = null; // this student's own mic connection, only while invited to speak
+
+      socket.on('webrtc:offer', async ({ from, offer, purpose, speakerId }) => {
+        // A relayed classmate's audio arrives as its own offer, tagged separately
+        // from the main host<->me video offer -- a dedicated receiving connection
+        // per speaker, so it can never interfere with the always-on video pc below.
+        if (purpose === 'relay') {
+          const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+          live.relayReceivePcs.set(speakerId, pc);
+          pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: from, candidate: e.candidate, purpose: 'relay', speakerId }); };
+          pc.ontrack = (e) => playRelayedAudio(speakerId, e.streams[0]);
+          await pc.setRemoteDescription(offer);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('webrtc:answer', { to: from, answer, purpose: 'relay', speakerId });
+          return;
+        }
+        live.hostSocketId = from; // needed later to send the "invite to speak" mic offer
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         live.peers.set(from, pc);
         pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: from, candidate: e.candidate }); };
@@ -1839,9 +1964,39 @@
         await pc.setLocalDescription(answer);
         socket.emit('webrtc:answer', { to: from, answer });
       });
-      socket.on('webrtc:ice-candidate', async ({ from, candidate }) => {
+      socket.on('webrtc:ice-candidate', async ({ from, candidate, purpose, speakerId }) => {
+        if (purpose === 'relay') { const pc = live.relayReceivePcs.get(speakerId); if (pc) { try { await pc.addIceCandidate(candidate); } catch {} } return; }
         const pc = live.peers.get(from);
         if (pc) { try { await pc.addIceCandidate(candidate); } catch {} }
+      });
+
+      // Invited by the teacher to speak: opens this student's mic on a fresh,
+      // separate connection to the host (never touching the always-on video pc
+      // above), so joining/leaving speaking never risks the video feed.
+      socket.on('live:invited-to-speak', async () => {
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+          live.speakPc = pc;
+          live.speakMicStream = micStream;
+          micStream.getTracks().forEach((t) => pc.addTrack(t, micStream));
+          pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: live.hostSocketId, candidate: e.candidate, purpose: 'speak' }); };
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('webrtc:offer', { to: live.hostSocketId, offer, purpose: 'speak' });
+          showSpeakingBanner();
+        } catch {
+          toast('Could not access your microphone.');
+        }
+      });
+      socket.on('webrtc:answer', async ({ answer, purpose }) => {
+        if (purpose === 'speak' && live.speakPc) await live.speakPc.setRemoteDescription(answer);
+      });
+      socket.on('live:speaker-stopped', ({ studentSocketId }) => {
+        if (studentSocketId === socket.id) stopSpeaking();
+        const relayPc = live.relayReceivePcs.get(studentSocketId);
+        if (relayPc) { relayPc.close(); live.relayReceivePcs.delete(studentSocketId); }
+        removeRelayedAudio(studentSocketId);
       });
     }
   }
@@ -2566,6 +2721,39 @@
   // Dashboard list sections (Assignments, Attendance, Results, Lessons, Notifications)
   // all follow the same "show 3, View more reveals the rest" pattern.
   const DASH_LIMIT = 3;
+
+  // A visual preview of the student dashboard for an admin/lecturer, without leaving
+  // their own session or losing their login (the previous version signed them out to
+  // the public site instead, which turned out not to be what was wanted). There's no
+  // real student data behind an admin/lecturer account, so it's shown with their own
+  // name/school -- the same identity information they already see on their own
+  // dashboard -- rather than fabricating a fake student. "Return to Dashboard" goes
+  // straight back to whichever dashboard actually matches their real role.
+  async function renderPreviewStudentDashboard() {
+    const u = state.user;
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>Student Dashboard (Preview)</h1>
+        <button class="btn btn-ghost btn-sm" id="return-dash-btn">← Return to Dashboard</button>
+      </div>
+      <p class="muted" style="margin-bottom:18px;">This is what a student sees on logging in, shown here with your own details since there's no student data on your account to display instead.</p>
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px;">
+        ${selfAvatarHtml('avatar-preview-dash')}
+        <div>
+          <div>${esc(u.fullName)} · ${esc(u.role.charAt(0) + u.role.slice(1).toLowerCase())}</div>
+          <div>${state.school ? [state.school.name, state.school.location].filter(Boolean).map(esc).join(', ') : ''}</div>
+        </div>
+      </div>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        <div class="card course-card"><div class="code">—</div><div class="meta">Assignments pending</div></div>
+        <div class="card course-card"><div class="code">—</div><div class="meta">Attendance rate</div></div>
+        <div class="card course-card"><div class="code">—</div><div class="meta">Recent test average</div></div>
+      </div>
+      <p class="muted">A real student's dashboard also lists their courses, assignments, attendance history, and test results below here.</p>
+    `;
+    wireSelfAvatarUpload('avatar-preview-dash');
+    document.getElementById('return-dash-btn').addEventListener('click', () => navigate(defaultScreenFor(u.role)));
+  }
 
   async function renderMyDashboard() {
     const isIndividual = state.user.isIndividual;
@@ -4794,10 +4982,10 @@
     function questionBlock(i) {
       return `<div class="field" data-aq-block="${i}">
         <label>Question ${i + 1}</label>
-        <select class="aq-type" style="margin-bottom:6px;">
-          <option value="OBJECTIVE">Objective (multiple choice)</option>
-          <option value="THEORY">Theory (free response)</option>
-        </select>
+        <div class="tabs aq-type" data-value="OBJECTIVE" style="margin:0 0 10px;">
+          <button type="button" class="tab-btn active" data-val="OBJECTIVE">Objective (multiple choice)</button>
+          <button type="button" class="tab-btn" data-val="THEORY">Theory (free response)</button>
+        </div>
         <input type="text" class="aq-text" placeholder="Question text" required>
         <div class="aq-objective-fields">
           <input type="text" class="aq-opt" placeholder="Option A" style="margin-top:6px;">
@@ -4808,9 +4996,15 @@
       </div>`;
     }
     function wireToggle(block) {
-      const typeSelect = block.querySelector('.aq-type');
+      const typeToggle = block.querySelector('.aq-type');
       const objectiveFields = block.querySelector('.aq-objective-fields');
-      typeSelect.addEventListener('change', () => { objectiveFields.hidden = typeSelect.value === 'THEORY'; });
+      typeToggle.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          typeToggle.dataset.value = btn.dataset.val;
+          typeToggle.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+          objectiveFields.hidden = btn.dataset.val === 'THEORY';
+        });
+      });
     }
     container.innerHTML = `
       <h3 style="margin-bottom:14px;">Post a new assignment</h3>
@@ -4843,7 +5037,7 @@
     container.querySelector('#na-save').addEventListener('click', async () => {
       const blocks = container.querySelectorAll('[data-aq-block]');
       const bodyParts = Array.from(blocks).map((b, i) => {
-        const type = b.querySelector('.aq-type').value;
+        const type = b.querySelector('.aq-type').dataset.value;
         const text = b.querySelector('.aq-text').value.trim();
         if (!text) return null;
         if (type === 'OBJECTIVE') {
@@ -4981,7 +5175,12 @@
   // always the generic "New assessment", which is what the lecturer was actually
   // seeing on the Tests/Semester Exam pages regardless of which one they were on.
   function assessmentKindLabel(allowedTypes) {
-    if (allowedTypes.length === 2 && allowedTypes.includes('Classwork') && allowedTypes.includes('Quiz')) return 'classwork/quiz';
+    const key = [...allowedTypes].sort().join(',');
+    const KNOWN_COMBOS = {
+      'Classwork,Quiz': 'classwork/quiz',
+      'CA,Mock,Test': 'test',
+    };
+    if (KNOWN_COMBOS[key]) return KNOWN_COMBOS[key];
     if (allowedTypes.length !== 1) return 'assessment';
     return { CA: 'assessment', Test: 'test', Mock: 'mock test', SEMESTER_EXAM: 'semester exam', PAST_QUESTION: 'past question set', Classwork: 'classwork', Quiz: 'quiz' }[allowedTypes[0]] || 'assessment';
   }
@@ -5001,10 +5200,10 @@
       const opts4 = q && !isTheory ? JSON.parse(q.options || '[]') : [];
       return `<div class="field" data-question-block="${i}">
         <label>Question ${i + 1}</label>
-        <select class="q-type" style="margin-bottom:6px;">
-          <option value="OBJECTIVE" ${!isTheory ? 'selected' : ''}>Objective (multiple choice)</option>
-          <option value="THEORY" ${isTheory ? 'selected' : ''}>Theory (free response)</option>
-        </select>
+        <div class="tabs q-type" data-value="${isTheory ? 'THEORY' : 'OBJECTIVE'}" style="margin:0 0 10px;">
+          <button type="button" class="tab-btn ${!isTheory ? 'active' : ''}" data-val="OBJECTIVE">Objective (multiple choice)</button>
+          <button type="button" class="tab-btn ${isTheory ? 'active' : ''}" data-val="THEORY">Theory (free response)</button>
+        </div>
         <input type="text" class="q-text" placeholder="Question text" value="${esc(q ? q.text : '')}" required>
         <div class="q-objective-fields" ${isTheory ? 'hidden' : ''}>
           <input type="text" class="q-opt" placeholder="Option A" value="${esc(opts4[0] || '')}" style="margin-top:6px;">
@@ -5020,14 +5219,21 @@
         <textarea class="q-model-answer" placeholder="Model answer (shown to the student to self-review against)" style="margin-top:6px; width:100%;" ${isTheory ? '' : 'hidden'} rows="2">${esc(isTheory ? (q.modelAnswer || '') : '')}</textarea>
       </div>`;
     }
+    // A visible segmented toggle rather than a native <select> that only ever shows
+    // its current value -- lecturers were missing that Theory was even an option
+    // since nothing on screen hinted a second choice existed behind the dropdown.
     function wireQuestionTypeToggle(block) {
-      const typeSelect = block.querySelector('.q-type');
+      const typeToggle = block.querySelector('.q-type');
       const objectiveFields = block.querySelector('.q-objective-fields');
       const modelAnswer = block.querySelector('.q-model-answer');
-      typeSelect.addEventListener('change', () => {
-        const isTheory = typeSelect.value === 'THEORY';
-        objectiveFields.hidden = isTheory;
-        modelAnswer.hidden = !isTheory;
+      typeToggle.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          typeToggle.dataset.value = btn.dataset.val;
+          typeToggle.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+          const isTheory = btn.dataset.val === 'THEORY';
+          objectiveFields.hidden = isTheory;
+          modelAnswer.hidden = !isTheory;
+        });
       });
     }
     const allowedTypes = opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION'];
@@ -5086,7 +5292,7 @@
     container.querySelector('#na-save').addEventListener('click', async () => {
       const blocks = container.querySelectorAll('[data-question-block]');
       const questions = Array.from(blocks).map((b) => {
-        const questionType = b.querySelector('.q-type').value;
+        const questionType = b.querySelector('.q-type').dataset.value;
         const text = b.querySelector('.q-text').value;
         if (questionType === 'THEORY') {
           return { questionType, text, modelAnswer: b.querySelector('.q-model-answer').value };
@@ -6211,9 +6417,9 @@
     view.innerHTML = `
       <div class="page-head">
         <h1>Results</h1>
-        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Send Result</button>
+        <button class="btn btn-accent btn-sm" id="new-result-btn">+ Create new result</button>
       </div>
-      <p class="muted" style="margin-bottom:14px;">Click a student to see all their results. "Send Result" searches for a student to publish a new one for.</p>
+      <p class="muted" style="margin-bottom:14px;">Click a student to see all their results (including drafts awaiting send). "Create new result" searches for a student to create one for.</p>
       <div class="field" style="max-width:320px; margin-bottom:16px;">
         <input type="text" id="results-search" placeholder="Search by name or matric number…" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
       </div>
@@ -6241,15 +6447,19 @@
       <div class="page-head">
         <h1>${esc(student.fullName)}</h1>
         <div style="display:flex; gap:10px;">
-          <button class="btn btn-accent btn-sm" id="send-result-btn">+ Send Result</button>
+          <button class="btn btn-accent btn-sm" id="send-result-btn">+ Create new result</button>
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back to Results</button>
         </div>
       </div>
       <p class="muted tabular" style="margin-bottom:16px;">${esc(student.matricNumber || '—')}</p>
       <div class="card" style="overflow-x:auto;">
         <table class="data-table">
-          <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
-          <tbody>${results.map((r) => `<tr><td class="tabular">${esc(r.course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${esc(r.remark || '—')}</td><td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">No results published for this student yet.</td></tr>'}</tbody>
+          <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Remark</th><th>Status</th><th></th></tr></thead>
+          <tbody>${results.map((r) => `<tr>
+            <td class="tabular">${esc(r.course.code)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${esc(r.remark || '—')}</td>
+            <td>${r.sentAt ? `<span class="pill pill-pass">Sent ${new Date(r.sentAt).toLocaleDateString()}</span>` : '<span class="pill pill-muted">Draft</span>'}</td>
+            <td>${!r.sentAt ? `<button class="btn btn-ghost btn-sm" data-send="${r.id}">Send</button>` : ''}</td>
+          </tr>`).join('') || '<tr><td colspan="7" class="muted" style="padding:16px;">No results for this student yet.</td></tr>'}</tbody>
         </table>
       </div>
     `;
@@ -6257,6 +6467,15 @@
     document.getElementById('send-result-btn').addEventListener('click', async () => {
       const { students } = await api('/admin/students');
       openSendResultDialog(students, student.id);
+    });
+    view.querySelectorAll('[data-send]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/results/${btn.dataset.send}/send`, { method: 'POST' });
+          toast('Result sent');
+          render();
+        } catch (err) { toast(err.message); }
+      });
     });
   }
 
@@ -6268,7 +6487,7 @@
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">Send a result</h3>
+      <h3 style="margin-bottom:14px;">Create new result</h3>
       <div class="field"><label>Student</label><input type="text" id="sr-search" placeholder="Search by name or matric number…"></div>
       <div id="sr-matches" class="card" style="max-height:160px; overflow-y:auto; margin-bottom:14px;"></div>
       <div id="sr-form" hidden>
@@ -6278,9 +6497,11 @@
         <div class="field"><label>Score</label><input type="number" id="sr-score" required></div>
         <div class="field"><label>Grade (optional)</label><input type="text" id="sr-grade" placeholder="e.g. A"></div>
         <div class="field"><label>Remark (optional)</label><input type="text" id="sr-remark"></div>
+        <p class="meta" style="margin:8px 0;">"Save and Send" delivers it right away. "Save" keeps it as a draft to send later.</p>
       </div>
-      <div style="display:flex; gap:10px; margin-top:10px;">
-        <button class="btn btn-primary" id="sr-save" ${preselectStudentId ? '' : 'hidden'}>Send</button>
+      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="sr-save-send" ${preselectStudentId ? '' : 'hidden'}>Save and Send</button>
+        <button class="btn btn-ghost" id="sr-save" ${preselectStudentId ? '' : 'hidden'}>Save</button>
         <button class="btn btn-ghost" id="sr-cancel">Cancel</button>
       </div>
     `;
@@ -6299,6 +6520,7 @@
       container.querySelector('#sr-picked').textContent = `${s.fullName} (${s.matricNumber || '—'})`;
       container.querySelector('#sr-course').innerHTML = (s.courses || []).map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('') || '<option value="">Not enrolled in any course</option>';
       container.querySelector('#sr-form').hidden = false;
+      container.querySelector('#sr-save-send').hidden = false;
       container.querySelector('#sr-save').hidden = false;
     }
     function renderMatches(q) {
@@ -6316,7 +6538,7 @@
       if (pre) pickStudent(pre);
     }
 
-    container.querySelector('#sr-save').addEventListener('click', async () => {
+    async function saveResult(send) {
       if (!picked) return toast('Search for and select a student first.');
       const courseId = container.querySelector('#sr-course').value;
       if (!courseId) return toast(`${picked.fullName} isn't enrolled in any course.`);
@@ -6325,17 +6547,20 @@
           method: 'POST',
           body: {
             studentId: picked.id,
+            send,
             term: container.querySelector('#sr-term').value.trim(),
             score: container.querySelector('#sr-score').value,
             grade: container.querySelector('#sr-grade').value.trim() || null,
             remark: container.querySelector('#sr-remark').value.trim() || null,
           },
         });
-        toast('Result sent');
+        toast(send ? 'Result saved and sent' : 'Result saved as a draft');
         close();
         render();
       } catch (err) { toast(err.message); }
-    });
+    }
+    container.querySelector('#sr-save-send').addEventListener('click', () => saveResult(true));
+    container.querySelector('#sr-save').addEventListener('click', () => saveResult(false));
   }
 
   // Broadcasts to a whole audience at once (all students, all academic staff, all
@@ -6512,9 +6737,6 @@
       }
     });
     initNotifications();
-  } else if (sessionStorage.getItem('vp_from_public_switch')) {
-    sessionStorage.removeItem('vp_from_public_switch');
-    authError.innerHTML = '<div class="hint-box">Signed out to show you the public site. Sign in with the login details you already have to get back to your dashboard.</div>';
   } else if (location.hash.includes('register')) {
     document.querySelector('[data-audience="individual"]').click();
     document.querySelector('#individual-panel [data-tab="register"]').click();

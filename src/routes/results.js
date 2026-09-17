@@ -37,6 +37,27 @@ router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'
   res.json({ result });
 });
 
+// Sends one specific draft result -- the admin Results screens work across many
+// courses for one student at a time, where a per-course bulk /publish (below) would
+// need a separate button per course; this covers that case with a single "Send" per
+// row instead.
+router.post('/results/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const result = await prisma.result.findUnique({ where: { id: req.params.id }, include: { student: { select: { fullName: true, schoolId: true } } } });
+  if (!result || result.student.schoolId !== req.user.schoolId) return res.status(404).json({ error: 'Result not found' });
+  if (result.authorId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'You can only send results you created.' });
+  if (result.sentAt) return res.json({ result });
+
+  const updated = await prisma.result.update({ where: { id: result.id }, data: { sentAt: new Date() } });
+  await notify(result.studentId, 'Result published', `Your result for ${result.term} is ready.`, 'digital-id');
+  await notifySchoolAdmins(
+    result.student.schoolId,
+    'Score released',
+    `${result.student.fullName} scored ${result.score} for ${result.term}.`,
+    'admin-student-activity'
+  );
+  res.json({ result: updated });
+});
+
 // Sends every draft (sentAt still null) result this lecturer has saved for a course,
 // individually notifying each student by name in one action -- the bulk counterpart
 // to sending one result at a time from the create dialog.
@@ -78,14 +99,16 @@ router.get('/students/me/formal-results', requireAuth, requireRole('STUDENT'), a
 });
 
 // Every formal result for one student, across every course -- backs admin's Results
-// screen ("click a student to see all the details of their results"). Drafts a
-// lecturer hasn't sent yet stay invisible here too, same as to the student.
+// screen ("click a student to see all the details of their results"). Unlike the
+// student's own view, this intentionally includes drafts (sentAt still null) too --
+// admin authored some of them and needs to see/send them from here, not just the
+// already-published ones.
 router.get('/admin/students/:id/results', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const student = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STUDENT' } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
   const results = await prisma.result.findMany({
-    where: { studentId: student.id, sentAt: { not: null } },
-    include: { course: { select: { code: true, title: true } } },
+    where: { studentId: student.id },
+    include: { course: { select: { id: true, code: true, title: true } } },
     orderBy: { publishedAt: 'desc' },
   });
   res.json({ student: { id: student.id, fullName: student.fullName, matricNumber: student.matricNumber }, results });
