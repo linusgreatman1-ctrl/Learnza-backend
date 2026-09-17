@@ -5,9 +5,21 @@ const { requireAuth, requireRole, requireApplicant, signApplicantToken } = requi
 const { generateAccessCode } = require('../utils');
 const { notifySchoolAdmins } = require('../services/notification.service');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
+const { sendEmail } = require('../services/bulkMessage.service');
 
 const router = express.Router();
 const upload = memoryUpload(10);
+
+// Best-effort: an applicant's in-app dashboard is always the source of truth, so a
+// missing/misconfigured SMTP setup or a transient send failure must never break the
+// admin action that triggered it -- this only ever adds an email on top.
+async function notifyApplicantByEmail(email, subject, text) {
+  try {
+    await sendEmail(email, subject, text);
+  } catch (err) {
+    if (err.code !== 'EMAIL_NOT_CONFIGURED') console.error('Applicant email failed:', err.message);
+  }
+}
 
 // A generic, platform-level screening question -- not school-specific and not
 // configurable by admin, unlike the real aptitude test below. correctIndex never
@@ -137,16 +149,22 @@ router.get('/admin/admissions/:id', requireAuth, requireRole('ADMIN'), async (re
 
 router.post('/admin/admissions/:id/screen', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const application = await prisma.application.update({ where: { id: req.params.id }, data: { status: 'UNDER_REVIEW' } });
+  notifyApplicantByEmail(application.email, 'Your Learnza application is under review',
+    `Hi ${application.fullName},\n\nYour admission application is now under review. Log in to your applicant dashboard on Learnza anytime to check for updates.\n\n— Learnza`);
   res.json({ application });
 });
 
 router.post('/admin/admissions/:id/accept', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const application = await prisma.application.update({ where: { id: req.params.id }, data: { status: 'ACCEPTED', decidedAt: new Date() } });
+  notifyApplicantByEmail(application.email, 'Your Learnza application has been accepted',
+    `Hi ${application.fullName},\n\nCongratulations -- your admission application has been accepted. Log in to your applicant dashboard on Learnza to see next steps.\n\n— Learnza`);
   res.json({ application });
 });
 
 router.post('/admin/admissions/:id/reject', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const application = await prisma.application.update({ where: { id: req.params.id }, data: { status: 'REJECTED', decidedAt: new Date() } });
+  notifyApplicantByEmail(application.email, 'Update on your Learnza application',
+    `Hi ${application.fullName},\n\nAfter review, your admission application was not successful this time. Log in to your applicant dashboard on Learnza for more details.\n\n— Learnza`);
   res.json({ application });
 });
 
@@ -186,6 +204,8 @@ router.post('/admin/admissions/:id/register', requireAuth, requireRole('ADMIN'),
     where: { id: application.id },
     data: { status: 'REGISTERED', registeredUserId: user.id },
   });
+  notifyApplicantByEmail(application.email, 'Welcome to Learnza — your student account is ready',
+    `Hi ${application.fullName},\n\nYour admission has been registered. You can now log in to Learnza with:\n\nEmail: ${user.email}\nMatric number: ${matricNumber}\nAccess code: ${accessCode}\nTemporary password: ${tempPassword}\n\nPlease log in and change your password as soon as possible.\n\n— Learnza`);
 
   res.json({ user: { fullName: user.fullName, email: user.email, matricNumber }, accessCode, tempPassword });
 });
@@ -251,6 +271,8 @@ router.post('/admin/admissions/:id/send-aptitude-test', requireAuth, requireRole
   const submission = existing
     ? await prisma.aptitudeTestSubmission.update({ where: { id: existing.id }, data: { testId: test.id, sentAt: new Date() } })
     : await prisma.aptitudeTestSubmission.create({ data: { testId: test.id, applicationId: application.id, sentAt: new Date() } });
+  notifyApplicantByEmail(application.email, 'Your Learnza aptitude test is ready',
+    `Hi ${application.fullName},\n\nYour school has sent your aptitude test. Log in to your applicant dashboard on Learnza to take it -- once you open it, you'll have 1 minute per question and it cannot be paused.\n\n— Learnza`);
   res.json({ submission });
 });
 

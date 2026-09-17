@@ -1026,7 +1026,7 @@
         `}
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('course-detail', { courseId: state.view.courseId }));
+    document.getElementById('back-btn').addEventListener('click', () => navigate(backScreen, { courseId }));
     if (lesson.videoUrl) return;
 
     const synth = window.speechSynthesis;

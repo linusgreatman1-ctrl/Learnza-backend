@@ -329,7 +329,12 @@
     examTimerHandle = setInterval(tick, 1000);
   }
 
-  if (token) renderDashboard(); else renderAuth();
+  // A returning applicant clicking "My Application" from the intro page (still logged
+  // in here) goes straight to their dashboard as usual; if their session isn't in this
+  // browser, ?login=1 opens straight on the Log in tab instead of Create account, since
+  // they're checking on an existing application, not starting a new one.
+  const startedFromLoginLink = new URLSearchParams(location.search).get('login') === '1';
+  if (token) renderDashboard(); else renderAuth(startedFromLoginLink ? 'login' : 'register');
 })();
 </script>
 </body>
