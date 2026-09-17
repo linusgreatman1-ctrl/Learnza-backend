@@ -2913,7 +2913,7 @@
 
   async function renderMyDashboard() {
     const isIndividual = state.user.isIndividual;
-    const [{ assignments, attendance, recentResults, lessons, individualAssessments }, { notifications }] = await Promise.all([
+    const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }] = await Promise.all([
       api('/students/me/dashboard'),
       api('/notifications'),
     ]);
@@ -2994,6 +2994,21 @@
             </div>
           </div>`;
     }
+    // A live class the lecturer recorded and ended -- own banner, own row shape
+    // (title/course/host/date, same Watch+Download pills as lectures). No lesson
+    // player to open here, so Watch just opens the video file directly.
+    function liveRecordingRowHtml(r) {
+      return `
+          <div class="list-row" style="align-items:center;">
+            <div style="flex:1;">
+              <div style="font-weight:600;">${esc(r.title)}</div><div class="meta">${esc(r.course.code)} · ${esc(r.host.fullName)} · ${new Date(r.endedAt).toLocaleDateString()}</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <a class="pill pill-muted" href="${esc(r.recordingUrl)}" target="_blank" rel="noopener">▶ Watch</a>
+              <a class="pill pill-muted" href="${esc(r.recordingUrl)}" download target="_blank" rel="noopener" title="Download">⬇ Download</a>
+            </div>
+          </div>`;
+    }
     function notificationRowHtml(n) {
       return `
           <div class="list-row">
@@ -3042,8 +3057,11 @@
       <h3 id="dash-attendance" style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
       ${dashSection('attendance', attendanceRows, attendanceRowHtml, 'No attendance recorded yet.')}
 
-      <h3 id="dash-lessons" style="margin-bottom:10px; font-size:1rem;">Lessons</h3>
-      ${dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lessons yet.')}
+      <h3 id="dash-recordings" style="margin-bottom:10px; font-size:1rem;">Live class recordings</h3>
+      ${dashSection('recordings', liveRecordings || [], liveRecordingRowHtml, 'No recorded live classes yet.')}
+
+      <h3 id="dash-lessons" style="margin-bottom:10px; font-size:1rem;">Lectures</h3>
+      ${dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lectures yet.')}
       `}
 
       ${isIndividual ? `

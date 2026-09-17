@@ -512,6 +512,11 @@ model LiveClass {
   status    String   @default("ACTIVE") // ACTIVE | ENDED
   startedAt DateTime @default(now())
   endedAt   DateTime?
+  // The lecturer's own camera/mic, recorded client-side and uploaded once the class
+  // ends -- kept on the LiveClass itself (not a Lesson) so it surfaces in its own
+  // "Live class recordings" dashboard banner, distinct from lecturer-uploaded lecture
+  // videos even though both ultimately use the same upload pipeline.
+  recordingUrl String?
 }
 
 // Digital lab: a practical/demonstration walkthrough (steps with instructions and

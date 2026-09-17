@@ -51,10 +51,10 @@ router.post('/live/:id/end', requireAuth, requireRole('LECTURER', 'ADMIN'), asyn
 
 // The lecturer's browser records its own camera/mic locally (there's no central
 // media server that sees every stream to record on its own -- see live.js's star
-// topology) and uploads the finished file here right after ending class. Stored as
-// an ordinary Lesson (isAiTeacher: false) so it shows up next to any other
-// lecturer-uploaded lecture video -- on the course page and the student dashboard's
-// existing "Lessons" section -- with zero extra UI needed for it specifically.
+// topology) and uploads the finished file here right after ending class. Stored on
+// the LiveClass itself (recordingUrl), not as a Lesson -- it gets its own "Live
+// class recordings" banner on the student dashboard, kept separate from regular
+// lecturer-uploaded lecture videos even though the upload mechanics are identical.
 router.post('/live/:id/recording', requireAuth, requireRole('LECTURER', 'ADMIN'), recordingUpload.single('video'), async (req, res) => {
   const liveClass = await prisma.liveClass.findUnique({ where: { id: req.params.id } });
   if (!liveClass || liveClass.hostId !== req.user.id) return res.status(404).json({ error: 'Live class not found' });
@@ -65,17 +65,8 @@ router.post('/live/:id/recording', requireAuth, requireRole('LECTURER', 'ADMIN')
   } catch {
     return res.status(502).json({ error: 'Recording upload failed. Please try again.' });
   }
-  const lesson = await prisma.lesson.create({
-    data: {
-      courseId: liveClass.courseId,
-      title: `${liveClass.title} (recording)`,
-      script: `Recording of the live class "${liveClass.title}".`,
-      videoUrl,
-      authorId: req.user.id,
-      isAiTeacher: false,
-    },
-  });
-  res.json({ lesson });
+  const updated = await prisma.liveClass.update({ where: { id: liveClass.id }, data: { recordingUrl: videoUrl } });
+  res.json({ liveClass: updated });
 });
 
 module.exports = router;

@@ -24,7 +24,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
   });
   const courseIds = enrollments.map((e) => e.courseId);
 
-  const [assignments, mySubs, attendance, recentResults, lessons] = await Promise.all([
+  const [assignments, mySubs, attendance, recentResults, lessons, liveRecordings] = await Promise.all([
     courseIds.length
       ? prisma.assignment.findMany({
           where: { courseId: { in: courseIds } },
@@ -61,6 +61,17 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
           take: 20,
         })
       : [],
+    // Ended live classes the lecturer actually recorded -- its own dashboard banner,
+    // separate from lecturer-uploaded lecture videos above (see live.js's recording
+    // route for why this lives on LiveClass rather than as a Lesson).
+    courseIds.length
+      ? prisma.liveClass.findMany({
+          where: { courseId: { in: courseIds }, recordingUrl: { not: null } },
+          include: { course: { select: { code: true } }, host: { select: { fullName: true } } },
+          orderBy: { endedAt: 'desc' },
+          take: 20,
+        })
+      : [],
   ]);
   const subByAssignment = new Map(mySubs.map((s) => [s.assignmentId, s]));
   const presentCount = attendance.filter((a) => a.status === 'PRESENT').length;
@@ -92,6 +103,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
     attendance: { recent: attendance, presentCount, totalCount: attendance.length },
     recentResults,
     lessons,
+    liveRecordings,
     individualAssessments,
   });
 });
