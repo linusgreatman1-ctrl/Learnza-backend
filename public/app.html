@@ -242,18 +242,34 @@
     body { background: #fff; color: #000; }
   }
 
-  /* On mobile/tablet, the back button floats at the side of the screen instead of
-     sitting inline in the page-head, where it scrolls away with the rest of the page
-     body and competes for space with the title. It's the same #back-btn element every
-     screen already renders -- only one exists in the DOM at a time -- so a single rule
-     repositions it everywhere without touching each screen's own markup. z-index sits
-     below the mobile nav drawer/backdrop so it's hidden while the sidebar is open. */
-  @media (max-width: 1024px) {
+  /* On mobile/tablet, the back button floats at the top of the screen (below the
+     mobile topbar) instead of sitting inline in the page-head, where it scrolls away
+     with the rest of the page body and competes for space with the title. Vertically
+     centering it (an earlier attempt) instead left it floating mid-screen on top of
+     whatever body text happened to be there, so it stays pinned near the top edge
+     here. It's the same #back-btn element every screen already renders -- only one
+     exists in the DOM at a time -- so a single rule repositions it everywhere without
+     touching each screen's own markup. z-index sits below the mobile nav drawer/
+     backdrop so it's hidden while the sidebar is open. */
+  @media (min-width: 761px) and (max-width: 1024px) {
+    /* Tablet keeps the desktop grid layout (sidebar + content, no topbar), so the
+       button sits near where the page-head would normally place it. */
     #back-btn {
       position: fixed;
-      top: 50%;
-      left: 10px;
-      transform: translateY(-50%);
+      top: 24px;
+      right: 24px;
+      z-index: 25;
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+  }
+  @media (max-width: 760px) {
+    /* Mobile has its own sticky topbar (~50px tall) up top, so the button sits just
+       below it instead. */
+    #back-btn {
+      position: fixed;
+      top: 62px;
+      right: 10px;
       z-index: 25;
       box-shadow: var(--shadow);
       white-space: nowrap;

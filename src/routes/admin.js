@@ -229,9 +229,13 @@ router.get('/student-activity', async (req, res) => {
 // or null after sending an error response itself, so callers can do post-creation work
 // (attaching courses) before sending their own final response.
 async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [], skipAccessCode = false }) {
-  const { fullName, email, phone } = req.body;
+  const { fullName, email, phone, password } = req.body;
   if (!fullName || !email || requiredFields.some((f) => !req.body[f])) {
     res.status(400).json({ error: 'Missing required fields' });
+    return null;
+  }
+  if (password && password.length < 6) {
+    res.status(400).json({ error: 'Password must be at least 6 characters.' });
     return null;
   }
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -239,7 +243,10 @@ async function createSchoolUser(req, res, { role, extraFields = {}, requiredFiel
     res.status(409).json({ error: 'An account with that email already exists' });
     return null;
   }
-  const tempPassword = generateAccessCode(8);
+  // Admin creation (the only caller that sends `password`) lets the creating admin
+  // set it directly, to hand to the new admin themselves -- everyone else still gets
+  // an auto-generated one shown back once, unchanged.
+  const tempPassword = password || generateAccessCode(8);
   const passwordHash = await bcrypt.hash(tempPassword, 10);
   let accessCode = null;
   if (!skipAccessCode) {
@@ -250,7 +257,7 @@ async function createSchoolUser(req, res, { role, extraFields = {}, requiredFiel
   const user = await prisma.user.create({
     data: { fullName, email, phone: phone || null, passwordHash, schoolId: req.user.schoolId, role, accessCode, ...extraFields },
   });
-  return { user, accessCode, tempPassword };
+  return { user, accessCode, tempPassword: password ? null : tempPassword };
 }
 
 function parseCourseIds(body) {
@@ -315,10 +322,13 @@ router.get('/admins', async (req, res) => {
 });
 
 router.post('/admins', async (req, res) => {
+  if (!req.body.password || req.body.password.length < 6) {
+    return res.status(400).json({ error: 'Set a password (at least 6 characters) for the new admin.' });
+  }
   const created = await createSchoolUser(req, res, { role: 'ADMIN', skipAccessCode: true });
   if (!created) return;
   const { passwordHash, ...safe } = created.user;
-  res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
+  res.json({ user: safe });
 });
 
 // A status change (DISMISSED), not a hard delete -- an admin account can easily have

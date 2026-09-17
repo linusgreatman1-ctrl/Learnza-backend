@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { generateAccessCode } = require('../utils');
+const { notifySchoolAdmins } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ router.post('/admissions/apply', async (req, res) => {
   const application = await prisma.application.create({
     data: { schoolId, departmentId, fullName, email, phone, level: level || 'NCE 1', statement: statement || null },
   });
+  await notifySchoolAdmins(schoolId, 'New admission application', `${fullName} applied for admission.`, 'admin-admissions');
   res.json({ application });
 });
 

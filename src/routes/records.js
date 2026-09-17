@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { notify } = require('../services/notification.service');
+const { notify, notifySchoolAdmins } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -14,6 +14,7 @@ router.post('/students/me/transcript-request', requireAuth, requireRole('STUDENT
   });
   if (existing) return res.json({ request: existing });
   const request = await prisma.transcriptRequest.create({ data: { studentId: req.user.id } });
+  await notifySchoolAdmins(req.user.schoolId, 'Transcript requested', `${req.user.fullName} requested a transcript.`, 'admin-student-requests');
   res.json({ request });
 });
 
@@ -69,6 +70,7 @@ router.post('/students/me/clearance-request', requireAuth, requireRole('STUDENT'
   const existing = await prisma.clearanceRequest.findFirst({ where: { studentId: req.user.id, status: 'PENDING' } });
   if (existing) return res.json({ request: existing });
   const request = await prisma.clearanceRequest.create({ data: { studentId: req.user.id } });
+  await notifySchoolAdmins(req.user.schoolId, 'Clearance requested', `${req.user.fullName} requested clearance.`, 'admin-student-requests');
   res.json({ request });
 });
 
@@ -108,6 +110,7 @@ router.post('/students/me/hostel-application', requireAuth, requireRole('STUDENT
   const application = await prisma.hostelApplication.create({
     data: { studentId: req.user.id, roomPreference: req.body.roomPreference || null },
   });
+  await notifySchoolAdmins(req.user.schoolId, 'Hostel application received', `${req.user.fullName} applied for hostel accommodation.`, 'admin-hostel-allocations');
   res.json({ application });
 });
 

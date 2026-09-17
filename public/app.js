@@ -412,6 +412,7 @@
       ['admin-hostel-allocations', 'Hostels'],
       ['admin-results', 'Results'],
       ['admin-bulk-message', 'Bulk SMS/Email'],
+      ['admin-management', 'Admin Management'],
       ['settings', 'Settings'],
       ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
     ],
@@ -678,6 +679,7 @@
         case 'admin-student-results': return renderAdminStudentResults();
         case 'admin-student-activity': return renderAdminStudentActivity();
         case 'admin-bulk-message': return renderAdminBulkMessage();
+        case 'admin-management': return renderAdminManagement();
         default: view.innerHTML = '<p>Not found.</p>';
       }
     }
@@ -5611,12 +5613,11 @@
 
   async function renderAdminDashboard() {
     const u = state.user;
-    const [{ school }, { students }, { lecturers }, { staff }, { admins }] = await Promise.all([
+    const [{ school }, { students }, { lecturers }, { staff }] = await Promise.all([
       api('/admin/school'),
       api('/admin/students'),
       api('/admin/lecturers'),
       api('/admin/non-academic-staff'),
-      api('/admin/admins'),
     ]);
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
@@ -5632,14 +5633,33 @@
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
       </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
+      </div>
+    `;
+    wireSelfAvatarUpload('avatar-admin-dash');
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
+    document.getElementById('dash-digital-id-btn').addEventListener('click', () => navigate('digital-id'));
+  }
 
-      <div class="page-head" style="margin-bottom:12px;">
-        <h3 style="font-size:1rem;">Admin Management</h3>
+  // A school can have more than one admin (e.g. a vice-principal or registrar
+  // alongside the principal) -- its own sidebar page now rather than living on the
+  // dashboard homepage. The add-admin form shows the school name/location as
+  // read-only context (which school this new admin belongs to) above the fields that
+  // actually get filled in; the creating admin sets the password directly here and
+  // hands it to the new admin along with their email, rather than an auto-generated
+  // one-time code.
+  async function renderAdminManagement() {
+    const u = state.user;
+    const [{ school }, { admins }] = await Promise.all([api('/admin/school'), api('/admin/admins')]);
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>Admin Management</h1>
         <button class="btn btn-accent btn-sm" id="add-admin-btn">+ Add Admin</button>
       </div>
       <p class="muted" style="margin-bottom:14px;">Other admin accounts for ${esc(school.name)} -- e.g. a vice-principal or registrar who also needs full admin access.</p>
       <div id="add-admin-box" hidden></div>
-      <div class="card" style="margin-bottom:26px;">
+      <div class="card">
         ${admins.map((a) => `
           <div class="list-row">
             <div>
@@ -5653,38 +5673,36 @@
           </div>
         `).join('') || '<p class="muted" style="padding:16px;">No admins yet.</p>'}
       </div>
-
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
-      </div>
     `;
-    wireSelfAvatarUpload('avatar-admin-dash');
-    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
-    document.getElementById('dash-digital-id-btn').addEventListener('click', () => navigate('digital-id'));
     document.getElementById('add-admin-btn').addEventListener('click', () => {
       const box = document.getElementById('add-admin-box');
       box.hidden = !box.hidden;
       if (box.hidden) return;
       box.innerHTML = `
         <form id="add-admin-form" class="card" style="padding:20px; margin-bottom:18px;">
+          <div class="field"><label>School name</label><div style="padding:10px 0; font-weight:600;">${esc(school.name)}</div></div>
+          <div class="field"><label>Location / campus</label><div style="padding:10px 0; font-weight:600;">${esc(school.location || '—')}</div></div>
           <div class="field"><label>Full name</label><input type="text" id="aa-name" required></div>
           <div class="field"><label>Email</label><input type="email" id="aa-email" required></div>
           <div class="field"><label>Phone number</label><input type="tel" id="aa-phone"></div>
+          <div class="field"><label>Password</label><input type="password" id="aa-password" required minlength="6"></div>
+          <p class="meta" style="margin-bottom:10px;">Give this email and password to the new admin -- that's what they'll log in with.</p>
           <button class="btn btn-primary" type="submit">Add admin</button>
         </form>
       `;
       document.getElementById('add-admin-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         try {
-          const { user, tempPassword } = await api('/admin/admins', {
+          const { user } = await api('/admin/admins', {
             method: 'POST',
             body: {
               fullName: document.getElementById('aa-name').value.trim(),
               email: document.getElementById('aa-email').value.trim(),
               phone: document.getElementById('aa-phone').value.trim(),
+              password: document.getElementById('aa-password').value,
             },
           });
-          alert(`${user.fullName} added as admin.\n\nTemporary password: ${tempPassword}\n\nThey log in with their email and this password (Settings > Change Password lets them set their own afterward).`);
+          toast(`${user.fullName} added as admin`);
           render();
         } catch (err) { toast(err.message); }
       });

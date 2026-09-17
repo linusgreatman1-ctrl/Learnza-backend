@@ -65,7 +65,12 @@ router.post('/assignments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
 
   const submission = await prisma.assignmentSubmission.create({
     data: { assignmentId: req.params.id, studentId: req.user.id, answerText: answerText.trim() },
+    include: { assignment: { select: { title: true, authorId: true } }, student: { select: { fullName: true } } },
   });
+  // The lecturer had no way to know new work had come in short of reopening every
+  // assignment to check -- this is what was missing from "set assignment -> student
+  // submits" round-tripping back to them.
+  await notify(submission.assignment.authorId, 'New submission', `${submission.student.fullName} submitted "${submission.assignment.title}".`, 'lect-mark-work');
   res.json({ submission });
 });
 

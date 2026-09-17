@@ -3,7 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const gamification = require('../services/gamification.service');
 const { getCurrentSemesterId } = require('../semester');
-const { notify, notifyMany } = require('../services/notification.service');
+const { notify, notifyMany, notifySchoolAdmins } = require('../services/notification.service');
 
 const router = express.Router();
 
@@ -191,6 +191,19 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
     score,
     objectiveQuestions.length
   );
+
+  // Objective questions are already graded above, but the lecturer previously had no
+  // way to know a submission had even come in -- worth knowing regardless of whether
+  // there's a theory portion to manually mark. Theory-bearing ones point at the Mark
+  // Work inbox; pure-objective ones point at the results sheet, since there's nothing
+  // to mark there.
+  const hasTheory = assessment.questions.some((q) => q.questionType === 'THEORY');
+  await notify(
+    assessment.authorId,
+    'New submission',
+    `${req.user.fullName} submitted "${assessment.title}" (${score}/${objectiveQuestions.length}).`,
+    hasTheory ? 'lect-mark-work' : `lect-assessment-results?assessmentId=${assessment.id}`
+  );
   res.json({ submission, pointsEarned, newBadges });
 });
 
@@ -292,9 +305,15 @@ router.post('/submissions/:id/mark-theory', requireAuth, requireRole('LECTURER',
   const submission = await prisma.submission.update({
     where: { id: req.params.id },
     data: { theoryScore: Number(theoryScore), theoryMaxScore: Number(theoryMaxScore), markedAt: new Date() },
-    include: { assessment: { select: { title: true } } },
+    include: { assessment: { select: { title: true } }, student: { select: { fullName: true, schoolId: true } } },
   });
   await notify(submission.studentId, 'Written answers marked', `${submission.assessment.title}: ${theoryScore}/${theoryMaxScore} for the written questions.`, 'student-results');
+  await notifySchoolAdmins(
+    submission.student.schoolId,
+    'Score released',
+    `${submission.student.fullName} scored ${theoryScore}/${theoryMaxScore} (written) on "${submission.assessment.title}".`,
+    'admin-student-activity'
+  );
   res.json({ submission });
 });
 
