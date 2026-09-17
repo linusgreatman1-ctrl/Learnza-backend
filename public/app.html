@@ -23,9 +23,17 @@
   .error-box { background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 14px; }
   .hint-box { background: var(--pass-soft); color: var(--pass); padding: 10px 14px; border-radius: 10px; font-size: 0.82rem; margin-top: 16px; line-height: 1.5; }
 
-  #app-screen { display: none; min-height: 100vh; grid-template-columns: 232px 1fr; }
+  /* Height (not min-height) + hidden overflow so #app-screen itself never grows
+     taller than the viewport and the page/body never scrolls -- main.content (and
+     .sidebar, below) become the only scrollable regions, each via its own
+     overflow-y:auto. This is what makes #back-btn's position:fixed behave reliably
+     on mobile: a body-level scroll combined with fixed-position children is a known
+     source of the button visually drifting/scrolling during a touch-scroll gesture
+     on iOS/Android, since the browser's dynamic toolbar resize interacts with the
+     page's own scroll in ways it doesn't with an inner div's scroll. */
+  #app-screen { display: none; height: 100vh; overflow: hidden; grid-template-columns: 232px 1fr; }
   #app-screen.active { display: grid; }
-  .sidebar { border-right: 1px solid var(--line); padding: 20px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .sidebar { border-right: 1px solid var(--line); padding: 20px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
   .sidebar .brand { font-family: var(--font-display); font-size: 1.2rem; margin-bottom: 4px; padding: 0 8px; }
   .sidebar .who { font-size: 0.78rem; color: var(--ink-soft); padding: 0 8px 16px; }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 10px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; background: transparent; border: none; text-align: left; color: var(--ink); width: 100%; }
@@ -213,7 +221,12 @@
   }
 
   @media (max-width: 760px) {
-    #app-screen.active { display: flex; flex-direction: column; min-height: 100vh; }
+    /* height (not min-height) + hidden overflow, same reasoning as the desktop grid
+       above: the topbar stays a normal (non-scrolling) flex item, and main.content
+       -- given flex:1 plus min-height:0 so it can actually shrink to fill the rest
+       of the column instead of overflowing it -- becomes the one scrollable region. */
+    #app-screen.active { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    main.content { flex: 1 1 auto; min-height: 0; }
     .mobile-topbar {
       display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
       border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); z-index: 30;
