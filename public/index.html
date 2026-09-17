@@ -119,13 +119,17 @@
   (function () {
     // "My Application" only makes sense for someone who has actually started one --
     // for a first-time visitor it's a dead end (there's nothing to check yet), so it
-    // stays hidden (default in the markup) unless this browser already holds an
-    // applicant session.
+    // stays hidden (default in the markup) unless THIS TAB is the one logged in as an
+    // applicant. sessionStorage, not localStorage -- apply.html now seeds it per-tab
+    // the same way app.html already does (see its own session-strategy comment), so a
+    // tab that never logged in as an applicant never shows this, even if some other
+    // open tab did (a fresh tab opened specifically to register a *different*
+    // applicant must actually look fresh, not hint at whoever's logged in elsewhere).
     try {
-      if (localStorage.getItem('applicant_token')) {
+      if (sessionStorage.getItem('applicant_token')) {
         document.querySelectorAll('[data-my-application]').forEach((el) => { el.hidden = false; });
       }
-    } catch (e) { /* localStorage unavailable -- leave it hidden */ }
+    } catch (e) { /* sessionStorage unavailable -- leave it hidden */ }
   })();
   (function () {
     const toggle = document.getElementById('menu-toggle');
