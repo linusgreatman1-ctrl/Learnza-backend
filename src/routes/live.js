@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../auth');
 const { notifyMany } = require('../services/notification.service');
+const liveRealtime = require('../realtime/live');
 
 const router = express.Router();
 
@@ -39,7 +40,10 @@ router.post('/courses/:id/live/start', requireAuth, requireRole('LECTURER', 'ADM
 router.post('/live/:id/end', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
   const liveClass = await prisma.liveClass.findUnique({ where: { id: req.params.id } });
   if (!liveClass || liveClass.hostId !== req.user.id) return res.status(404).json({ error: 'Live class not found' });
-  await prisma.liveClass.update({ where: { id: liveClass.id }, data: { status: 'ENDED', endedAt: new Date() } });
+  // endLiveClassById both marks the class ENDED and broadcasts live:ended to every
+  // connected student's socket -- a plain DB update here left students' live view
+  // running indefinitely, only ending when they happened to leave on their own.
+  await liveRealtime.endLiveClassById(liveClass.id);
   res.json({ ok: true });
 });
 

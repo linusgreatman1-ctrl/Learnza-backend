@@ -1773,26 +1773,36 @@
     document.getElementById('tile-' + id)?.remove();
   }
 
-  // Host-side: one button per student tile to call them on to speak. Disabled while
-  // waiting/active so a double-click can't fire two mic connections for the same
-  // student; resetInviteToSpeakButton() (called on live:speaker-stopped) restores it.
+  // Host-side: one button per student tile to call them on to speak. While a student
+  // is speaking, the SAME button turns into "Stop speaking" (still clickable, not
+  // disabled) so the lecturer always has a direct way to cut them off and carry on
+  // teaching -- rather than depending entirely on the student's own client correctly
+  // signaling live:stop-speaking (a dropped signal, e.g. around a brief reconnect,
+  // previously left the lecturer with no recourse at all). resetInviteToSpeakButton()
+  // (also called on live:speaker-stopped, from either side) puts it back to "Invite".
   function addInviteToSpeakButton(studentSocketId) {
     const tile = document.getElementById('tile-' + studentSocketId);
     if (!tile || tile.querySelector('.invite-speak-btn')) return;
     const btn = document.createElement('button');
     btn.className = 'btn btn-accent btn-sm invite-speak-btn';
+    btn.dataset.speaking = 'false';
     btn.style.cssText = 'position:absolute; bottom:6px; right:6px; z-index:2;';
     btn.textContent = '🎤 Invite to speak';
     btn.addEventListener('click', () => {
-      live.socket.emit('live:invite-to-speak', { liveClassId: live.liveClassId, studentSocketId });
-      btn.textContent = '🎤 Speaking…';
-      btn.disabled = true;
+      if (btn.dataset.speaking === 'true') {
+        live.socket.emit('live:stop-speaking', { liveClassId: live.liveClassId, studentSocketId });
+        resetInviteToSpeakButton(studentSocketId);
+      } else {
+        live.socket.emit('live:invite-to-speak', { liveClassId: live.liveClassId, studentSocketId });
+        btn.textContent = '🛑 Stop speaking';
+        btn.dataset.speaking = 'true';
+      }
     });
     tile.appendChild(btn);
   }
   function resetInviteToSpeakButton(studentSocketId) {
     const btn = document.querySelector(`#tile-${studentSocketId} .invite-speak-btn`);
-    if (btn) { btn.textContent = '🎤 Invite to speak'; btn.disabled = false; }
+    if (btn) { btn.textContent = '🎤 Invite to speak'; btn.dataset.speaking = 'false'; btn.disabled = false; }
   }
 
   // Student-side: plays one classmate's relayed audio through a hidden <audio>

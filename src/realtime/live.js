@@ -177,6 +177,13 @@ function attachLiveNamespace(io) {
     const room = nsp.adapter.rooms.get(`live:${liveClassId}`);
     if (room) for (const socketId of room) nsp.sockets.get(socketId)?.leave(`live:${liveClassId}`);
   }
+
+  // Exposed so the REST /live/:id/end route (src/routes/live.js) can trigger the
+  // exact same broadcast+cleanup teacher:end does over the socket -- the lecturer's
+  // "End class" button calls that REST endpoint specifically to avoid a socket emit
+  // racing the page's own disconnect, but students still need live:ended to actually
+  // leave the session instead of it just going stale in the database.
+  module.exports.endLiveClassById = endLiveClass;
 }
 
 module.exports = { attachLiveNamespace };
