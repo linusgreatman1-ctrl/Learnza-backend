@@ -382,6 +382,7 @@
             <option value="OTHER">Other equivalent</option>
           </select>
         </div>
+        <div class="field"><label>Upload passport photograph</label><input type="file" id="ap-passport-file" accept="image/*" required></div>
         <div class="field"><label>Upload O-level result</label><input type="file" id="ap-olevel-file" accept="image/*,.pdf" required></div>
         <div class="field"><label>Why this programme? (optional)</label><textarea id="ap-statement"></textarea></div>
         <div class="field">
@@ -407,6 +408,8 @@
       e.preventDefault();
       const errorBox = document.getElementById('apply-error');
       errorBox.innerHTML = '';
+      const passportFile = document.getElementById('ap-passport-file').files[0];
+      if (!passportFile) { errorBox.innerHTML = '<div class="error-box">Upload your passport photograph.</div>'; return; }
       const file = document.getElementById('ap-olevel-file').files[0];
       if (!file) { errorBox.innerHTML = '<div class="error-box">Upload your O-level result.</div>'; return; }
       if (iqChoice === null) { errorBox.innerHTML = '<div class="error-box">Answer the screening question.</div>'; return; }
@@ -417,6 +420,7 @@
       fd.append('olevelType', document.getElementById('ap-olevel-type').value);
       fd.append('statement', document.getElementById('ap-statement').value);
       fd.append('iqChoice', iqChoice);
+      fd.append('passportPhoto', passportFile);
       fd.append('olevelResult', file);
       try {
         const data = await api('/admissions/apply', { method: 'POST', body: fd });

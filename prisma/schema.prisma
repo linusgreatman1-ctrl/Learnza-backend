@@ -591,6 +591,7 @@ model Application {
   statement      String?    // short "why this programme" note
   olevelType     String?    // WAEC | NECO | GCE | OTHER
   olevelResultUrl String?   // uploaded result document/photo
+  passportPhotoUrl String?  // applicant's passport photograph, shown atop their detail card on the admin side
   iqAnswer       String?    // the single generic IQ-style question, answered as part of applying
   iqCorrect      Boolean?   // informational only -- not scored or shown, just visible to admin
   aptitudeScheduledAt DateTime? // the default "expect a test around this time" date shown right after applying (createdAt + 7 days, 2pm) -- purely informational until admin actually sends one

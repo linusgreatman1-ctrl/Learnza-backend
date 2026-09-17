@@ -104,8 +104,8 @@ function computeScheduledAptitudeDate(from = new Date()) {
 }
 
 // Requires an applicant account now (previously fully anonymous) -- multipart because
-// of the O-level result upload.
-router.post('/admissions/apply', requireApplicant, upload.single('olevelResult'), async (req, res) => {
+// of the O-level result (and, now, passport photograph) uploads.
+router.post('/admissions/apply', requireApplicant, upload.fields([{ name: 'olevelResult', maxCount: 1 }, { name: 'passportPhoto', maxCount: 1 }]), async (req, res) => {
   const existing = await prisma.application.findFirst({ where: { applicantId: req.applicant.id } });
   if (existing) return res.status(409).json({ error: 'You have already submitted an application.' });
 
@@ -114,12 +114,15 @@ router.post('/admissions/apply', requireApplicant, upload.single('olevelResult')
     return res.status(400).json({ error: 'School and department are required.' });
   }
   if (!olevelType) return res.status(400).json({ error: 'Select which O-level result you have.' });
-  if (!req.file) return res.status(400).json({ error: 'Upload your O-level result.' });
+  const olevelFile = req.files?.olevelResult?.[0];
+  const passportFile = req.files?.passportPhoto?.[0];
+  if (!olevelFile) return res.status(400).json({ error: 'Upload your O-level result.' });
+  if (!passportFile) return res.status(400).json({ error: 'Upload your passport photograph.' });
   if (iqChoice === undefined || iqChoice === null || iqChoice === '') {
     return res.status(400).json({ error: 'Answer the screening question.' });
   }
 
-  const { url: olevelResultUrl } = await saveUpload(req.file);
+  const [{ url: olevelResultUrl }, { url: passportPhotoUrl }] = await Promise.all([saveUpload(olevelFile), saveUpload(passportFile)]);
   const aptitudeScheduledAt = computeScheduledAptitudeDate();
 
   const application = await prisma.application.create({
@@ -131,6 +134,7 @@ router.post('/admissions/apply', requireApplicant, upload.single('olevelResult')
       statement: statement || null,
       olevelType,
       olevelResultUrl,
+      passportPhotoUrl,
       iqAnswer: String(iqChoice),
       iqCorrect: Number(iqChoice) === IQ_QUESTION.correctIndex,
       aptitudeScheduledAt,

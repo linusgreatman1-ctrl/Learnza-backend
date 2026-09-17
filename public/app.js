@@ -6580,6 +6580,9 @@
     view.innerHTML = `
       <div class="page-head"><h1>${esc(a.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
       <div class="card" style="padding:24px; max-width:560px; margin-bottom:18px;">
+        ${a.passportPhotoUrl
+          ? `<img src="${esc(a.passportPhotoUrl)}" alt="${esc(a.fullName)}" style="width:120px; height:120px; object-fit:cover; border-radius:12px; margin-bottom:16px; border:1px solid var(--line);">`
+          : `<p class="muted" style="margin-bottom:16px;">No passport photograph uploaded.</p>`}
         <div class="id-grid">
           <div><div class="meta">Email</div><div>${esc(a.email)}</div></div>
           <div><div class="meta">Phone</div><div>${esc(a.phone)}</div></div>
