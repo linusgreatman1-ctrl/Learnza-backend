@@ -5552,7 +5552,10 @@
     const isTheory = q && q.questionType === 'THEORY';
     const opts4 = q && !isTheory ? JSON.parse(q.options || '[]') : [];
     return `<div class="field" data-question-block="${i}">
-      <label>Question ${i + 1}</label>
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <label>Question ${i + 1}</label>
+        <button type="button" class="btn btn-ghost btn-sm q-remove" title="Remove this question">✕ Remove</button>
+      </div>
       <div class="tabs q-type" data-value="${isTheory ? 'THEORY' : 'OBJECTIVE'}" style="margin:0 0 10px;">
         <button type="button" class="tab-btn ${!isTheory ? 'active' : ''}" data-val="OBJECTIVE">Objective (multiple choice)</button>
         <button type="button" class="tab-btn ${isTheory ? 'active' : ''}" data-val="THEORY">Theory (free response)</button>
@@ -5587,6 +5590,15 @@
         objectiveFields.hidden = isTheory;
         modelAnswer.hidden = !isTheory;
       });
+    });
+    // Editing a pre-filled question's text in place works fine on its own, but there
+    // was no way to actually delete one -- only add more -- which is what made an
+    // unwanted existing question (e.g. one carried over from a previous save) feel
+    // stuck rather than genuinely editable.
+    const removeBtn = block.querySelector('.q-remove');
+    if (removeBtn) removeBtn.addEventListener('click', () => {
+      block.dispatchEvent(new CustomEvent('question:removed', { bubbles: true }));
+      block.remove();
     });
   }
   // Reads every question block in a container back into the same shape the backend
@@ -5666,6 +5678,7 @@
       container.querySelector('#na-add-q').disabled = container.querySelectorAll('[data-question-block]').length >= max;
     }
     container.querySelector('#na-type').addEventListener('change', updateCapNote);
+    container.addEventListener('question:removed', updateCapNote);
     updateCapNote();
     container.querySelectorAll('[data-question-block]').forEach(wireQuestionTypeToggle);
 
@@ -6798,6 +6811,7 @@
       document.getElementById('at-cap-note').textContent = `${count} / ${maxQuestions} questions (each is worth 10% of the applicant's score).`;
       document.getElementById('at-add-q').disabled = count >= maxQuestions;
     }
+    questionsEl.addEventListener('question:removed', updateCapNote);
     document.getElementById('at-add-q').addEventListener('click', () => {
       if (questionsEl.querySelectorAll('[data-question-block]').length >= maxQuestions) return;
       const div = document.createElement('div');
