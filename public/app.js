@@ -7245,6 +7245,15 @@
       }
     });
     initNotifications();
+  } else if (new URLSearchParams(location.search).get('from') !== 'intro') {
+    // Landed here directly -- a bookmark, a typed URL, or a new tab's own history
+    // autocomplete -- rather than by clicking through from the introduction page.
+    // index.html's own links to this page all carry ?from=intro, so its "Open
+    // Learnza"/"Log in"/"Learn independently" buttons still land straight on this
+    // login screen as always; anything else goes to the introduction page first,
+    // matching the site's intended entry flow instead of skipping straight to a
+    // bare login form.
+    window.location.replace('index.html');
   } else if (location.hash.includes('register')) {
     document.querySelector('[data-audience="individual"]').click();
     document.querySelector('#individual-panel [data-tab="register"]').click();
