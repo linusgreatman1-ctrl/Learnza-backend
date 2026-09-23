@@ -146,13 +146,19 @@
   }
 
   // The AI provider's raw error text ("You exceeded your current quota, please check
-  // your plan and billing details.") is a real upstream rate/quota limit, not a bug in
-  // the app -- surfaced as a friendlier, less alarming message than passing that raw
-  // text straight through everywhere an AI call can fail.
+  // your plan and billing details." / "This model is currently experiencing high
+  // demand. Spikes in demand are usually temporary.") reflects a real upstream
+  // condition, not a bug in the app -- surfaced as a friendlier, less alarming message
+  // than passing that raw text straight through everywhere an AI call can fail. Kept
+  // as two separate messages since they're different situations: one is this app
+  // hitting its own usage limit, the other is the provider itself being overloaded.
   function aiErrorMessage(err) {
     const msg = (err && err.message) || '';
     if (/quota|rate.?limit|resource.?exhausted|too many requests/i.test(msg)) {
       return "The AI Teacher is getting a lot of use right now and has hit its provider limit — please try again in a few minutes.";
+    }
+    if (/high demand|overloaded|unavailable|\b503\b|\b502\b/i.test(msg)) {
+      return "The AI Teacher's provider is temporarily overloaded — please try again in a few minutes.";
     }
     return msg || 'Something went wrong. Please try again.';
   }
