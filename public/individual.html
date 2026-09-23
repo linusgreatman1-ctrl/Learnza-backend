@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>
+  // Redirect-before-paint guard: individual.js's own version of this check (bottom of
+  // the file) only runs after the browser has already parsed and painted this page's
+  // static markup -- the login screen -- so a fresh/bookmarked visit briefly flashed
+  // it before bouncing to index.html. Running the identical decision here, as the
+  // very first thing in <head>, makes the redirect happen before that markup ever
+  // paints. Kept in sync with the session-reading logic at the top of individual.js.
+  (function () {
+    try {
+      var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      var isReload = nav ? nav.type === 'reload' : (performance.navigation ? performance.navigation.type === 1 : true);
+      var token = sessionStorage.getItem('vp_token') || (isReload ? localStorage.getItem('vp_token') : null);
+      var fromIntro = new URLSearchParams(location.search).get('from') === 'intro';
+      if (!token && !fromIntro) location.replace('index.html');
+    } catch (e) { /* fall through to app.js's own check */ }
+  })();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23142033'/%3E%3Ctext x='32' y='46' font-family='Georgia, Cambria, serif' font-size='36' font-weight='700' fill='%23e3ac4c' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
+<title>Learnza — Individual Learner</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  body { background: var(--paper); }
+  #auth-screen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  /* Hidden by default (JS reveals it only once boot logic actually decides to show
+     it) -- previously this login screen had no hidden default, so it painted first
+     on every load/refresh regardless of session state, then got hidden again a
+     moment later for anyone actually logged in. That flash is what this prevents. */
+  #auth-screen.js-hidden { display: none; }
+  .auth-box { width: 100%; max-width: 420px; padding: 32px; }
+  .auth-box .brand { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 4px; }
+  .tabs { display: flex; gap: 4px; background: var(--line); padding: 4px; border-radius: 999px; margin: 18px 0 22px; }
+  .tab-btn { flex: 1; border: none; background: transparent; padding: 8px 10px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); }
+  .tab-btn.active { background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow); }
+  .error-box { background: var(--danger-soft); color: var(--danger); padding: 10px 14px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 14px; }
+  .hint-box { background: var(--pass-soft); color: var(--pass); padding: 10px 14px; border-radius: 10px; font-size: 0.82rem; margin-top: 16px; line-height: 1.5; }
+
+  /* Height (not min-height) + hidden overflow so #app-screen itself never grows
+     taller than the viewport and the page/body never scrolls -- main.content (and
+     .sidebar, below) become the only scrollable regions, each via its own
+     overflow-y:auto. .page-head's position:sticky (further down) depends on this: a
+     sticky element sticks to its nearest genuinely-scrolling ancestor, so it needs
+     main.content itself to be that ancestor rather than the page/body. */
+  #app-screen { display: none; height: 100vh; overflow: hidden; grid-template-columns: 232px 1fr; }
+  #app-screen.active { display: grid; }
+  .sidebar { border-right: 1px solid var(--line); padding: 20px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .sidebar .brand { font-family: var(--font-display); font-size: 1.2rem; margin-bottom: 4px; padding: 0 8px; }
+  .sidebar .who { font-size: 0.78rem; color: var(--ink-soft); padding: 0 8px 16px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 10px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; background: transparent; border: none; text-align: left; color: var(--ink); width: 100%; }
+  .nav-item:hover { background: var(--accent-soft); }
+  .nav-item.active { background: var(--ink); color: var(--paper); }
+  .sidebar .spacer { flex: 1; }
+  .sidebar .signout { color: var(--danger); font-size: 0.85rem; padding: 10px; }
+
+  .mobile-topbar { display: none; }
+  .sidebar-backdrop { display: none; }
+
+  /* .page-head (title + back/action button together, the first thing every screen
+     renders) is sticky, not the button alone -- sticking a lone flex item along the
+     axis perpendicular to its row turned out unreliable across engines. It scrolls
+     normally near the top of a page, catches and stays visible once scrolled down
+     past it, and releases back to its ordinary spot when scrolled back up.
+     Top padding lives on .page-head itself, not main.content: a negative margin
+     meant to pull the bar up into main.content's own top padding didn't move a
+     sticky element's flow position in testing, leaving a gap the content underneath
+     could still peek through once stuck. With no top padding on main.content to
+     create that gap, the bar's own box (background included) starts flush at
+     main.content's true top edge instead. */
+  main.content { padding: 0 34px 30px; overflow-y: auto; min-width: 0; }
+  .page-head {
+    display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    padding: 30px 0 4px; margin-bottom: 22px;
+    position: sticky; top: 0; z-index: 25; background: var(--paper);
+  }
+  .page-head h1 { font-size: 1.5rem; }
+  @media (min-width: 761px) {
+    /* Clear the fixed .notif-bell-desktop (top:16px right:22px, 40px wide) so it never
+       sits on top of a page-head's right-aligned back/action button. */
+    .page-head { padding-right: 56px; }
+  }
+
+  .list-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); gap: 12px; }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .meta { font-size: 0.82rem; color: var(--ink-soft); }
+
+  .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .course-card { padding: 16px; cursor: pointer; transition: transform 0.1s ease; }
+  .course-card:hover { transform: translateY(-2px); }
+  .course-card .code { font-family: var(--font-display); font-size: 1.05rem; }
+
+  .lesson-player { padding: 24px; }
+  .lesson-player .controls { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .script-text { margin-top: 16px; padding: 16px; background: var(--paper); border-radius: 10px; border: 1px solid var(--line); max-height: 260px; overflow-y: auto; line-height: 1.7; }
+  .speaking-word { background: var(--accent-soft); border-radius: 3px; }
+
+  .quiz-q { padding: 18px; margin-bottom: 12px; }
+  .quiz-opt { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; cursor: pointer; }
+  .quiz-opt.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .quiz-opt.correct { border-color: var(--pass); background: var(--pass-soft); }
+  .quiz-opt.wrong { border-color: var(--danger); background: var(--danger-soft); }
+  .opt-label { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--line); font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }
+  .quiz-opt.selected .opt-label { background: var(--accent); color: var(--accent-ink); }
+  .quiz-nav-dot { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper-raised); font-weight: 600; font-size: 0.85rem; }
+  .quiz-nav-dot.answered { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+  .quiz-nav-dot.current { border-color: var(--accent); border-width: 2px; }
+
+  .chat-box { display: flex; flex-direction: column; height: 460px; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .chat-msg { max-width: 70%; padding: 9px 13px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line); font-size: 0.9rem; }
+  .chat-msg .sender { font-size: 0.72rem; font-weight: 700; color: var(--pass); margin-bottom: 2px; }
+  .chat-input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  .chat-input-row input { flex: 1; }
+
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  table.data-table th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  table.data-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--ink); color: var(--paper); padding: 12px 18px; border-radius: 10px; box-shadow: var(--shadow); font-size: 0.88rem; z-index: 100; }
+
+  .live-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); margin-bottom: 18px; }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 8px; animation: live-pulse 1.4s infinite; }
+  @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .video-tile { position: relative; background: #0b1220; border-radius: 10px; overflow: hidden; aspect-ratio: 4/3; }
+  .video-tile video { width: 100%; height: 100%; object-fit: cover; }
+  .video-tile .label { position: absolute; bottom: 6px; left: 8px; font-size: 0.75rem; color: #fff; background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 999px; }
+  /* The lecturer's own preview, and the lecturer's video as seen by students, are
+     each the only thing on screen -- so both get a wide hero treatment instead of
+     sharing the small grid cell size used for the (video-less) student tiles. */
+  #tile-self, #tile-host { grid-column: 1 / -1; aspect-ratio: 16/9; max-height: 60vh; }
+  /* Overriding max-height on .expanded alone lost to the #tile-host/#tile-self ID
+     rule above (an ID beats a two-class selector regardless of source order), so
+     the expand button visually did nothing -- these ID+class rules win instead.
+     On desktop the video column is narrower than the full page (see .live-layout
+     below), so the tile's height -- driven by aspect-ratio at that narrower width
+     -- often never reaches max-height at all, making a max-height-only bump
+     invisible. Shrinking the aspect-ratio (taller box for the same width) is what
+     actually grows it either way, regardless of which one was the binding
+     constraint. */
+  #tile-self.expanded, #tile-host.expanded { aspect-ratio: 4/3; max-height: 85vh; }
+  .video-tile .expand-toggle-btn { position: absolute; top: 6px; right: 6px; z-index: 3; }
+  /* Keeps both sides' video pinned in place while everything else (questions, Q&A,
+     chat) scrolls underneath it, instead of the video scrolling away with the page. */
+  .live-stage { position: sticky; top: 0; z-index: 20; background: var(--paper); padding-bottom: 6px; }
+  /* padding-top/bottom only (not the shorthand) -- the shorthand would zero out
+     padding-right and silently override the desktop rule further down that clears
+     .notif-bell-desktop, letting the bell sit on top of the End class/Leave button. */
+  .live-stage .page-head { position: static; padding-top: 14px; padding-bottom: 4px; margin-bottom: 8px; }
+  .live-chat { display: flex; flex-direction: column; height: 300px; }
+  .live-chat .chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  /* Stacked (video, then questions/Q&A/chat below it) on narrow screens; side by side
+     on desktop, matching the "text belongs beside the video, not under it" request --
+     the video column keeps its own sticky pin either way. */
+  .live-layout { display: flex; flex-direction: column; gap: 16px; }
+  @media (min-width: 761px) {
+    .live-layout { flex-direction: row; align-items: flex-start; }
+    .live-video-col { flex: 1 1 58%; min-width: 0; }
+    .live-side-col { flex: 1 1 360px; max-width: 420px; display: flex; flex-direction: column; }
+  }
+
+  .id-card { background: #142033; color: #faf7f0; border-radius: 18px; padding: 26px; max-width: 420px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+  .id-card::after { content: ""; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #e3ac4c33, transparent 70%); }
+  .id-card .id-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(250,247,240,0.6); }
+  .id-avatar { width: 64px; height: 64px; border-radius: 50%; background: #e3ac4c; color: #2a1c05; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; flex-shrink: 0; }
+  .id-row { display: flex; gap: 16px; align-items: center; margin-bottom: 18px; }
+  .id-field { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(250,247,240,0.55); margin-bottom: 2px; }
+  .id-value { font-family: var(--font-display); font-size: 1.1rem; }
+  .id-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .credential-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .credential-list li { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-radius: 10px; background: var(--paper); border: 1px solid var(--line); }
+
+  .notif-bell { position: relative; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); display: flex; align-items: center; justify-content: center; font-size: 1.05rem; flex-shrink: 0; }
+  .notif-bell-desktop { position: fixed; top: 16px; right: 22px; z-index: 35; }
+  .notif-badge { position: absolute; top: -4px; right: -4px; background: var(--danger); color: #fff; font-size: 0.62rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-panel { position: fixed; top: 64px; right: 22px; width: 340px; max-width: calc(100vw - 28px); max-height: 440px; overflow-y: auto; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); z-index: 60; }
+  .notif-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 0.9rem; position: sticky; top: 0; background: var(--paper-raised); }
+  .notif-item { padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item.unread { background: var(--accent-soft); }
+  .notif-item .notif-title { font-weight: 600; font-size: 0.88rem; }
+  .notif-item .notif-body { font-size: 0.82rem; color: var(--ink-soft); margin-top: 2px; }
+  .notif-item .notif-time { font-size: 0.72rem; color: var(--ink-soft); margin-top: 4px; }
+
+  .ai-avatar-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px 16px; background: #142033; border-radius: 14px; margin-bottom: 16px; position: relative; overflow: hidden; }
+  .ai-avatar-ring { width: 96px; height: 96px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3ac4c, #8a5f16); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 2.2rem; color: #142033; font-weight: 700; position: relative; box-shadow: 0 0 0 6px rgba(227,172,76,0.12); transition: box-shadow 0.3s ease, transform 0.3s ease; }
+  .ai-avatar-ring.speaking { box-shadow: 0 0 0 14px rgba(227,172,76,0.18), 0 0 0 26px rgba(227,172,76,0.08); animation: avatar-pulse 1.1s ease-in-out infinite; }
+  .ai-avatar-ring.listening { box-shadow: 0 0 0 14px rgba(224,133,133,0.22), 0 0 0 26px rgba(224,133,133,0.1); animation: avatar-pulse 0.7s ease-in-out infinite; }
+  @keyframes avatar-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+  .ai-avatar-label { color: rgba(250,247,240,0.75); font-size: 0.8rem; margin-top: 12px; }
+  .ai-avatar-label.listening-label { color: #e08585; font-weight: 600; }
+  #ask-voice-btn.listening { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+  .lib-cover { width: 40px; height: 52px; border-radius: 6px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0; }
+  .ai-avatar-video { width: 100%; max-width: 260px; border-radius: 12px; margin-top: 14px; }
+
+  /* Smart-board panel: a light marker-board look (matching the sibling app PassNow's
+     smart-board), not a dark chalkboard -- white/silver panel, a header strip showing
+     the teacher is "writing", and a marker-tray footer with colored dots. */
+  .smart-board-wrap { border-radius: 10px; overflow: hidden; box-shadow: inset 0 2px 10px rgba(0,0,0,0.08), 0 -2px 12px rgba(0,0,0,0.12); border: 1px solid #d6dbe2; }
+  .smart-board-head { display: flex; align-items: center; gap: 8px; padding: 9px 16px 7px; background: #f6f7f9; border-bottom: 1px solid #dde1e7; }
+  .smart-board-head .dot { width: 22px; height: 22px; border-radius: 50%; background: #00C853; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; flex-shrink: 0; }
+  .smart-board-head .label { font-size: 0.78rem; font-weight: 600; color: #4a5568; }
+  .smart-board { background: linear-gradient(180deg, #ffffff, #eef1f5); padding: 16px 18px; color: #22252B; min-height: 120px; }
+  .smart-board .board-action { margin-bottom: 14px; }
+  .smart-board .board-action:last-child { margin-bottom: 0; }
+  .smart-board .board-text { white-space: pre-wrap; line-height: 1.6; }
+  .smart-board .board-equation { color: #1E40AF; }
+  .smart-board .board-diagram svg { max-width: 100%; height: auto; background: #fff; border-radius: 6px; padding: 8px; border: 1px solid #e2e6eb; }
+  .smart-board .board-graph canvas { background: #fff; border-radius: 6px; padding: 8px; max-width: 100%; }
+  .smart-board-tray { display: flex; gap: 6px; align-items: center; padding: 6px 16px; background: #e9ecf0; border-top: 1px solid #d6dbe2; }
+  .smart-board-tray .marker { width: 12px; height: 12px; border-radius: 3px; }
+  .smart-board-tray .marker.red { background: #E02020; }
+  .smart-board-tray .marker.blue { background: #1E40AF; }
+  .smart-board-tray .marker.black { background: #111827; }
+  .smart-board-tray .tag { font-size: 0.65rem; color: #9094A4; margin-left: auto; letter-spacing: 0.04em; }
+  .smart-board .katex { color: #1E40AF; font-size: 1.1rem; }
+
+  /* Lesson stage: the avatar + smart-board pair stays put (sticky) while everything
+     below it -- section text, the check-question box, the ask-a-question panel --
+     scrolls underneath, on both desktop and mobile/tablet. Desktop splits the stage
+     into two side-by-side halves (avatar | board); narrower viewports stack them but
+     keep the same sticky behavior. */
+  .lesson-stage { position: sticky; top: 0; z-index: 5; background: var(--paper-raised); display: flex; flex-direction: column; gap: 14px; padding-bottom: 4px; }
+  .lesson-stage-expand-btn { position: absolute; top: 10px; right: 10px; z-index: 6; width: 34px; height: 34px; padding: 0; border-radius: 8px; background: rgba(20,32,51,0.55); color: #fff; border: 1px solid rgba(255,255,255,0.25); font-size: 1rem; display: flex; align-items: center; justify-content: center; }
+  .lesson-stage:fullscreen { background: var(--paper); padding: 20px; height: 100vh; overflow-y: auto; }
+  .lesson-stage:fullscreen .ai-avatar-box { min-height: 260px; }
+  @media (min-width: 900px) {
+    .lesson-stage { flex-direction: row; align-items: stretch; }
+    .lesson-stage .ai-avatar-box, .lesson-stage .smart-board-wrap { flex: 1 1 50%; min-width: 0; margin-bottom: 0; }
+    .lesson-stage .smart-board-wrap { display: flex; flex-direction: column; }
+    .lesson-stage .smart-board { flex: 1; }
+  }
+  /* On mobile/tablet there's no room for avatar + board side by side, and stacking
+     them (board always visible below the teacher) meant the teacher was permanently
+     shrunk out of the way. Instead the board overlays the same area as the teacher,
+     appearing only while there's an actual diagram/equation/graph to show (the
+     .board-visual class, toggled by setBoardContent() in app.js) and disappearing the
+     moment the teacher moves back to plain narration -- so the teacher is visible by
+     default and only covered for as long as a visual is actually up. */
+  @media (max-width: 899px) {
+    .lesson-stage { position: relative; }
+    .ai-avatar-box { min-height: 240px; }
+    .lesson-stage .smart-board-wrap {
+      position: absolute; top: 0; left: 0; right: 0; height: 240px;
+      z-index: 4; display: flex; flex-direction: column;
+      opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+    }
+    .lesson-stage .smart-board-wrap.board-visual { opacity: 1; pointer-events: auto; }
+    .lesson-stage .smart-board { flex: 1; overflow-y: auto; }
+  }
+
+  /* Settings screen -- grouped sections of toggle/arrow rows, matching PassNow's
+     settings layout (uppercase section labels + a card of stacked rows). */
+  .settings-section { margin-bottom: 24px; }
+  .settings-section-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 10px 4px; }
+  .settings-item { display: flex; align-items: center; gap: 13px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item.clickable { cursor: pointer; }
+  .settings-item-icon { font-size: 1.25rem; width: 28px; text-align: center; flex-shrink: 0; }
+  .settings-item-text { flex: 1; min-width: 0; }
+  .settings-item-sub { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+  .settings-toggle { width: 44px; height: 25px; border-radius: 999px; background: var(--line); position: relative; flex-shrink: 0; cursor: pointer; transition: background 0.15s; border: none; padding: 0; }
+  .settings-toggle.on { background: var(--accent); }
+  .settings-toggle-knob { position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; transition: transform 0.15s; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .settings-toggle.on .settings-toggle-knob { transform: translateX(19px); }
+  .settings-item-arrow { color: var(--ink-soft); flex-shrink: 0; }
+
+  /* Collapsible "Got a question" panel -- closed by default, matching PassNow's
+     placement below the lesson content rather than an always-visible input. */
+  .got-question-toggle { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 12px; background: linear-gradient(135deg, #1A1A2E, #0F3460); color: #fff; cursor: pointer; margin-top: 16px; }
+  .got-question-toggle .gq-sub { font-size: 0.78rem; color: rgba(255,255,255,0.65); margin-top: 2px; }
+  .got-question-panel { margin-top: 10px; }
+
+  @media (max-width: 760px) {
+    .notif-bell-desktop { display: none; }
+    .notif-panel { top: 66px; right: 12px; }
+  }
+
+  @media (max-width: 760px) {
+    /* height (not min-height) + hidden overflow, same reasoning as the desktop grid
+       above: the topbar stays a normal (non-scrolling) flex item, and main.content
+       -- given flex:1 plus min-height:0 so it can actually shrink to fill the rest
+       of the column instead of overflowing it -- becomes the one scrollable region. */
+    #app-screen.active { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    main.content { flex: 1 1 auto; min-height: 0; }
+    .mobile-topbar {
+      display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
+      border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); z-index: 30;
+    }
+    .mobile-topbar .brand { font-family: var(--font-display); font-size: 1.15rem; }
+    .mobile-topbar .menu-toggle {
+      width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper-raised);
+      color: var(--ink); font-size: 1.1rem; display: flex; align-items: center; justify-content: center;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 78vw; max-width: 300px; z-index: 50;
+      transform: translateX(-100%); transition: transform 0.2s ease; box-shadow: var(--shadow);
+      background: var(--paper); border-right: 1px solid var(--line);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-backdrop.open {
+      display: block; position: fixed; inset: 0; background: rgba(20,32,51,0.45); z-index: 40;
+    }
+    main.content { padding: 0 18px 20px; }
+    .page-head { padding: 20px 0 4px; margin-bottom: 22px; }
+  }
+
+  @media print {
+    .sidebar, .no-print { display: none !important; }
+    #app-screen.active { display: block; }
+    main.content { padding: 0; }
+    body { background: #fff; color: #000; }
+  }
+
+</style>
+</head>
+<body>
+
+<div id="auth-screen" class="js-hidden">
+  <div class="card auth-box">
+    <div class="brand">Learnza</div>
+    <div id="auth-error"></div>
+
+    <div id="individual-panel" class="audience-panel">
+      <div class="tabs" style="margin-bottom:16px;">
+        <button class="tab-btn active" data-tab="login">Log in</button>
+        <button class="tab-btn" data-tab="register">Sign up</button>
+      </div>
+      <form id="login-form">
+        <div class="field"><label>Email</label><input type="email" id="login-email" required></div>
+        <div class="field"><label>Password</label><div class="password-field"><input type="password" id="login-password" required><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
+      </form>
+      <form id="register-form" style="display:none;">
+        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Learn independently, for university, polytechnic or any higher-institution student — you create your own courses and the AI Teacher covers them.</p>
+        <div class="field"><label>Full name</label><input type="text" id="reg-name" required></div>
+        <div class="field"><label>Institution type</label>
+          <select id="reg-institution-type" required>
+            <option value="">Select…</option>
+            <option value="UNIVERSITY">University</option>
+            <option value="POLYTECHNIC">Polytechnic</option>
+            <option value="COLLEGE_OF_EDUCATION">College of Education</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <div class="field"><label>School name</label><input type="text" id="reg-school" required placeholder="e.g. University of Lagos"></div>
+        <div class="field"><label>Department</label><input type="text" id="reg-department" required placeholder="e.g. Computer Science"></div>
+        <div class="field"><label>Course of study</label><input type="text" id="reg-course" required placeholder="e.g. B.Sc Computer Science"></div>
+        <div class="field"><label>Level</label>
+          <select id="reg-level" required>
+            <option value="">Select…</option>
+            <option value="1">100L</option>
+            <option value="2">200L</option>
+            <option value="3">300L</option>
+            <option value="4">400L</option>
+            <option value="5">500L</option>
+            <option value="6">600L</option>
+          </select>
+        </div>
+        <div class="field"><label>Email</label><input type="email" id="reg-email" required></div>
+        <div class="field"><label>Phone number</label><input type="tel" id="reg-phone" required></div>
+        <div class="field"><label>Password</label><div class="password-field"><input type="password" id="reg-password" required minlength="6"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+        <button class="btn btn-accent" style="width:100%; justify-content:center;" type="submit">Create free account</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="app-screen">
+  <header class="mobile-topbar">
+    <div class="brand">Learnza</div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="menu-toggle" id="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
+      <button class="notif-bell" id="notif-bell-mobile" aria-label="Notifications">🔔<span class="notif-badge" id="notif-badge-mobile" hidden></span></button>
+    </div>
+  </header>
+  <button class="notif-bell notif-bell-desktop" id="notif-bell-desktop" aria-label="Notifications">🔔<span class="notif-badge" id="notif-badge-desktop" hidden></span></button>
+  <div class="notif-panel" id="notif-panel" hidden>
+    <div class="notif-panel-head">
+      <span>Notifications</span>
+      <button class="btn btn-ghost btn-sm" id="notif-mark-all">Mark all read</button>
+    </div>
+    <div id="notif-list"></div>
+  </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">Learnza</div>
+    <div id="semester-box" style="margin-bottom:8px;"></div>
+    <div id="nav-items"></div>
+    <div class="spacer"></div>
+    <button class="nav-item signout" id="signout-btn">Sign out</button>
+  </aside>
+  <main class="content" id="view"></main>
+</div>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script src="individual.js"></script>
+</body>
+</html>
