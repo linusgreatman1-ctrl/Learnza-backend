@@ -6,7 +6,7 @@
   // Redirect-before-paint guard: individual.js's own version of this check (bottom of
   // the file) only runs after the browser has already parsed and painted this page's
   // static markup -- the login screen -- so a fresh/bookmarked visit briefly flashed
-  // it before bouncing to index.html. Running the identical decision here, as the
+  // it before bouncing to independent.html. Running the identical decision here, as the
   // very first thing in <head>, makes the redirect happen before that markup ever
   // paints. Kept in sync with the session-reading logic at the top of individual.js.
   (function () {
@@ -15,7 +15,7 @@
       var isReload = nav ? nav.type === 'reload' : (performance.navigation ? performance.navigation.type === 1 : true);
       var token = sessionStorage.getItem('vp_token') || (isReload ? localStorage.getItem('vp_token') : null);
       var fromIntro = new URLSearchParams(location.search).get('from') === 'intro';
-      if (!token && !fromIntro) location.replace('index.html');
+      if (!token && !fromIntro) location.replace('independent.html');
     } catch (e) { /* fall through to app.js's own check */ }
   })();
 </script>

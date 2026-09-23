@@ -221,7 +221,7 @@
   document.getElementById('signout-btn').addEventListener('click', () => {
     clearSession();
     window.speechSynthesis && window.speechSynthesis.cancel();
-    window.location.href = 'index.html';
+    window.location.href = 'independent.html';
   });
 
 
@@ -1869,6 +1869,10 @@
     });
   }
 
+  // Dashboard list sections (Assignments, Attendance, Results, Lessons, Notifications)
+  // all follow the same "show 3, View more reveals the rest" pattern.
+  const DASH_LIMIT = 3;
+
   async function renderMyDashboard() {
     const isIndividual = state.user.isIndividual;
     const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }] = await Promise.all([
@@ -3478,12 +3482,12 @@
     if (new URLSearchParams(location.search).get('from') !== 'intro') {
       // Landed here directly -- a bookmark, a typed URL, or a new tab's own history
       // autocomplete -- rather than by clicking through from the introduction page.
-      // index.html's own links to this page all carry ?from=intro, so its "Open
-      // Learnza"/"Log in"/"Learn independently" buttons still land straight on this
+      // independent.html's own links to this page all carry ?from=intro, so its "Open
+      // Learnza"/"Log in"/"Create free account" buttons still land straight on this
       // login screen as always; anything else goes to the introduction page first,
       // matching the site's intended entry flow instead of skipping straight to a
       // bare login form.
-      window.location.replace('index.html');
+      window.location.replace('independent.html');
     } else if (location.hash.includes('register')) {
       document.querySelector('#individual-panel [data-tab="register"]').click();
     }

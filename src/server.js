@@ -74,10 +74,12 @@ app.use('/api', resultsRoutes);
 app.use('/api', dashboardRoutes);
 
 app.get('/health', (req, res) => res.json({ ok: true }));
-// Pretty URL for the standalone Individual Learner frontend (public/individual.html),
-// same convention as PassNow's /app and /schools routes -- the file is also reachable
-// directly since it's under public/ and express.static already serves it.
+// Pretty URLs for the standalone Individual Learner frontend (public/individual.html)
+// and its own introduction page (public/independent.html) -- same convention as
+// PassNow's /app and /schools routes. Both files are also reachable directly since
+// they're under public/ and express.static already serves them.
 app.get('/individual', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'individual.html')));
+app.get('/independent', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'independent.html')));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });

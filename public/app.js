@@ -162,19 +162,19 @@
   const appScreen = document.getElementById('app-screen');
   const authError = document.getElementById('auth-error');
 
-  // Top-level audience tabs: School (access code) / Individual Student / Admin.
+  // Top-level audience tabs: School (access code) / Admin. Individual Student now has
+  // its own separate app (individual.html) with its own auth screen entirely.
   document.querySelectorAll('[data-audience]').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('[data-audience]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('school-login-form').style.display = btn.dataset.audience === 'school' ? 'block' : 'none';
-      document.getElementById('individual-panel').style.display = btn.dataset.audience === 'individual' ? 'block' : 'none';
       document.getElementById('admin-panel').style.display = btn.dataset.audience === 'admin' ? 'block' : 'none';
       authError.innerHTML = '';
     });
   });
 
-  // Nested login/signup toggle, reused by both the Individual Student and Admin panels.
+  // Nested login/signup toggle for the Admin panel.
   function wireLoginRegisterToggle(panelId, loginFormId, registerFormId) {
     document.querySelectorAll(`#${panelId} [data-tab]`).forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -187,7 +187,6 @@
       });
     });
   }
-  wireLoginRegisterToggle('individual-panel', 'login-form', 'register-form');
   wireLoginRegisterToggle('admin-panel', 'admin-login-form', 'admin-register-form');
 
   document.getElementById('school-login-form').addEventListener('submit', async (e) => {
@@ -217,47 +216,6 @@
         body: {
           email: document.getElementById('admin-email').value.trim(),
           password: document.getElementById('admin-password').value,
-        },
-      });
-      onAuthed(token, user);
-    } catch (err) {
-      authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-    }
-  });
-
-  document.getElementById('login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    authError.innerHTML = '';
-    try {
-      const { token, user } = await api('/auth/login', {
-        method: 'POST',
-        body: {
-          email: document.getElementById('login-email').value.trim(),
-          password: document.getElementById('login-password').value,
-        },
-      });
-      onAuthed(token, user);
-    } catch (err) {
-      authError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-    }
-  });
-
-  document.getElementById('register-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    authError.innerHTML = '';
-    try {
-      const { token, user } = await api('/auth/register-individual', {
-        method: 'POST',
-        body: {
-          fullName: document.getElementById('reg-name').value.trim(),
-          institutionType: document.getElementById('reg-institution-type').value,
-          attendedSchoolName: document.getElementById('reg-school').value.trim(),
-          attendedDepartment: document.getElementById('reg-department').value.trim(),
-          courseOfStudy: document.getElementById('reg-course').value.trim(),
-          yearOfStudy: document.getElementById('reg-level').value,
-          email: document.getElementById('reg-email').value.trim(),
-          phone: document.getElementById('reg-phone').value.trim(),
-          password: document.getElementById('reg-password').value,
         },
       });
       onAuthed(token, user);
@@ -7508,14 +7466,10 @@
       // Landed here directly -- a bookmark, a typed URL, or a new tab's own history
       // autocomplete -- rather than by clicking through from the introduction page.
       // index.html's own links to this page all carry ?from=intro, so its "Open
-      // Learnza"/"Log in"/"Learn independently" buttons still land straight on this
-      // login screen as always; anything else goes to the introduction page first,
-      // matching the site's intended entry flow instead of skipping straight to a
-      // bare login form.
+      // Learnza"/"Log in" buttons still land straight on this login screen as always;
+      // anything else goes to the introduction page first, matching the site's
+      // intended entry flow instead of skipping straight to a bare login form.
       window.location.replace('index.html');
-    } else if (location.hash.includes('register')) {
-      document.querySelector('[data-audience="individual"]').click();
-      document.querySelector('#individual-panel [data-tab="register"]').click();
     }
   }
 })();

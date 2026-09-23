@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23142033'/%3E%3Ctext x='32' y='46' font-family='Georgia, Cambria, serif' font-size='36' font-weight='700' fill='%23e3ac4c' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
-<title>Learnza</title>
+<title>Learnza — Learn Independently</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 <style>
@@ -51,14 +51,10 @@
   .section-head h2 { font-size: 1.8rem; margin-bottom: 10px; }
 
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
   .feature { padding: 22px; }
   .feature h3 { font-size: 1.05rem; margin-bottom: 8px; }
   .feature p { color: var(--ink-soft); font-size: 0.92rem; }
   .feature .num { font-family: var(--font-display); font-size: 0.85rem; color: var(--pass); font-weight: 600; margin-bottom: 10px; display: block; }
-
-  .dept-list { display: flex; flex-wrap: wrap; gap: 10px; }
-  .dept-chip { border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 0.88rem; background: var(--paper-raised); }
 
   .flow { display: flex; gap: 0; flex-wrap: wrap; }
   .flow-step { flex: 1; min-width: 150px; padding: 18px 16px; border-right: 1px dashed var(--line); }
@@ -67,7 +63,7 @@
   .flow-step h4 { font-size: 0.95rem; margin: 6px 0 4px; }
   .flow-step p { font-size: 0.85rem; color: var(--ink-soft); }
 
-  .pricing { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  .pricing { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 720px; }
   .price-card { padding: 26px; }
   .price-card.highlight { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset, var(--shadow); }
   .price-card .amount { font-family: var(--font-display); font-size: 2rem; margin: 10px 0 4px; }
@@ -82,7 +78,7 @@
 
   @media (max-width: 860px) {
     .hero { grid-template-columns: 1fr; }
-    .grid-3, .grid-2, .pricing { grid-template-columns: 1fr; }
+    .grid-3, .pricing { grid-template-columns: 1fr; }
     .nav-links { display: none; }
     .menu-toggle { display: flex; }
     .flow { flex-direction: column; }
@@ -96,41 +92,22 @@
   <div class="container nav">
     <div class="brand"><span class="mark">L</span> Learnza</div>
     <nav class="nav-links">
-      <a href="#learn">Learn</a>
-      <a href="#departments">Departments</a>
-      <a href="#admin">For Schools</a>
+      <a href="#learn">Features</a>
+      <a href="#how">How it works</a>
       <a href="#pricing">Pricing</a>
-      <a href="apply.html?from=intro&login=1" data-my-application hidden>My Application</a>
     </nav>
     <div class="nav-right">
-      <a class="btn btn-primary btn-sm" href="app.html?from=intro">Open Learnza</a>
+      <a class="btn btn-primary btn-sm" href="individual.html?from=intro">Open Learnza</a>
       <button class="menu-toggle" id="menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
     </div>
   </div>
   <nav class="mobile-menu" id="mobile-menu">
-    <a href="#learn">Learn</a>
-    <a href="#departments">Departments</a>
-    <a href="#admin">For Schools</a>
+    <a href="#learn">Features</a>
+    <a href="#how">How it works</a>
     <a href="#pricing">Pricing</a>
-    <a href="apply.html?from=intro&login=1" data-my-application hidden>My Application</a>
   </nav>
 </header>
 <script>
-  (function () {
-    // "My Application" only makes sense for someone who has actually started one --
-    // for a first-time visitor it's a dead end (there's nothing to check yet), so it
-    // stays hidden (default in the markup) unless THIS TAB is the one logged in as an
-    // applicant. sessionStorage, not localStorage -- apply.html now seeds it per-tab
-    // the same way app.html already does (see its own session-strategy comment), so a
-    // tab that never logged in as an applicant never shows this, even if some other
-    // open tab did (a fresh tab opened specifically to register a *different*
-    // applicant must actually look fresh, not hint at whoever's logged in elsewhere).
-    try {
-      if (sessionStorage.getItem('applicant_token')) {
-        document.querySelectorAll('[data-my-application]').forEach((el) => { el.hidden = false; });
-      }
-    } catch (e) { /* sessionStorage unavailable -- leave it hidden */ }
-  })();
   (function () {
     const toggle = document.getElementById('menu-toggle');
     const menu = document.getElementById('mobile-menu');
@@ -149,83 +126,53 @@
 
 <section class="hero container" style="border-top:none;">
   <div>
-    <div class="eyebrow">Built for higher institutions</div>
-    <h1>Every department, every course — with an AI teacher who never misses a class.</h1>
-    <p class="lead">Learnza gives students a full department-by-department curriculum with a free e-library, study groups, and CBT-style tests, plus a subscription-based interactive AI Teacher and recorded lectures — while lecturers teach, grade and set assessments, and the school runs admissions, records and staff oversight from one place.</p>
+    <div class="eyebrow">For independent learners</div>
+    <h1>Pick any course. Learnza builds the teacher.</h1>
+    <p class="lead">No school, no waiting for a lecturer's timetable — tell Learnza what you want to learn and a real AI Teacher builds a full lesson for it on the spot, with a talking video avatar you can question like a real class. Study for an exam, get ahead on a course, or master a subject entirely on your own terms.</p>
     <div class="hero-actions">
-      <a class="btn btn-accent" href="apply.html?from=intro">Apply for admission</a>
+      <a class="btn btn-accent" href="individual.html?from=intro#register">Create free account</a>
+      <a class="btn btn-ghost" href="individual.html?from=intro">Log in</a>
     </div>
-    <p class="muted" style="margin-top:14px; font-size:0.85rem;">Already registered, or a lecturer/school admin? <a href="app.html?from=intro" style="text-decoration:underline;">Log in</a>.</p>
+    <p class="muted" style="margin-top:14px; font-size:0.85rem;">For university, polytechnic and college students — with or without a school on Learnza.</p>
   </div>
   <div class="hero-art">
-    <div class="school">CSC 101 · Introduction to Computer Science</div>
-    <div class="school-sub">Your School Name</div>
-    <div class="lesson-line"><span class="dot"></span> Lesson 1 — What is a Computer? <span class="tag">AI Teacher</span></div>
-    <div class="lesson-line"><span class="dot"></span> Lesson 2 — Generations of Computers <span class="tag">AI Teacher</span></div>
-    <div class="lesson-line"><span class="dot pass"></span> CA 1 — Introduction to Computers <span class="tag">2 questions</span></div>
+    <div class="school">Your own course · Any topic</div>
+    <div class="school-sub">Built the moment you ask for it</div>
+    <div class="lesson-line"><span class="dot"></span> "Explain thermodynamics from scratch" <span class="tag">AI Teacher</span></div>
+    <div class="lesson-line"><span class="dot"></span> "Walk me through Big-O notation" <span class="tag">AI Teacher</span></div>
+    <div class="lesson-line"><span class="dot pass"></span> Weekly Test — auto-generated <span class="tag">Instant score</span></div>
   </div>
 </section>
 
 <section id="learn">
   <div class="container">
     <div class="section-head">
-      <div class="eyebrow">For students</div>
-      <h2>A full digital campus, not just a video library</h2>
+      <div class="eyebrow">Why learn this way</div>
+      <h2>A full campus, built around one student — you</h2>
     </div>
     <div class="grid-3">
-      <div class="card feature"><span class="num">01</span><h3>AI Teacher lessons</h3><p>A live, interactive AI lecturer with a talking video avatar — ask it anything, on any topic in your course, on demand. Part of the paid subscription.</p></div>
-      <div class="card feature"><span class="num">02</span><h3>e-Library</h3><p>Textbooks, past questions and handouts organised by department and course, uploaded directly by your lecturers.</p></div>
-      <div class="card feature"><span class="num">03</span><h3>Study groups</h3><p>Course-based groups for peer discussion — no leaderboard, no ranking, just students helping students.</p></div>
-      <div class="card feature"><span class="num">04</span><h3>Live &amp; recorded classes</h3><p>Lecturers can teach live or upload recorded lessons alongside the AI teacher content.</p></div>
-      <div class="card feature"><span class="num">05</span><h3>CBT tests &amp; CA</h3><p>Continuous assessments, mock exams and entrance-style practice, auto-graded the moment you submit.</p></div>
-      <div class="card feature"><span class="num">06</span><h3>Digital records</h3><p>Your course registration, scores and transcript history live in one student profile.</p></div>
-      <div class="card feature"><span class="num">07</span><h3>Digital Practical</h3><p>Simulated lab practicals with step-by-step apparatus and instructions, plus an AI teacher you can ask questions as you work through them.</p></div>
+      <div class="card feature"><span class="num">01</span><h3>AI Teacher, on demand</h3><p>Name any topic in any course and a live, interactive AI lecturer with a talking video avatar builds and teaches the lesson — ask it anything, as many times as you need.</p></div>
+      <div class="card feature"><span class="num">02</span><h3>Your own courses</h3><p>You decide what you're studying. Create as many courses as you want — a degree subject, an exam you're revising for, a skill you're picking up.</p></div>
+      <div class="card feature"><span class="num">03</span><h3>Free e-Library</h3><p>Textbooks, past questions and reference material, organised and searchable, at no cost.</p></div>
+      <div class="card feature"><span class="num">04</span><h3>CBT tests &amp; mocks</h3><p>Auto-generated assignments, weekly tests and mock exams, graded the instant you submit — no waiting on anyone.</p></div>
+      <div class="card feature"><span class="num">05</span><h3>Study groups</h3><p>Join or start a group around any course to compare notes and learn alongside other independent students — no ranking, just peers.</p></div>
+      <div class="card feature"><span class="num">06</span><h3>Progress &amp; leaderboard</h3><p>Track exactly what you've covered, how you're scoring, and where you stand — entirely for your own motivation.</p></div>
     </div>
   </div>
 </section>
 
-<section id="departments">
+<section id="how">
   <div class="container">
     <div class="section-head">
-      <div class="eyebrow">Departments live at launch</div>
-      <h2>Department by department, the way the college actually teaches</h2>
+      <div class="eyebrow">How it works</div>
+      <h2>From "I want to learn this" to a finished lesson in minutes</h2>
     </div>
-    <div class="dept-list">
-      <span class="dept-chip">English</span>
-      <span class="dept-chip">Mathematics</span>
-      <span class="dept-chip">Computer Science</span>
-      <span class="dept-chip">Biology</span>
-      <span class="dept-chip">Early Childhood Care Education</span>
-      <span class="dept-chip">Economics</span>
-      <span class="dept-chip pill-muted" style="border-style:dashed;">More added by the school admin</span>
-    </div>
-  </div>
-</section>
-
-<section id="admin">
-  <div class="container">
-    <div class="section-head">
-      <div class="eyebrow">For lecturers &amp; school admin</div>
-      <h2>The school runs on it — students never see the oversight layer</h2>
-    </div>
-    <div class="grid-2">
-      <div class="card feature">
-        <h3>Lecturers</h3>
-        <p>Upload lessons and recordings, set CA/tests/assignments, record scores, and post library resources. Every action is logged for the school's own records.</p>
-      </div>
-      <div class="card feature">
-        <h3>School admin</h3>
-        <p>Manage departments and courses, keep a staff and student directory, and review lecturer activity — attendance, uploads, assessments set. Student activity is never monitored: study groups and personal progress stay private to the student.</p>
-      </div>
-    </div>
-    <div class="card" style="margin-top:18px;">
+    <div class="card">
       <div class="flow">
-        <div class="flow-step"><div class="idx">1</div><h4>Application</h4><p>Online screening &amp; acceptance — <a href="apply.html?from=intro" style="text-decoration:underline;">apply here</a></p></div>
-        <div class="flow-step"><div class="idx">2</div><h4>Registration</h4><p>Course registration, digital ID issued</p></div>
-        <div class="flow-step"><div class="idx">3</div><h4>Study</h4><p>Lessons, library, groups, live classes</p></div>
-        <div class="flow-step"><div class="idx">4</div><h4>Assessment</h4><p>CA, mocks, semester exams</p></div>
-        <div class="flow-step"><div class="idx">5</div><h4>Records</h4><p>Results, transcripts, clearance</p></div>
-        <div class="flow-step"><div class="idx">6</div><h4>Graduation</h4><p>Digital certificate &amp; verification</p></div>
+        <div class="flow-step"><div class="idx">1</div><h4>Sign up free</h4><p>Just your name, email and what you study — no school affiliation needed</p></div>
+        <div class="flow-step"><div class="idx">2</div><h4>Create a course</h4><p>Tell Learnza the subject or topic you want to learn</p></div>
+        <div class="flow-step"><div class="idx">3</div><h4>AI Teacher builds it</h4><p>A full narrated lesson, generated for exactly what you asked</p></div>
+        <div class="flow-step"><div class="idx">4</div><h4>Practice &amp; track</h4><p>Tests, past questions and CBT practice, scored instantly</p></div>
       </div>
     </div>
   </div>
@@ -240,22 +187,16 @@
     <p class="pill pill-pass" style="margin-bottom:20px;">Testing phase: everything below is free to try right now, no card needed</p>
     <div class="pricing">
       <div class="card price-card">
-        <div class="pill pill-pass">Student — always free</div>
+        <div class="pill pill-pass">Always free</div>
         <div class="amount">₦0</div>
         <p class="muted">e-library, study groups, CBT practice</p>
-        <ul><li>All department courses, browsable</li><li>Study groups, no ranking</li><li>CA &amp; mock CBT tests</li></ul>
+        <ul><li>Create unlimited courses</li><li>Study groups, no ranking</li><li>Weekly tests &amp; mock CBT exams</li></ul>
       </div>
       <div class="card price-card highlight">
         <div class="pill pill-accent">AI Teacher subscription</div>
         <div class="amount tabular">₦10,000<span style="font-size:0.9rem; font-weight:500;">/month</span></div>
         <p class="muted tabular">or ₦105,000/year</p>
-        <ul><li>Interactive AI Teacher — live lessons with a video avatar</li><li>Recorded lecture videos</li><li>Live classes with your lecturer</li></ul>
-      </div>
-      <div class="card price-card">
-        <div class="pill pill-muted">School licence</div>
-        <div class="amount">Contact us</div>
-        <p class="muted">Full admin suite: admissions, staff, finance, digital ID</p>
-        <ul><li>Whole-school rollout</li><li>Staff &amp; student directories</li><li>Attendance, CPD, research records</li></ul>
+        <ul><li>Interactive AI Teacher — live lessons with a video avatar</li><li>Unlimited lesson topics, any course</li><li>Priority AI minutes</li></ul>
       </div>
     </div>
   </div>
@@ -265,11 +206,11 @@
   <div class="container">
     <div class="cta-band">
       <div>
-        <h2>Ready to get started?</h2>
-        <p>Apply for admission at your school today.</p>
+        <h2>Your next lesson is one topic away.</h2>
+        <p>Create your free account and start learning in minutes.</p>
       </div>
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <a class="btn btn-accent" href="apply.html?from=intro">Apply for admission</a>
+        <a class="btn btn-accent" href="individual.html?from=intro#register">Create free account</a>
       </div>
     </div>
   </div>
@@ -277,7 +218,7 @@
 
 <footer class="container">
   <div>© 2026 Learnza</div>
-  <div style="display:flex; gap:16px;"><a href="apply.html?from=intro&login=1" data-my-application hidden>My Application</a><a href="app.html?from=intro">Open the app</a></div>
+  <div style="display:flex; gap:16px;"><a href="individual.html?from=intro">Open Learnza</a></div>
 </footer>
 
 </body>
