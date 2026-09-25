@@ -98,6 +98,33 @@
     btn.textContent = showing ? '👁' : '🙈';
   });
 
+  // Terms & Conditions / Privacy Policy links open in an in-app modal (an iframe onto
+  // legal.html) instead of a new tab -- so a registration form's filled-in fields stay
+  // intact instead of being abandoned in a background tab. Delegated on document, same
+  // pattern as the password toggle above, so it works from any [data-legal] link
+  // regardless of which screen rendered it.
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-legal]');
+    if (!link) return;
+    e.preventDefault();
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.55); z-index:290;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(720px,94vw); height:min(80vh,760px); padding:0; z-index:300; overflow:hidden; display:flex; flex-direction:column;';
+    box.innerHTML = `
+      <div style="display:flex; justify-content:flex-end; padding:8px 8px 0;">
+        <button id="legal-modal-close" class="btn btn-ghost btn-sm" aria-label="Close">✕</button>
+      </div>
+      <iframe src="legal.html#${link.dataset.legal}" title="Terms &amp; Conditions and Privacy Policy" style="flex:1; border:0; width:100%;"></iframe>
+    `;
+    document.body.appendChild(backdrop);
+    document.body.appendChild(box);
+    const close = () => { backdrop.remove(); box.remove(); };
+    box.querySelector('#legal-modal-close').addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+  });
+
   // MCQ option letters -- always A/B/C/D (E/F as a fallback for any question with
   // more than 4 options), matching PassNow's exam-taking convention.
   const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
