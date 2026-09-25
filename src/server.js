@@ -80,6 +80,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 // they're under public/ and express.static already serves them.
 app.get('/individual', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'individual.html')));
 app.get('/independent', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'independent.html')));
+app.get('/legal', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'legal.html')));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
