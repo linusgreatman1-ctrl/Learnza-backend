@@ -9,19 +9,24 @@ datasource db {
 
 // SQLite has no native enum support; Role is one of STUDENT | LECTURER | ADMIN, enforced in app code.
 
+// A school is onboarded by the platform's SUPER_ADMIN (never self-registered). joinCode is
+// the permanent credential the school's admin signs in with (school name + join code);
+// status/subscriptionExpiresAt gate every school login and token refresh.
 model School {
-  id               String        @id @default(cuid())
-  name             String
-  location         String?       // branch/campus, e.g. "Igueben", "Afuze", "Abudu"
-  createdAt        DateTime      @default(now())
-  licenseStatus    String        @default("ACTIVE") // ACTIVE | EXPIRED
-  licenseExpiresAt DateTime?
-  departments      Department[]
-  users            User[]
-  applications     Application[]
-  semesters        Semester[]
-  hostels          Hostel[]
-  aptitudeTests    AptitudeTest[]
+  id                    String       @id @default(cuid())
+  name                  String
+  state                 String?
+  address               String?
+  contactEmail          String?
+  contactPhone          String?
+  joinCode              String       @unique
+  status                String       @default("ACTIVE") // ACTIVE | SUSPENDED
+  subscriptionExpiresAt DateTime?
+  createdAt             DateTime     @default(now())
+  departments           Department[]
+  users                 User[]
+  semesters             Semester[]
+  hostels               Hostel[]
 }
 
 // A school's own term/semester calendar. isCurrent marks the one new activity
@@ -50,100 +55,11 @@ model Hostel {
   applications HostelApplication[]
 }
 
-// A school-owned bank of admission aptitude-test questions, taken by an
-// applicant during admissions (kept separate from Assessment since that
-// model requires a courseId, which an applicant doesn't have yet).
-// @@map keeps the underlying tables named "AttitudeTest*" (their original name,
-// before the wording was corrected to "aptitude") so this rename doesn't touch --
-// or risk losing -- any already-configured test banks or submissions.
-model AptitudeTest {
-  id        String                 @id @default(cuid())
-  school    School                 @relation(fields: [schoolId], references: [id])
-  schoolId  String
-  title     String
-  createdAt DateTime               @default(now())
-  questions AptitudeTestQuestion[]
-  submissions AptitudeTestSubmission[]
-
-  @@map("AttitudeTest")
-}
-
-model AptitudeTestQuestion {
-  id             String       @id @default(cuid())
-  test           AptitudeTest @relation(fields: [testId], references: [id])
-  testId         String
-  questionType   String       @default("OBJECTIVE") // OBJECTIVE | THEORY, matching Question's convention
-  text           String
-  options        String?      // JSON-encoded string array -- OBJECTIVE only
-  correctIndex   Int?         // OBJECTIVE only
-  modelAnswer    String?      // THEORY only -- shown to admin when grading, not to the applicant
-  order          Int          @default(0)
-
-  @@map("AttitudeTestQuestion")
-}
-
-// Created the moment admin sends the test to one applicant (sentAt set, no answers
-// yet) -- this is what the applicant's dashboard checks for to know a test is
-// waiting. startedAt stamps the instant they open it (the deadline anchor, same
-// server-side-timer pattern as Submission/start in assessments.js); answers/score
-// only get filled in at actual submit time.
-// score/total/gradedAt stay null until every THEORY question (if any) has been
-// graded by admin -- a pure-OBJECTIVE test grades itself instantly at submit time,
-// same as before this field existed, so nothing changes for the common case.
-model AptitudeTestSubmission {
-  id            String       @id @default(cuid())
-  test          AptitudeTest @relation(fields: [testId], references: [id])
-  testId        String
-  application   Application  @relation(fields: [applicationId], references: [id])
-  applicationId String       @unique
-  sentAt        DateTime?
-  startedAt     DateTime?
-  answers       String?      // JSON-encoded array of { questionId, choice? (OBJECTIVE), text? (THEORY) }
-  theoryGrades  String?      // JSON-encoded { [questionId]: boolean } -- admin's per-question award for THEORY answers
-  score         Int?
-  total         Int?
-  submittedAt   DateTime?
-  gradedAt      DateTime?
-  createdAt     DateTime     @default(now())
-
-  @@map("AttitudeTestSubmission")
-}
-
-// A prospective student's login identity -- created the moment they click "Apply for
-// Admission" and set up an account, before they've filled in any actual application
-// details. Lets them log back into their own small dashboard later to check status,
-// take the aptitude test when the school sends it, etc. Distinct from User: an
-// applicant isn't affiliated with any school yet (that only happens once accepted and
-// registered, via Application.registeredUserId).
-model Applicant {
-  id            String                 @id @default(cuid())
-  fullName      String
-  email         String                 @unique
-  phone         String
-  passwordHash  String
-  createdAt     DateTime               @default(now())
-  applications  Application[]
-  notifications ApplicantNotification[]
-}
-
-// In-app counterpart to the emails admissions.js already sends an applicant on every
-// status change -- a school's decisions previously only reached them via email, with
-// nothing to see if they just logged back into their dashboard.
-model ApplicantNotification {
-  id          String    @id @default(cuid())
-  applicant   Applicant @relation(fields: [applicantId], references: [id])
-  applicantId String
-  title       String
-  body        String
-  read        Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-}
-
 model User {
   id             String    @id @default(cuid())
   school         School?   @relation(fields: [schoolId], references: [id])
   schoolId       String?   // null for individual (non-school) students
-  role           String    // STUDENT | LECTURER | STAFF (non-academic) | ADMIN
+  role           String    // STUDENT | LECTURER | STAFF (non-academic) | ADMIN (school admin) | SUPER_ADMIN (platform owner)
   fullName       String
   email          String    @unique
   passwordHash   String
@@ -158,6 +74,9 @@ model User {
   attendedDepartment String? // individual learners only
   courseOfStudy      String? // individual learners only: their real degree programme
   institutionType    String? // individual learners only: UNIVERSITY | POLYTECHNIC | COLLEGE_OF_EDUCATION | OTHER
+  programmeYears     Int?      // school students: length of their programme in years (drives expected graduation year); null = assume 4
+  loginAttempts      Int       @default(0) // consecutive failed password logins -- reset on success
+  lockedUntil        DateTime? // set after 5 failed password logins; blocks password login until it passes
   yearOfAdmission    Int?      // school students: the year they were admitted, for admission-status/graduation-year calculations
   classPosition      String?   // e.g. "Class Governor", "Course Representative" -- admin-assigned
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
@@ -187,7 +106,6 @@ model User {
   stats          UserStats?
   badges         UserBadge[]
   labDemonstrationsMade LabDemonstration[] @relation("LabDemoAuthor")
-  applicationRegistered Application? @relation("ApplicationRegisteredUser")
   attendanceRecords StaffAttendanceRecord[]
   cpdRecords     CpdRecord[]
   publications   Publication[]
@@ -203,6 +121,8 @@ model User {
   resultsMade    Result[]     @relation("ResultAuthor")
   resultsReceived Result[]    @relation("ResultStudent")
   notifications  Notification[]
+  refreshTokens  RefreshToken[]
+  passwordResets PasswordReset[]
   coursesAssigned CourseLecturer[]
   labAttempts    LabAttempt[]
 }
@@ -278,7 +198,6 @@ model Department {
   code         String
   courses      Course[]
   users        User[]
-  applications Application[]
 
   @@unique([schoolId, code])
 }
@@ -573,38 +492,6 @@ model LabAttempt {
   @@unique([demoId, studentId])
 }
 
-// Admissions pipeline: application -> screening -> acceptance -> registration.
-// Applying needs no account (a prospective student doesn't have one yet); registering
-// creates the real User row and links back here via registeredUserId.
-model Application {
-  id             String     @id @default(cuid())
-  applicant      Applicant? @relation(fields: [applicantId], references: [id])
-  applicantId    String?
-  school         School     @relation(fields: [schoolId], references: [id])
-  schoolId       String
-  department     Department @relation(fields: [departmentId], references: [id])
-  departmentId   String
-  fullName       String
-  email          String
-  phone          String
-  level          String     // e.g. NCE 1
-  statement      String?    // short "why this programme" note
-  olevelType     String?    // WAEC | NECO | GCE | OTHER
-  olevelResultUrl String?   // uploaded result document/photo
-  passportPhotoUrl String?  // applicant's passport photograph, shown atop their detail card on the admin side
-  iqAnswer       String?    // the single generic IQ-style question, answered as part of applying
-  iqCorrect      Boolean?   // informational only -- not scored or shown, just visible to admin
-  aptitudeScheduledAt DateTime? // the default "expect a test around this time" date shown right after applying (createdAt + 7 days, 2pm) -- purely informational until admin actually sends one
-  status         String     @default("SUBMITTED") // SUBMITTED | UNDER_REVIEW | ACCEPTED | REJECTED | REGISTERED
-  rejectionReason String?   // admin's stated reason, shown to the applicant on rejection
-  admissionLetterUrl String? // uploaded on accept, or any time after via a standalone upload -- what the applicant downloads from their dashboard
-  registeredUser User?      @relation("ApplicationRegisteredUser", fields: [registeredUserId], references: [id])
-  registeredUserId String?  @unique
-  aptitudeTestSubmission AptitudeTestSubmission?
-  createdAt      DateTime   @default(now())
-  decidedAt      DateTime?
-}
-
 // Staff records: attendance (lecturer self-check-in), CPD, and publications. Workload
 // is deliberately NOT a stored model -- it's computed on demand from real activity
 // (courses, lessons, assessments, live classes already in the DB) rather than a
@@ -807,4 +694,44 @@ model Notification {
   link      String?  // a frontend screen name to navigate to on click
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+// Rotating refresh tokens: only the SHA-256 hash is stored. A just-revoked token stays
+// usable for a short grace window so two near-simultaneous refreshes don't log a user out.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String    @unique
+  surface   String    @default("app") // app | schools | admin -- which frontend issued it
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Append-only record of every privileged super-admin action.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  action     String   // e.g. SCHOOL_CREATED, SCHOOL_SUSPENDED, USER_SUSPENDED
+  targetType String?
+  targetId   String?
+  metadata   String?  // JSON-encoded
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

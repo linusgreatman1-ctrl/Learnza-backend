@@ -1,0 +1,92 @@
+/* Sign-in / sign-up screens shared by the Student app (/app) and the Schools app
+   (/schools). Same flow and layout as PassNow's -- dark splash, glass role cards, light
+   form screens with a dark top bar -- in Learnza's own navy and gold. Everything is
+   prefixed lg- and uses fixed colours so it looks identical regardless of the app's
+   light/dark theme. */
+
+#auth-screen {
+  --lg-navy: #0f1b2e;
+  --lg-navy-2: #16253d;
+  --lg-gold: #e3ac4c;
+  --lg-gold-2: #c1861f;
+  --lg-ink: #14202f;
+  --lg-muted: #8a93a6;
+  --lg-line: #e6e9f0;
+  position: fixed; inset: 0; z-index: 60; overflow: hidden;
+  background: #0b1423;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: #fff;
+}
+#auth-screen.js-hidden { display: none; }
+#auth-screen *, #auth-screen *::before, #auth-screen *::after { box-sizing: border-box; }
+
+.lg-s { display: none; position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+.lg-s.on { display: flex; flex-direction: column; }
+.lg-dark { background: radial-gradient(120% 90% at 50% 0%, #1b2f4f 0%, var(--lg-navy) 55%, #0b1423 100%); }
+.lg-light { background: #fff; color: var(--lg-ink); }
+.lg-inner { width: 100%; max-width: 440px; margin: 0 auto; padding: 0 22px; }
+
+/* ---- splash ---- */
+.lg-star { position: absolute; border-radius: 50%; background: #fff; animation: lg-twinkle 2s ease-in-out infinite; }
+@keyframes lg-twinkle { 0%, 100% { opacity: .12; } 50% { opacity: .85; } }
+.lg-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 56px 28px 16px; position: relative; z-index: 1; }
+.lg-logo { width: 80px; height: 80px; border-radius: 24px; background: linear-gradient(135deg, var(--lg-gold), var(--lg-gold-2)); display: flex; align-items: center; justify-content: center; font-family: 'Sora', serif; font-size: 44px; font-weight: 800; color: #1b1406; margin: 0 auto 18px; box-shadow: 0 20px 60px rgba(227, 172, 76, .35); }
+.lg-word { font-family: 'Sora', sans-serif; font-size: 50px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+.lg-word span { color: var(--lg-gold); }
+.lg-tag { color: rgba(255, 255, 255, .42); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; margin-top: 10px; }
+.lg-pill { display: inline-block; margin-top: 22px; background: rgba(227, 172, 76, .14); border: 1px solid rgba(227, 172, 76, .3); color: var(--lg-gold); border-radius: 100px; padding: 6px 16px; font-size: 12px; font-weight: 700; }
+.lg-actions { width: 100%; max-width: 440px; margin: 0 auto; padding: 0 24px 44px; display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 2; }
+.lg-foot { text-align: center; color: rgba(255, 255, 255, .26); font-size: 12px; margin-top: 4px; }
+
+/* ---- buttons ---- */
+.lg-btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 14px; font-family: inherit; font-size: 16px; font-weight: 800; cursor: pointer; text-align: center; transition: transform .15s; }
+.lg-btn:active { transform: scale(.97); }
+.lg-btn[disabled] { opacity: .6; cursor: default; }
+.lg-btn-gold { background: linear-gradient(135deg, var(--lg-gold), var(--lg-gold-2)); color: #1b1406; box-shadow: 0 8px 22px rgba(227, 172, 76, .3); }
+.lg-btn-out { background: transparent; border: 2px solid rgba(255, 255, 255, .22); color: #fff; }
+
+/* ---- role / account-type cards ---- */
+.lg-title { font-family: 'Sora', sans-serif; font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+.lg-sub { color: rgba(255, 255, 255, .42); font-size: 15px; margin-bottom: 28px; }
+.lg-card { background: rgba(255, 255, 255, .06); border: 1.5px solid rgba(255, 255, 255, .1); border-radius: 20px; padding: 20px; cursor: pointer; display: flex; align-items: center; gap: 16px; margin-bottom: 12px; transition: background .15s, border-color .15s; }
+.lg-card:hover { background: rgba(255, 255, 255, .1); border-color: rgba(227, 172, 76, .45); }
+.lg-card-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; background: linear-gradient(135deg, var(--lg-gold), var(--lg-gold-2)); }
+.lg-card-icon.blue { background: linear-gradient(135deg, #4a8cff, #2563d6); }
+.lg-card-name { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; margin-bottom: 3px; }
+.lg-card-desc { color: rgba(255, 255, 255, .45); font-size: 13px; }
+.lg-card-go { color: rgba(255, 255, 255, .25); font-size: 22px; margin-left: auto; }
+.lg-back-row { margin-top: auto; padding-top: 24px; padding-bottom: 36px; }
+
+/* ---- form screens ---- */
+.lg-bar { background: var(--lg-navy); color: #fff; padding: 14px 0; position: sticky; top: 0; z-index: 5; }
+.lg-bar .lg-inner { display: flex; align-items: center; justify-content: space-between; }
+.lg-bar-title { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; }
+.lg-back { width: 40px; height: 40px; border-radius: 12px; border: 1.5px solid rgba(255, 255, 255, .22); background: none; color: #fff; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.lg-head { background: var(--lg-navy); color: #fff; padding: 22px 0 30px; text-align: center; }
+.lg-head .lg-inner { padding-top: 6px; }
+.lg-head-icon { width: 64px; height: 64px; border-radius: 20px; background: linear-gradient(135deg, var(--lg-gold), var(--lg-gold-2)); display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 10px auto 14px; }
+.lg-head h2 { font-family: 'Sora', sans-serif; font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+.lg-head p { color: rgba(255, 255, 255, .5); font-size: 14px; }
+.lg-form { padding-top: 20px; padding-bottom: 40px; }
+.lg-info { background: #fbf3e0; color: #7a5410; border-radius: 13px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.6; margin-bottom: 16px; font-weight: 600; }
+.lg-fg { margin-bottom: 15px; }
+.lg-label { display: block; font-size: 12px; font-weight: 800; color: var(--lg-ink); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+.lg-input { width: 100%; padding: 14px 16px; border: 2px solid var(--lg-line); border-radius: 13px; font-family: inherit; font-size: 15px; color: var(--lg-ink); background: #fff; outline: none; transition: border-color .18s; }
+.lg-input:focus { border-color: var(--lg-gold-2); }
+.lg-input::placeholder { color: #b3b9c8; }
+select.lg-input { appearance: none; cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, #8a93a6 50%), linear-gradient(135deg, #8a93a6 50%, transparent 50%); background-position: calc(100% - 20px) 55%, calc(100% - 14px) 55%; background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right: 36px; }
+.lg-form .password-field input { padding-right: 46px; }
+.lg-form .pw-toggle-btn { color: var(--lg-muted); right: 10px; }
+.lg-check { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0; cursor: pointer; }
+.lg-check input { margin-top: 2px; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--lg-gold-2); }
+.lg-check span { font-size: 13px; color: var(--lg-muted); line-height: 1.6; }
+.lg-check a, .lg-note a { color: var(--lg-gold-2); font-weight: 800; text-decoration: none; }
+.lg-note { text-align: center; color: var(--lg-muted); font-size: 12px; margin-top: 14px; line-height: 1.6; }
+.lg-switch { text-align: center; color: var(--lg-muted); font-size: 14px; margin-top: 20px; font-weight: 600; }
+.lg-switch a { color: var(--lg-gold-2); font-weight: 800; cursor: pointer; }
+.lg-light .lg-btn-gold { box-shadow: 0 8px 22px rgba(193, 134, 31, .28); }
+
+@media (min-width: 900px) {
+  .lg-hero { padding-top: 90px; }
+  .lg-word { font-size: 60px; }
+}

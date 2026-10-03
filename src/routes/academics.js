@@ -4,16 +4,11 @@ const { requireAuth, requireRole, logActivity } = require('../auth');
 const { getSubscriptionStatus, isEnforced } = require('../subscription');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const { getCurrentSemesterId } = require('../semester');
-const { computeAdmissionStatus } = require('./records');
+const { computeAcademicRecord } = require('./records');
 const { notifyMany } = require('../services/notification.service');
 
 const router = express.Router();
 const upload = memoryUpload(80); // videos run larger than library documents
-
-router.get('/schools', async (req, res) => {
-  const schools = await prisma.school.findMany();
-  res.json({ schools });
-});
 
 // Any logged-in school member (admin/lecturer/student) can read the school's semester
 // list -- used to drive the semester switcher in every dashboard header.
@@ -29,7 +24,7 @@ router.get('/semesters', requireAuth, async (req, res) => {
   res.json({ semesters });
 });
 
-router.get('/departments', async (req, res) => {
+router.get('/departments', requireAuth, async (req, res) => {
   const { schoolId } = req.query;
   const departments = await prisma.department.findMany({
     where: schoolId ? { schoolId } : undefined,
@@ -38,7 +33,7 @@ router.get('/departments', async (req, res) => {
   res.json({ departments });
 });
 
-router.get('/departments/:id/courses', async (req, res) => {
+router.get('/departments/:id/courses', requireAuth, async (req, res) => {
   const courses = await prisma.course.findMany({
     where: { departmentId: req.params.id },
     orderBy: [{ level: 'asc' }, { code: 'asc' }],
@@ -46,7 +41,7 @@ router.get('/departments/:id/courses', async (req, res) => {
   res.json({ courses });
 });
 
-router.get('/courses/:id', async (req, res) => {
+router.get('/courses/:id', requireAuth, async (req, res) => {
   const course = await prisma.course.findUnique({
     where: { id: req.params.id },
     include: { department: true },
@@ -126,7 +121,7 @@ router.get('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (re
   if (!enrollment) return res.status(404).json({ error: 'Student not found in any of your classes.' });
   const student = await prisma.user.findUnique({ where: { id: req.params.id }, include: { department: true } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
-  res.json(await computeAdmissionStatus(student));
+  res.json(await computeAcademicRecord(student));
 });
 
 // A quick broadcast to everyone enrolled in one class -- a regular in-app
@@ -148,7 +143,7 @@ router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (re
   }
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const course = await prisma.course.create({
-    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First', semesterId },
+    data: { departmentId, code, title, level: level || '100L', semester: semester || 'First', semesterId },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_COURSE', `${code} — ${title}`);
   res.json({ course });

@@ -222,13 +222,12 @@ router.get('/student-activity', async (req, res) => {
   res.json({ submissions, assignmentSubmissions: assignmentSubs, results, attendance });
 });
 
-// Shared by every "admin directly adds a user" flow -- always auto-generates a temp
-// password, and an access code too unless skipAccessCode is set (non-academic staff
-// log in with email+password only -- an access code is a school-issued shortcut for
-// roles that need one, not a requirement of every account). Returns the created user,
+// Shared by every "admin directly adds a user" flow -- always generates an access code
+// (the credential they sign in to the Schools app with, along with their name and the
+// school's name) plus a stored password nobody needs to know. Returns the created user,
 // or null after sending an error response itself, so callers can do post-creation work
 // (attaching courses) before sending their own final response.
-async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [], skipAccessCode = false }) {
+async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [] }) {
   const { fullName, email, phone, password } = req.body;
   if (!fullName || !email || requiredFields.some((f) => !req.body[f])) {
     res.status(400).json({ error: 'Missing required fields' });
@@ -243,16 +242,10 @@ async function createSchoolUser(req, res, { role, extraFields = {}, requiredFiel
     res.status(409).json({ error: 'An account with that email already exists' });
     return null;
   }
-  // Admin creation (the only caller that sends `password`) lets the creating admin
-  // set it directly, to hand to the new admin themselves -- everyone else still gets
-  // an auto-generated one shown back once, unchanged.
-  const tempPassword = password || generateAccessCode(8);
+  const tempPassword = password || generateAccessCode(12);
   const passwordHash = await bcrypt.hash(tempPassword, 10);
-  let accessCode = null;
-  if (!skipAccessCode) {
-    accessCode = generateAccessCode();
-    while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
-  }
+  let accessCode = generateAccessCode();
+  while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
 
   const user = await prisma.user.create({
     data: { fullName, email, phone: phone || null, passwordHash, schoolId: req.user.schoolId, role, accessCode, ...extraFields },
@@ -286,7 +279,6 @@ router.post('/non-academic-staff', async (req, res) => {
     role: 'STAFF',
     requiredFields: ['position'],
     extraFields: { staffId: staffId || null, position, departmentId: departmentId || null, staffType: 'NON_ACADEMIC' },
-    skipAccessCode: true,
   });
   if (!created) return;
   const { passwordHash, ...safe } = created.user;
@@ -310,25 +302,23 @@ router.post('/students', async (req, res) => {
 });
 
 // ---- Admin management: a school can have more than one admin account (e.g. the
-// principal plus a vice-principal or registrar) -- this is how additional ones get
-// added, distinct from the single admin created automatically at school registration.
-// Admins log in with email+password only, same as non-academic staff -- no access code.
+// registrar plus a deputy) -- this is how additional ones get added, on top of the
+// founding admin the platform created when it onboarded the school (the one the join
+// code signs in as, hidden from this list since it isn't a person). Additional admins
+// sign in to the Schools app with their access code, like lecturers and students.
 router.get('/admins', async (req, res) => {
   const admins = await prisma.user.findMany({
-    where: { schoolId: req.user.schoolId, role: 'ADMIN' },
+    where: { schoolId: req.user.schoolId, role: 'ADMIN', NOT: { email: { endsWith: '@internal.learnza.local' } } },
     orderBy: { createdAt: 'asc' },
   });
   res.json({ admins: admins.map(({ passwordHash, ...a }) => a) });
 });
 
 router.post('/admins', async (req, res) => {
-  if (!req.body.password || req.body.password.length < 6) {
-    return res.status(400).json({ error: 'Set a password (at least 6 characters) for the new admin.' });
-  }
-  const created = await createSchoolUser(req, res, { role: 'ADMIN', skipAccessCode: true });
+  const created = await createSchoolUser(req, res, { role: 'ADMIN' });
   if (!created) return;
   const { passwordHash, ...safe } = created.user;
-  res.json({ user: safe });
+  res.json({ user: safe, accessCode: created.accessCode });
 });
 
 // A status change (DISMISSED), not a hard delete -- an admin account can easily have
@@ -362,7 +352,7 @@ router.post('/courses', async (req, res) => {
   if (!departmentId || !code || !title) return res.status(400).json({ error: 'Missing required fields' });
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const course = await prisma.course.create({
-    data: { departmentId, code, title, level: level || 'NCE 1', semester: semester || 'First', semesterId },
+    data: { departmentId, code, title, level: level || '100L', semester: semester || 'First', semesterId },
   });
   res.json({ course });
 });
@@ -453,27 +443,31 @@ const STATUS_NOTE = {
   EXPELLED: 'Your account has been marked as expelled.',
 };
 
-async function setUserStatus(req, res, { role, statuses }) {
+// Not every POST /students/:id/<something> is a status change -- academic details and
+// disciplinary records live on the same path shape in records.js, mounted after this
+// router. An action that isn't one of this role's status actions must fall through
+// (next) rather than be rejected here, or those routes are unreachable.
+async function setUserStatus(req, res, next, { role, statuses }) {
+  const status = statuses[req.params.action];
+  if (!status) return next();
   const user = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role } });
   if (!user) return res.status(404).json({ error: 'Not found' });
-  const status = statuses[req.params.action];
-  if (!status) return res.status(400).json({ error: 'Unknown action' });
   const updated = await prisma.user.update({ where: { id: user.id }, data: { status } });
   await notify(user.id, 'Account status changed', STATUS_NOTE[status]);
   const { passwordHash, ...safe } = updated;
   res.json({ user: safe });
 }
 
-router.post('/lecturers/:id/:action', (req, res) =>
-  setUserStatus(req, res, { role: 'LECTURER', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })
+router.post('/lecturers/:id/:action', (req, res, next) =>
+  setUserStatus(req, res, next, { role: 'LECTURER', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })
 );
 
-router.post('/non-academic-staff/:id/:action', (req, res) =>
-  setUserStatus(req, res, { role: 'STAFF', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })
+router.post('/non-academic-staff/:id/:action', (req, res, next) =>
+  setUserStatus(req, res, next, { role: 'STAFF', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })
 );
 
-router.post('/students/:id/:action', (req, res) =>
-  setUserStatus(req, res, { role: 'STUDENT', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', expel: 'EXPELLED' } })
+router.post('/students/:id/:action', (req, res, next) =>
+  setUserStatus(req, res, next, { role: 'STUDENT', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', expel: 'EXPELLED' } })
 );
 
 // ---- Semesters: the school's own term calendar. New activity (courses, assessments,

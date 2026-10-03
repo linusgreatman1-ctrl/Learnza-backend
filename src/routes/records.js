@@ -189,15 +189,15 @@ router.get('/verify/:code', async (req, res) => {
   });
 });
 
-// ---- Admission Status: the full academic/bio profile a student and their school
+// ---- Academic Record: the full academic/bio profile a student and their school
 // admin both need in one place (personal details, level, GPA, exam/assignment
-// completion, disciplinary record). Nigerian NCE programmes run 3 years; there's no
-// per-student program-length field, so expectedGraduationYear assumes that -- noted
-// explicitly rather than silently guessing.
-const PROGRAM_DURATION_YEARS = 3;
+// completion, disciplinary record). Programme length varies by institution and course
+// (ND/NCE 2-3 years, a bachelor's 4-6), so it's a per-student field the admin sets;
+// until they do, expectedGraduationYear assumes a 4-year programme.
+const DEFAULT_PROGRAMME_YEARS = 4;
 const GRADE_POINTS = { A: 5, B: 4, C: 3, D: 2, E: 1, F: 0 };
 
-async function computeAdmissionStatus(student) {
+async function computeAcademicRecord(student) {
   const [enrollments, results, disciplinaryRecords] = await Promise.all([
     prisma.enrollment.findMany({ where: { studentId: student.id }, select: { courseId: true } }),
     prisma.result.findMany({ where: { studentId: student.id } }),
@@ -238,7 +238,8 @@ async function computeAdmissionStatus(student) {
     level: student.yearOfStudy ? `${student.yearOfStudy * 100}L` : null,
     classPosition: student.classPosition,
     yearOfAdmission: student.yearOfAdmission,
-    expectedGraduationYear: student.yearOfAdmission ? student.yearOfAdmission + PROGRAM_DURATION_YEARS : null,
+    programmeYears: student.programmeYears,
+    expectedGraduationYear: student.yearOfAdmission ? student.yearOfAdmission + (student.programmeYears || DEFAULT_PROGRAMME_YEARS) : null,
     cgpa,
     exams: countDoneMissed(exams, submittedAssessmentIds),
     tests: countDoneMissed(tests, submittedAssessmentIds),
@@ -248,15 +249,15 @@ async function computeAdmissionStatus(student) {
   };
 }
 
-router.get('/students/me/admission-status', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.get('/students/me/academic-record', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const student = await prisma.user.findUnique({ where: { id: req.user.id }, include: { department: true } });
-  res.json(await computeAdmissionStatus(student));
+  res.json(await computeAcademicRecord(student));
 });
 
-router.get('/admin/students/:id/admission-status', requireAuth, requireRole('ADMIN'), async (req, res) => {
+router.get('/admin/students/:id/academic-record', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const student = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STUDENT' }, include: { department: true } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
-  res.json(await computeAdmissionStatus(student));
+  res.json(await computeAcademicRecord(student));
 });
 
 router.post('/admin/students/:id/disciplinary-records', requireAuth, requireRole('ADMIN'), async (req, res) => {
@@ -267,7 +268,7 @@ router.post('/admin/students/:id/disciplinary-records', requireAuth, requireRole
   const record = await prisma.disciplinaryRecord.create({
     data: { studentId: student.id, title: title.trim(), description: description || null, recordedById: req.user.id },
   });
-  await notify(student.id, 'Disciplinary record added', title.trim(), 'admission-status');
+  await notify(student.id, 'Disciplinary record added', title.trim(), 'academic-record');
   res.json({ record });
 });
 
@@ -276,14 +277,15 @@ router.post('/admin/disciplinary-records/:id/resolve', requireAuth, requireRole(
   res.json({ record });
 });
 
-router.post('/admin/students/:id/admission-details', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const { yearOfAdmission, classPosition } = req.body;
+router.post('/admin/students/:id/academic-details', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const { yearOfAdmission, classPosition, programmeYears } = req.body;
   const student = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STUDENT' } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
   const updated = await prisma.user.update({
     where: { id: student.id },
     data: {
       yearOfAdmission: yearOfAdmission ? parseInt(yearOfAdmission, 10) : student.yearOfAdmission,
+      programmeYears: programmeYears ? parseInt(programmeYears, 10) : student.programmeYears,
       classPosition: classPosition !== undefined ? (classPosition || null) : student.classPosition,
     },
   });
@@ -292,6 +294,6 @@ router.post('/admin/students/:id/admission-details', requireAuth, requireRole('A
 
 module.exports = router;
 // Exported so lecturer-facing routes (academics.js "My Students" detail) can reuse the
-// exact same comprehensive-details computation the student/admin Admission Status
+// exact same comprehensive-details computation the student/admin Academic Record
 // screens use, instead of building a second copy of the same aggregation.
-module.exports.computeAdmissionStatus = computeAdmissionStatus;
+module.exports.computeAcademicRecord = computeAcademicRecord;

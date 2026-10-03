@@ -2,43 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>
-  // Redirect-before-paint guard: individual.js's own version of this check (bottom of
-  // the file) only runs after the browser has already parsed and painted this page's
-  // static markup -- the login screen -- so a fresh/bookmarked visit briefly flashed
-  // it before bouncing to independent.html. Running the identical decision here, as the
-  // very first thing in <head>, makes the redirect happen before that markup ever
-  // paints. Kept in sync with the session-reading logic at the top of individual.js.
-  (function () {
-    try {
-      var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
-      var isReload = nav ? nav.type === 'reload' : (performance.navigation ? performance.navigation.type === 1 : true);
-      var token = sessionStorage.getItem('vp_token') || (isReload ? localStorage.getItem('vp_token') : null);
-      var fromIntro = new URLSearchParams(location.search).get('from') === 'intro';
-      if (!token && !fromIntro) location.replace('independent.html');
-    } catch (e) { /* fall through to app.js's own check */ }
-  })();
-</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23142033'/%3E%3Ctext x='32' y='46' font-family='Georgia, Cambria, serif' font-size='36' font-weight='700' fill='%23e3ac4c' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
-<title>Learnza — Individual Learner</title>
+<title>Learnza for Schools</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="auth.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   body { background: var(--paper); }
-  #auth-screen {
-    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
-  }
-  /* Hidden by default (JS reveals it only once boot logic actually decides to show
-     it) -- previously this login screen had no hidden default, so it painted first
-     on every load/refresh regardless of session state, then got hidden again a
-     moment later for anyone actually logged in. That flash is what this prevents. */
-  #auth-screen.js-hidden { display: none; }
-  .auth-box { width: 100%; max-width: 420px; padding: 32px; }
-  .auth-box .brand { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 4px; }
   .tabs { display: flex; gap: 4px; background: var(--line); padding: 4px; border-radius: 999px; margin: 18px 0 22px; }
   .tab-btn { flex: 1; border: none; background: transparent; padding: 8px 10px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); }
   .tab-btn.active { background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow); }
@@ -327,57 +302,79 @@
 <body>
 
 <div id="auth-screen" class="js-hidden">
-  <div class="card auth-box">
-    <div class="brand">Learnza</div>
-    <div id="auth-error"></div>
-
-    <div id="individual-panel" class="audience-panel">
-      <div class="tabs" style="margin-bottom:16px;">
-        <button class="tab-btn active" data-tab="login">Log in</button>
-        <button class="tab-btn" data-tab="register">Sign up</button>
-      </div>
-      <form id="login-form">
-        <div class="field"><label>Email</label><input type="email" id="login-email" required></div>
-        <div class="field"><label>Password</label><div class="password-field"><input type="password" id="login-password" required><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
-        <button class="btn btn-primary" style="width:100%; justify-content:center;" type="submit">Log in</button>
-        <p class="muted" style="font-size:0.75rem; margin-top:14px; text-align:center;">By continuing you agree to our <a href="legal.html#terms" data-legal="terms" style="text-decoration:underline;">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy" style="text-decoration:underline;">Privacy Policy</a>.</p>
-      </form>
-      <form id="register-form" style="display:none;">
-        <p class="muted" style="font-size:0.82rem; margin-bottom:14px;">Learn independently, for university, polytechnic or any higher-institution student — you create your own courses and the AI Teacher covers them.</p>
-        <div class="field"><label>Full name</label><input type="text" id="reg-name" required></div>
-        <div class="field"><label>Institution type</label>
-          <select id="reg-institution-type" required>
-            <option value="">Select…</option>
-            <option value="UNIVERSITY">University</option>
-            <option value="POLYTECHNIC">Polytechnic</option>
-            <option value="COLLEGE_OF_EDUCATION">College of Education</option>
-            <option value="OTHER">Other</option>
-          </select>
-        </div>
-        <div class="field"><label>School name</label><input type="text" id="reg-school" required placeholder="e.g. University of Lagos"></div>
-        <div class="field"><label>Department</label><input type="text" id="reg-department" required placeholder="e.g. Computer Science"></div>
-        <div class="field"><label>Course of study</label><input type="text" id="reg-course" required placeholder="e.g. B.Sc Computer Science"></div>
-        <div class="field"><label>Level</label>
-          <select id="reg-level" required>
-            <option value="">Select…</option>
-            <option value="1">100L</option>
-            <option value="2">200L</option>
-            <option value="3">300L</option>
-            <option value="4">400L</option>
-            <option value="5">500L</option>
-            <option value="6">600L</option>
-          </select>
-        </div>
-        <div class="field"><label>Email</label><input type="email" id="reg-email" required></div>
-        <div class="field"><label>Phone number</label><input type="tel" id="reg-phone" required></div>
-        <div class="field"><label>Password</label><div class="password-field"><input type="password" id="reg-password" required minlength="6"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
-        <label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:14px; cursor:pointer;">
-          <input type="checkbox" id="reg-agree-terms" required style="margin-top:3px; width:16px; height:16px; flex-shrink:0; accent-color:var(--accent);">
-          <span style="font-size:0.82rem; color:var(--ink-soft);">I agree to the <a href="legal.html#terms" data-legal="terms" style="text-decoration:underline;">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy" style="text-decoration:underline;">Privacy Policy</a>.</span>
-        </label>
-        <button class="btn btn-accent" style="width:100%; justify-content:center;" type="submit">Create free account</button>
-      </form>
+  <!-- SPLASH -->
+  <div class="lg-s lg-dark on" id="lg-splash">
+    <div class="lg-star" style="width:3px;height:3px;top:9%;left:18%;animation-delay:.2s"></div>
+    <div class="lg-star" style="width:4px;height:4px;top:15%;left:72%;animation-delay:.7s"></div>
+    <div class="lg-star" style="width:2px;height:2px;top:28%;left:40%;animation-delay:1.1s"></div>
+    <div class="lg-star" style="width:3px;height:3px;top:7%;left:55%;animation-delay:.4s"></div>
+    <div class="lg-star" style="width:5px;height:5px;top:22%;left:84%;animation-delay:1.5s"></div>
+    <div class="lg-star" style="width:2px;height:2px;top:44%;left:7%;animation-delay:.9s"></div>
+    <div class="lg-star" style="width:3px;height:3px;top:58%;left:91%;animation-delay:.6s"></div>
+    <div class="lg-hero">
+      <div class="lg-logo">L</div>
+      <div class="lg-word">Learn<span>za</span></div>
+      <div class="lg-tag">Learn smart | Anywhere</div>
+      <div class="lg-pill">🏫 FOR SCHOOLS</div>
     </div>
+    <div class="lg-actions">
+      <div class="lg-card" data-go="lg-school">
+        <div class="lg-card-icon">🏫</div>
+        <div><div class="lg-card-name">School Admin</div><div class="lg-card-desc">Your school has a Join Code — sign in here</div></div>
+        <div class="lg-card-go">›</div>
+      </div>
+      <div class="lg-card" data-go="lg-role">
+        <div class="lg-card-icon blue">🎓</div>
+        <div><div class="lg-card-name">Lecturer / Student / Staff</div><div class="lg-card-desc">Sign in with your Access Code</div></div>
+        <div class="lg-card-go">›</div>
+      </div>
+      <p class="lg-foot">Schools are onboarded by Learnza — contact us to get a Join Code</p>
+    </div>
+  </div>
+
+  <!-- WHO ARE YOU -->
+  <div class="lg-s lg-dark" id="lg-role">
+    <div class="lg-inner" style="padding-top:52px;flex:1;display:flex;flex-direction:column">
+      <div class="lg-title">Who are you? 👋</div>
+      <div class="lg-sub">Select your account type to continue</div>
+      <div class="lg-card" data-go="lg-code" data-who="student">
+        <div class="lg-card-icon">👩‍🎓</div>
+        <div><div class="lg-card-name">Student</div><div class="lg-card-desc">Sign in with your Name, School &amp; Access Code</div></div>
+        <div class="lg-card-go">›</div>
+      </div>
+      <div class="lg-card" data-go="lg-code" data-who="staff">
+        <div class="lg-card-icon blue">👨‍🏫</div>
+        <div><div class="lg-card-name">Lecturer / Staff / Admin</div><div class="lg-card-desc">Sign in with your Name, School &amp; Access Code</div></div>
+        <div class="lg-card-go">›</div>
+      </div>
+      <div class="lg-back-row"><button class="lg-btn lg-btn-out" data-go="lg-splash">← Back</button></div>
+    </div>
+  </div>
+
+  <!-- SCHOOL ADMIN: school name + join code -->
+  <div class="lg-s lg-light" id="lg-school">
+    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-splash" aria-label="Back">←</button><div class="lg-bar-title">School Sign In</div><div style="width:40px"></div></div></div>
+    <form class="lg-inner lg-form" id="lg-school-form" autocomplete="off">
+      <div class="lg-info"><span>🔑</span><span>Enter your school's name and the Join Code Learnza gave you when your school was onboarded. No Join Code yet? Contact Learnza.</span></div>
+      <div class="lg-fg"><label class="lg-label">School Name</label><input class="lg-input" id="lg-school-name" required placeholder="Exactly as Learnza registered it"></div>
+      <div class="lg-fg"><label class="lg-label">Join Code</label><input class="lg-input" id="lg-school-code" required placeholder="e.g. 7XQK2M9P" style="text-transform:uppercase;letter-spacing:2px" maxlength="16"></div>
+      <button class="lg-btn lg-btn-gold" type="submit" id="lg-school-submit" style="margin-top:6px">Sign In →</button>
+      <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
+    </form>
+  </div>
+
+  <!-- LECTURER / STUDENT / STAFF: name + school + access code -->
+  <div class="lg-s lg-light" id="lg-code">
+    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-role" aria-label="Back">←</button><div class="lg-bar-title" id="lg-code-title">Sign In</div><div style="width:40px"></div></div></div>
+    <form class="lg-inner lg-form" id="lg-code-form" autocomplete="off">
+      <div class="lg-info"><span>👋</span><span id="lg-code-hint">Your school has already registered you. Enter your full name, your school's name and the Access Code your school gave you.</span></div>
+      <div class="lg-fg"><label class="lg-label">Your Full Name</label><input class="lg-input" id="lg-code-name" required placeholder="Exactly as your school registered you"></div>
+      <div class="lg-fg"><label class="lg-label">School Name</label><input class="lg-input" id="lg-code-school" required placeholder="e.g. University of Lagos"></div>
+      <div class="lg-fg"><label class="lg-label">Access Code</label><input class="lg-input" id="lg-code-code" required placeholder="e.g. K7M2Q9XA" style="text-transform:uppercase;letter-spacing:2px" maxlength="16"></div>
+      <button class="lg-btn lg-btn-gold" type="submit" id="lg-code-submit" style="margin-top:6px">Sign In →</button>
+      <p class="lg-note">Lost your code? Ask your school administrator to resend it.</p>
+      <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
+    </form>
   </div>
 </div>
 
@@ -409,6 +406,6 @@
 </div>
 
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-<script src="individual.js"></script>
+<script src="schools.js"></script>
 </body>
 </html>

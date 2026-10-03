@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23142033'/%3E%3Ctext x='32' y='46' font-family='Georgia, Cambria, serif' font-size='36' font-weight='700' fill='%23e3ac4c' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
+<title>Learnza Admin</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<div id="login-screen">
+  <form class="login-card" id="login-form" autocomplete="on">
+    <div class="mark">L</div>
+    <h2>Learnza Admin</h2>
+    <p class="sub">Sign in to onboard schools and manage the platform.</p>
+    <label for="email">Email</label>
+    <input type="email" id="email" required autocomplete="username">
+    <label for="password">Password</label>
+    <div class="pw-wrap">
+      <input type="password" id="password" required autocomplete="current-password">
+      <button type="button" id="pw-eye" tabindex="-1" aria-label="Show password">👁</button>
+    </div>
+    <button type="submit" class="btn-gold" id="login-btn">Sign in</button>
+    <p id="login-error" class="error-msg"></p>
+  </form>
+</div>
+
+<div id="app-screen" class="hidden">
+  <nav class="sidebar">
+    <h2>Learn<span>za</span> Admin</h2>
+    <div class="nav-user"><span id="nav-user-name"></span><span class="badge">SUPER ADMIN</span></div>
+    <ul id="nav">
+      <li data-view="dashboard" class="active">📊 Dashboard</li>
+      <li data-view="schools">🏫 Schools</li>
+      <li data-view="users">👤 Users</li>
+      <li data-view="admins">🛡️ Platform Admins</li>
+      <li data-view="audit">🧾 Audit Log</li>
+    </ul>
+    <button id="change-password-btn">🔑 Change Password</button>
+    <button id="logout-btn">Log out</button>
+  </nav>
+  <main id="view"></main>
+</div>
+
+<div id="toast"></div>
+<script src="admin.js"></script>
+</body>
+</html>
