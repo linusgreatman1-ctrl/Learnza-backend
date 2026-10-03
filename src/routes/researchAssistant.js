@@ -2,6 +2,7 @@ const express = require('express');
 const { requireAuth } = require('../auth');
 const { requireActiveSubscription } = require('../subscription');
 const ai = require('../services/aiProvider.service');
+const { aiGuard, aiDailyLimit, logAiConversation } = require('../aiGuard');
 
 const router = express.Router();
 
@@ -9,12 +10,13 @@ const SYSTEM_PROMPT = `You are Learnza's AI research assistant, helping a higher
 
 // Free for lecturers/admins (a staff tool); students need an active subscription,
 // same as the other AI-cost-bearing features.
-router.post('/research-assistant/ask', requireAuth, requireActiveSubscription, async (req, res) => {
+router.post('/research-assistant/ask', requireAuth, aiGuard, requireActiveSubscription, aiDailyLimit, async (req, res) => {
   const { question } = req.body;
   if (!question || !question.trim()) return res.status(400).json({ error: 'Type a question or topic first.' });
 
   try {
     const answer = await ai.askForText(SYSTEM_PROMPT, question.trim());
+    await logAiConversation(req.user.id, 'RESEARCH', question.trim(), answer);
     res.json({ answer });
   } catch (err) {
     if (err.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: err.message, code: err.code });

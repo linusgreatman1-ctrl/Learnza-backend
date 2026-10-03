@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require('../auth');
 const autoGen = require('../services/individualAutoGen.service');
 const labDemo = require('../services/labDemo.service');
 const { requireActiveSubscription, getSubscriptionStatus, isEnforced } = require('../subscription');
+const { aiGuard } = require('../aiGuard');
 
 const router = express.Router();
 
@@ -102,7 +103,7 @@ router.get('/individual-courses/:id/lab', requireAuth, requireRole('STUDENT'), a
   res.json({ demonstrations: demos.map(shapeDemo) });
 });
 
-router.post('/individual-courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+router.post('/individual-courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, async (req, res) => {
   const { topic } = req.body;
   if (!topic || !topic.trim()) return res.status(400).json({ error: 'Describe the practical topic first.' });
   const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });

@@ -14,6 +14,7 @@ const superRoutes = require('./routes/super');
 const academicsRoutes = require('./routes/academics');
 const libraryRoutes = require('./routes/library');
 const groupsRoutes = require('./routes/groups');
+const settings = require('./settings');
 const assessmentsRoutes = require('./routes/assessments');
 const adminRoutes = require('./routes/admin');
 const billingRoutes = require('./routes/billing');
@@ -101,6 +102,13 @@ const noCache = { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'
 
 // ---- API ----
 app.use('/api', apiOverall);
+// Maintenance mode (admin panel > Settings): everything but the owner's own panel and the
+// bits that must keep working (token refresh/sign-out, payment webhooks) answers 503.
+app.use('/api', (req, res, next) => {
+  if (!settings.get('maintenanceMode')) return next();
+  if (req.path.startsWith('/super') || req.path.startsWith('/auth/refresh') || req.path.startsWith('/auth/logout') || req.path.startsWith('/billing/webhook')) return next();
+  res.status(503).json({ error: settings.get('maintenanceMessage'), code: 'MAINTENANCE' });
+});
 app.use(['/api/auth/login', '/api/auth/school-login', '/api/auth/login-with-code', '/api/auth/password/reset'], failedLogins);
 app.use('/api/auth/register-individual', signups);
 app.use('/api/auth/password/forgot', passwordEmails);
@@ -156,6 +164,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
 attachLiveNamespace(io);
 attachNotificationsNamespace(io);
+
+settings.start();
 
 const PORT = process.env.PORT || 4100;
 server.listen(PORT, () => console.log(`Learnza API listening on port ${PORT}`));

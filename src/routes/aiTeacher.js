@@ -5,6 +5,7 @@ const { requireActiveSubscription, isEnforced, requireAiCredits, recordAiUsage, 
 const aiTeacher = require('../services/aiTeacher.service');
 const simli = require('../services/simli.service');
 const { loadCourse } = require('../scope');
+const { aiGuard } = require('../aiGuard');
 
 const router = express.Router();
 
@@ -48,12 +49,12 @@ async function startSession(req, res, { courseId, individualCourseId, courseTitl
   }
 }
 
-router.post('/courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), loadCourse(), requireActiveSubscription, async (req, res) => {
+router.post('/courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), aiGuard, loadCourse(), requireActiveSubscription, async (req, res) => {
   const course = req.course;
   await startSession(req, res, { courseId: course.id, courseTitle: course.title });
 });
 
-router.post('/individual-courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+router.post('/individual-courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, async (req, res) => {
   const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
   if (!course) return res.status(404).json({ error: 'Course not found' });
   await startSession(req, res, { individualCourseId: course.id, courseTitle: course.title });
@@ -68,7 +69,7 @@ router.get('/ai-teacher/sessions/:id', requireAuth, requireRole('STUDENT'), asyn
   res.json({ session: { ...session, plan: JSON.parse(session.planJson) } });
 });
 
-router.post('/ai-teacher/sessions/:id/next', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+router.post('/ai-teacher/sessions/:id/next', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, async (req, res) => {
   const session = await prisma.aiTeacherSession.findUnique({ where: { id: req.params.id } });
   if (!session || session.studentId !== req.user.id) return res.status(404).json({ error: 'Session not found' });
   const plan = JSON.parse(session.planJson);
@@ -90,7 +91,7 @@ router.post('/ai-teacher/sessions/:id/next', requireAuth, requireRole('STUDENT')
   res.json({ session: updated, done: false });
 });
 
-router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, async (req, res) => {
   const { question } = req.body;
   if (!question || !question.trim()) return res.status(400).json({ error: 'Type a question first.' });
   const session = await prisma.aiTeacherSession.findUnique({
@@ -120,7 +121,7 @@ router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUD
   }
 });
 
-router.post('/ai-teacher/sessions/:id/check-answer', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+router.post('/ai-teacher/sessions/:id/check-answer', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, async (req, res) => {
   const { answer } = req.body;
   if (!answer || !answer.trim()) return res.status(400).json({ error: 'Type an answer first.' });
   const session = await prisma.aiTeacherSession.findUnique({ where: { id: req.params.id } });
@@ -149,7 +150,7 @@ router.post('/ai-teacher/sessions/:id/check-answer', requireAuth, requireRole('S
 // a student with zero minutes left this cycle shouldn't even be able to open it.
 // Mints a fresh short-lived Simli session token per connect -- the raw Simli API key
 // never reaches the browser.
-router.post('/ai-teacher/avatar-config', requireAuth, requireRole('STUDENT'), requireActiveSubscription, requireAiCredits, async (req, res) => {
+router.post('/ai-teacher/avatar-config', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, requireAiCredits, async (req, res) => {
   try {
     const sessionToken = await simli.createSessionToken();
     res.json({ sessionToken });
@@ -162,7 +163,7 @@ router.post('/ai-teacher/avatar-config', requireAuth, requireRole('STUDENT'), re
 // to the 16kHz Simli's SDK expects) the browser feeds into SimliClient.sendAudioData()
 // in chunks. The generated audio's own duration is what actually debits the AI credit
 // bank -- usage tracks real speech produced, not request count.
-router.post('/ai-teacher/tts', requireAuth, requireRole('STUDENT'), requireActiveSubscription, requireAiCredits, async (req, res) => {
+router.post('/ai-teacher/tts', requireAuth, requireRole('STUDENT'), aiGuard, requireActiveSubscription, requireAiCredits, async (req, res) => {
   const { text } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'No text to speak.' });
   try {

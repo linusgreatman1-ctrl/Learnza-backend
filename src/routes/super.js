@@ -56,6 +56,18 @@ router.get('/me', (req, res) => res.json({ user: safeUser(req.user) }));
 // ---- Dashboard ----
 router.get('/dashboard', async (req, res) => {
   const now = new Date();
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const [money, activeSubs, aiToday, liveNow, newToday] = await Promise.all([
+    prisma.payment.aggregate({ where: { status: 'SUCCESS', createdAt: { gte: monthStart } }, _sum: { amountKobo: true } }),
+    prisma.subscription.count({ where: { status: 'ACTIVE', expiresAt: { gt: now } } }),
+    prisma.aiConversationLog.count({ where: { createdAt: { gte: startOfDay } } }),
+    prisma.liveClass.count({ where: { status: 'ACTIVE' } }),
+    prisma.user.count({ where: { createdAt: { gte: startOfDay }, role: { not: 'SUPER_ADMIN' } } }),
+  ]);
   const [schools, active, suspended, expired, independent, roleCounts, recentSchools] = await Promise.all([
     prisma.school.count(),
     prisma.school.count({ where: { status: 'ACTIVE', OR: [{ subscriptionExpiresAt: null }, { subscriptionExpiresAt: { gt: now } }] } }),
@@ -70,6 +82,7 @@ router.get('/dashboard', async (req, res) => {
     schools: { total: schools, active, suspended, expired },
     schoolUsers: { students: byRole.STUDENT || 0, lecturers: byRole.LECTURER || 0, staff: byRole.STAFF || 0, admins: byRole.ADMIN || 0 },
     independentStudents: independent,
+    activity: { revenueThisMonthKobo: money._sum.amountKobo || 0, activeSubscriptions: activeSubs, aiQuestionsToday: aiToday, liveNow, newUsersToday: newToday },
     recentSchools,
   });
 });
@@ -332,5 +345,8 @@ router.get('/audit-logs', async (req, res) => {
   ]);
   res.json({ total, page, pageSize, logs });
 });
+
+// Announcements, payments, AI activity, live classes, gamification, e-Library, settings.
+router.use(require('./superPlatform'));
 
 module.exports = router;

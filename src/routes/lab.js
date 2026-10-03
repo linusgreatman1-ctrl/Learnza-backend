@@ -4,6 +4,7 @@ const { requireAuth, requireRole, logActivity } = require('../auth');
 const { requireActiveSubscription } = require('../subscription');
 const labDemo = require('../services/labDemo.service');
 const ai = require('../services/aiProvider.service');
+const { aiGuard, aiDailyLimit, logAiConversation } = require('../aiGuard');
 const { loadCourse, hasSchool } = require('../scope');
 
 // A practical is visible to the school that owns its course, or to the independent learner
@@ -66,7 +67,7 @@ router.post('/courses/:id/lab', requireAuth, requireRole('LECTURER', 'ADMIN'), l
 // Any subscribed student can request a practical on a topic not yet covered -- the AI
 // drafts it and it's live immediately, gated only by having an active subscription
 // (no admin review step).
-router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), loadCourse(), requireActiveSubscription, async (req, res) => {
+router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), loadCourse(), aiGuard, requireActiveSubscription, async (req, res) => {
   const { topic } = req.body;
   if (!topic || !topic.trim()) return res.status(400).json({ error: 'Describe the practical topic first.' });
   const course = req.course;
@@ -93,7 +94,7 @@ router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), lo
 
 // "Got a question" for a practical -- same subscription gate as generating one,
 // answered with the practical's own content as context so it stays on-topic.
-router.post('/lab/:id/ask', requireAuth, loadDemo(), requireActiveSubscription, async (req, res) => {
+router.post('/lab/:id/ask', requireAuth, aiGuard, loadDemo(), requireActiveSubscription, aiDailyLimit, async (req, res) => {
   const { question } = req.body;
   if (!question || !question.trim()) return res.status(400).json({ error: 'Type a question first.' });
   const demo = req.demo;
@@ -102,6 +103,7 @@ router.post('/lab/:id/ask', requireAuth, loadDemo(), requireActiveSubscription, 
   const systemPrompt = `You are the AI teacher guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
   try {
     const answer = await ai.askForText(systemPrompt, question.trim());
+    await logAiConversation(req.user.id, 'LAB', question.trim(), answer);
     // Structured the same way AI Teacher's interrupt answers are, so the frontend can
     // always render the answer onto the board rather than only in the chat log.
     res.json({ answer, boardActions: [{ type: 'TEXT', content: answer }] });

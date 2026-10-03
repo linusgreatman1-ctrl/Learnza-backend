@@ -1,4 +1,5 @@
 const express = require('express');
+const settings = require('../settings');
 const bcrypt = require('bcryptjs');
 const prisma = require('../db');
 const crypto = require('crypto');
@@ -62,6 +63,7 @@ function checkSchoolAccess(res, school) {
 const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
 
 router.post('/register-individual', async (req, res) => {
+  if (!settings.get('registrationOpen')) return res.status(403).json({ error: 'New sign-ups are closed right now. Please check back soon.', code: 'REGISTRATION_CLOSED' });
   const { fullName, password, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, yearOfStudy } = req.body;
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!fullName || !email || !password) {

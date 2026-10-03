@@ -1,9 +1,14 @@
 const prisma = require('./db');
+const settings = require('./settings');
 
 // Testing-phase switch: while the platform is still being tested, nothing should be
 // paywalled. Set REQUIRE_SUBSCRIPTION=true (as a Render env var) to flip enforcement
 // back on once ready for real launch -- no code change needed, just that one var.
+// The admin panel's Settings can override the environment variable ("on" / "off").
 function isEnforced() {
+  const override = settings.get('subscriptionEnforced');
+  if (override === 'on') return true;
+  if (override === 'off') return false;
   return process.env.REQUIRE_SUBSCRIPTION === 'true';
 }
 
