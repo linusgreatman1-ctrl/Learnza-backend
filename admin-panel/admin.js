@@ -4,7 +4,9 @@
   const API = '/api/super';
   const TOKEN_KEY = 'lz_admin_token';
   const USER_KEY = 'lz_admin_user';
+  const REFRESH_KEY = 'lz_admin_refresh';
   let token = sessionStorage.getItem(TOKEN_KEY);
+  let refreshToken = sessionStorage.getItem(REFRESH_KEY);
   let me = JSON.parse(sessionStorage.getItem(USER_KEY) || 'null');
 
   const STATES = ['Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara'];
@@ -27,14 +29,49 @@
     toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
+  function storeSession(data) {
+    token = data.token;
+    refreshToken = data.refreshToken;
+    if (data.user) me = data.user;
+    sessionStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.setItem(REFRESH_KEY, refreshToken);
+    sessionStorage.setItem(USER_KEY, JSON.stringify(me));
+  }
+
+  // Access tokens last 15 minutes; on a 401 the refresh token is swapped for a new pair and
+  // the request retried once. Simultaneous failures share a single refresh call.
+  let refreshInFlight = null;
+  function refreshSession() {
+    if (!refreshInFlight) {
+      refreshInFlight = fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Session expired.');
+          storeSession(data);
+        })
+        .finally(() => { refreshInFlight = null; });
+    }
+    return refreshInFlight;
+  }
+
   async function api(path, opts = {}) {
-    const res = await fetch((opts.base || API) + path, {
+    const send = () => fetch((opts.base || API) + path, {
       method: opts.method || 'GET',
       headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
+    let res = await send();
+    if (res.status === 401 && token) {
+      if (refreshToken) {
+        try { await refreshSession(); res = await send(); } catch { /* fall through to sign-out below */ }
+      }
+      if (res.status === 401) { logout(); throw new Error('Session expired. Please sign in again.'); }
+    }
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 && token) { logout(); throw new Error('Session expired. Please sign in again.'); }
     if (!res.ok) throw new Error(data.error || 'Something went wrong.');
     return data;
   }
@@ -69,9 +106,13 @@
     go(location.hash.replace('#', '') || 'dashboard');
   }
   function logout() {
-    token = null; me = null;
+    if (refreshToken) {
+      fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }), keepalive: true }).catch(() => {});
+    }
+    token = null; me = null; refreshToken = null;
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(REFRESH_KEY);
     $('app-screen').classList.add('hidden');
     $('login-screen').classList.remove('hidden');
   }
@@ -88,9 +129,7 @@
     btn.disabled = true;
     try {
       const data = await api('/login', { method: 'POST', body: { email: $('email').value.trim(), password: $('password').value } });
-      token = data.token; me = data.user;
-      sessionStorage.setItem(TOKEN_KEY, token);
-      sessionStorage.setItem(USER_KEY, JSON.stringify(me));
+      storeSession(data);
       $('password').value = '';
       showApp();
     } catch (err) {
@@ -113,7 +152,8 @@
     m.el.querySelector('#cp-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        await api('/change-password', { base: '/api/auth', method: 'POST', body: { currentPassword: m.el.querySelector('#cp-current').value, newPassword: m.el.querySelector('#cp-new').value } });
+        const changed = await api('/change-password', { base: '/api/auth', method: 'POST', body: { currentPassword: m.el.querySelector('#cp-current').value, newPassword: m.el.querySelector('#cp-new').value } });
+        if (changed.token) storeSession(changed); // every refresh token was retired; this is the replacement
         toast('Password changed');
         m.close();
       } catch (err) { toast(err.message); }

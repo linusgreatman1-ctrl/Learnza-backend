@@ -5,6 +5,8 @@ const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/auth');
@@ -38,6 +40,49 @@ const ADMIN_PANEL_DIR = path.join(__dirname, '..', 'admin-panel');
 // real client address (audit log, rate limits) instead of the proxy's.
 app.set('trust proxy', 1);
 
+// Security headers. The policy lists exactly the outside hosts the apps use (fonts,
+// KaTeX/Chart.js on cdnjs, the socket.io client, and the Simli avatar SDK on jsDelivr);
+// scripts are never allowed inline, so an injected <script> cannot run. Styles do allow
+// inline because the screens set style attributes throughout. Images/media/connections
+// may come from any https origin since lecture videos, library PDFs and avatar streams
+// are hosted all over (Cloudinary, Simli, the payment pages).
+const isProd = process.env.NODE_ENV === 'production';
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", 'https://cdnjs.cloudflare.com', 'https://cdn.socket.io', 'https://cdn.jsdelivr.net', "'wasm-unsafe-eval'"],
+      'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
+      'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
+      'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+      'media-src': ["'self'", 'data:', 'blob:', 'https:'],
+      'connect-src': ["'self'", 'https:', 'wss:', ...(isProd ? [] : ['ws:'])],
+      'frame-src': ["'self'", 'https:'],
+      'worker-src': ["'self'", 'blob:'],
+      'object-src': ["'none'"],
+      'base-uri': ["'self'"],
+      'form-action': ["'self'"],
+      'frame-ancestors': ["'self'"],
+      ...(isProd ? { 'upgrade-insecure-requests': [] } : {}),
+    },
+  },
+  // The apps' own pages embed legal.html in an iframe; everything is same-origin.
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+}));
+
+// Rate limits (per IP; trust proxy above makes that the real client). Sign-in limits only
+// count FAILED attempts: a school's whole class often shares one public IP, and thirty
+// students signing in together must not lock each other out -- but someone guessing
+// codes still hits the wall after twenty misses.
+const tooMany = { error: 'Too many attempts. Please wait a few minutes and try again.', code: 'RATE_LIMITED' };
+const failedLogins = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false, message: tooMany });
+const superLogin = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false, message: tooMany });
+const signups = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false, message: tooMany });
+const passwordEmails = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: tooMany });
+const refreshes = rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false, message: tooMany });
+const apiOverall = rateLimit({ windowMs: 15 * 60 * 1000, limit: 3000, standardHeaders: 'draft-7', legacyHeaders: false, message: tooMany });
+
 // The frontends are several hundred KB of JS -- uncompressed that's seconds of transfer
 // on a slow connection. gzip typically shrinks JS/HTML/CSS by 70-80%.
 app.use(compression());
@@ -55,6 +100,12 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 const noCache = { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') };
 
 // ---- API ----
+app.use('/api', apiOverall);
+app.use(['/api/auth/login', '/api/auth/school-login', '/api/auth/login-with-code', '/api/auth/password/reset'], failedLogins);
+app.use('/api/auth/register-individual', signups);
+app.use('/api/auth/password/forgot', passwordEmails);
+app.use('/api/auth/refresh', refreshes);
+app.use('/api/super/login', superLogin);
 app.use('/api/auth', authRoutes);
 app.use('/api/super', superRoutes); // the platform owner's API (the /admin panel)
 app.use('/api', academicsRoutes);

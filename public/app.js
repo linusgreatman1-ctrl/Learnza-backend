@@ -27,21 +27,28 @@
   function readSession(key) {
     return sessionStorage.getItem(key) || (IS_RELOAD ? localStorage.getItem(key) : null);
   }
-  function saveSession(token, user) {
+  function saveSession(token, user, refreshToken) {
     sessionStorage.setItem('lz_app_token', token);
     sessionStorage.setItem('lz_app_user', JSON.stringify(user));
     localStorage.setItem('lz_app_token', token);
     localStorage.setItem('lz_app_user', JSON.stringify(user));
+    if (refreshToken) {
+      sessionStorage.setItem('lz_app_refresh', refreshToken);
+      localStorage.setItem('lz_app_refresh', refreshToken);
+    }
   }
   function clearSession() {
     sessionStorage.removeItem('lz_app_token');
     sessionStorage.removeItem('lz_app_user');
+    sessionStorage.removeItem('lz_app_refresh');
     localStorage.removeItem('lz_app_token');
     localStorage.removeItem('lz_app_user');
+    localStorage.removeItem('lz_app_refresh');
   }
 
   const state = {
     token: readSession('lz_app_token') || null,
+    refreshToken: readSession('lz_app_refresh') || null,
     user: JSON.parse(readSession('lz_app_user') || 'null'),
     schoolId: null,
     view: { screen: 'home', courseId: null, groupId: null, assessmentId: null },
@@ -49,7 +56,7 @@
   // Seed this tab's own sessionStorage immediately so it's independent from here on --
   // later logins in other tabs (which only touch localStorage's "last active" copy)
   // won't affect this tab even though it fell back to localStorage just now.
-  if (state.token && state.user) saveSession(state.token, state.user);
+  if (state.token && state.user) saveSession(state.token, state.user, state.refreshToken);
   let examTimerHandle = null; // the countdown interval from renderTakeAssessment, if any
 
   // Dark Mode (Settings > Appearance) -- a per-device preference, applied immediately
@@ -62,16 +69,70 @@
   })();
 
   // ---------- API helper ----------
+  // Access tokens last 15 minutes. When one lapses the server answers 401; the refresh
+  // token (kept per tab, like the access token) is swapped for a new pair and the request
+  // is retried once, so nobody is signed out mid-lesson. Several requests failing at the
+  // same moment share one refresh call.
+  let refreshInFlight = null;
+  function refreshSession() {
+    if (!refreshInFlight) {
+      refreshInFlight = fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: state.refreshToken }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const err = new Error(data.error || 'Your session expired. Please sign in again.');
+            err.status = res.status;
+            throw err;
+          }
+          state.token = data.token;
+          state.refreshToken = data.refreshToken;
+          if (data.user) state.user = data.user;
+          saveSession(state.token, state.user, state.refreshToken);
+        })
+        .finally(() => { refreshInFlight = null; });
+    }
+    return refreshInFlight;
+  }
+
+  // Back to the sign-in screen, with a one-line reason shown on the way.
+  function endSession(message) {
+    clearSession();
+    if (message) sessionStorage.setItem('lz_notice', message);
+    window.location.href = '/app';
+  }
+
+  const BLOCKED_CODES = ['SCHOOL_SUSPENDED', 'SCHOOL_LICENCE_EXPIRED', 'ACCOUNT_INACTIVE'];
+
   async function api(path, opts = {}) {
-    const headers = Object.assign({}, opts.headers);
-    if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-    if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
-    const res = await fetch('/api' + path, {
-      method: opts.method || 'GET',
-      headers,
-      body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
-    });
+    const send = () => {
+      const headers = Object.assign({}, opts.headers);
+      if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+      if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+      return fetch('/api' + path, {
+        method: opts.method || 'GET',
+        headers,
+        body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+    };
+    let res = await send();
+    if (res.status === 401 && state.token) {
+      if (state.refreshToken) {
+        try {
+          await refreshSession();
+          res = await send();
+        } catch (err) {
+          if (err.status === 401 || err.status === 403) endSession(err.status === 403 ? err.message : 'Your session expired. Please sign in again.');
+          throw err;
+        }
+      }
+      if (res.status === 401) endSession('Your session expired. Please sign in again.');
+    }
     const data = await res.json().catch(() => ({}));
+    if (res.status === 403 && state.token && BLOCKED_CODES.includes(data.code)) endSession(data.error);
     if (!res.ok) {
       const err = new Error(data.error || 'Something went wrong');
       err.code = data.code;
@@ -228,14 +289,51 @@
   document.getElementById('lg-login-form').addEventListener('submit', (e) => {
     e.preventDefault();
     submitting('lg-login-submit', async () => {
-      const { token, user } = await api('/auth/login', {
+      const { token, user, refreshToken } = await api('/auth/login', {
         method: 'POST',
         body: {
           email: document.getElementById('lg-login-email').value.trim(),
           password: document.getElementById('lg-login-pw').value,
         },
       });
-      onAuthed(token, user);
+      onAuthed(token, user, refreshToken);
+    });
+  });
+
+  document.getElementById('lg-forgot-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitting('lg-forgot-submit', async () => {
+      const r = await api('/auth/password/forgot', { method: 'POST', body: { email: document.getElementById('lg-forgot-email').value.trim() } });
+      toast(r.message);
+      showAuthPanel('lg-login');
+    });
+  });
+
+  // The reset link in the email is /app#reset=<token>. The token is lifted out of the URL
+  // straight away (boot below) so it doesn't linger in the address bar or history.
+  let resetToken = null;
+  function openResetFromHash() {
+    const m = location.hash.match(/reset=([A-Za-z0-9_-]+)/);
+    if (!m) return false;
+    resetToken = m[1];
+    history.replaceState(null, '', location.pathname);
+    showAuthPanel('lg-reset');
+    return true;
+  }
+  // Also react when the fragment changes inside an already-open page (a same-page link
+  // doesn't reload, so boot alone would miss it).
+  window.addEventListener('hashchange', () => { if (!state.token) openResetFromHash(); });
+  document.getElementById('lg-reset-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (document.getElementById('lg-reset-pw').value !== document.getElementById('lg-reset-pw2').value) {
+      toast('Your two passwords do not match.');
+      return;
+    }
+    submitting('lg-reset-submit', async () => {
+      await api('/auth/password/reset', { method: 'POST', body: { token: resetToken, password: document.getElementById('lg-reset-pw').value } });
+      resetToken = null;
+      toast('Password updated — sign in with your new password.');
+      showAuthPanel('lg-login');
     });
   });
 
@@ -246,7 +344,7 @@
       return;
     }
     submitting('lg-reg-submit', async () => {
-      const { token, user } = await api('/auth/register-individual', {
+      const { token, user, refreshToken } = await api('/auth/register-individual', {
         method: 'POST',
         body: {
           fullName: document.getElementById('lg-reg-name').value.trim(),
@@ -260,21 +358,30 @@
           password: document.getElementById('lg-reg-pw').value,
         },
       });
-      onAuthed(token, user);
+      onAuthed(token, user, refreshToken);
     });
   });
 
   document.getElementById('signout-btn').addEventListener('click', () => {
+    if (state.refreshToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: state.refreshToken }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     clearSession();
     window.speechSynthesis && window.speechSynthesis.cancel();
     window.location.href = '/app';
   });
 
 
-  async function onAuthed(token, user) {
+  async function onAuthed(token, user, refreshToken) {
     state.token = token;
+    state.refreshToken = refreshToken || null;
     state.user = user;
-    saveSession(token, user);
+    saveSession(token, user, refreshToken);
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     await loadHeaderContext();
@@ -577,7 +684,7 @@
     // Real-time push so a new notification shows up the instant it's created instead
     // of waiting for the next poll -- the same live-class popup and bell badge, just
     // triggered immediately rather than up to 20s late.
-    const notifSocket = io('/notifications', { auth: { token: state.token } });
+    const notifSocket = io('/notifications', { auth: (cb) => cb({ token: state.token }) });
     notifSocket.on('notification:new', () => refreshNotifications());
   }
 
@@ -1905,10 +2012,15 @@
       const newPassword = document.getElementById('pw-new').value;
       if (newPassword !== document.getElementById('pw-confirm').value) return toast('New passwords do not match.');
       try {
-        await api('/auth/change-password', {
+        const changed = await api('/auth/change-password', {
           method: 'POST',
           body: { currentPassword: document.getElementById('pw-current').value, newPassword },
         });
+        if (changed.token) {
+          state.token = changed.token;
+          state.refreshToken = changed.refreshToken;
+          saveSession(state.token, state.user, state.refreshToken);
+        }
         toast('Password updated');
         navigate('settings');
       } catch (err) { toast(err.message); }
@@ -3523,7 +3635,10 @@
     // #auth-screen starts hidden so a signed-in user refreshing never sees it flash; it's
     // only revealed once we know we're staying on it.
     authScreen.classList.remove('js-hidden');
-    if (location.hash.includes('login')) showAuthPanel('lg-login');
+    const notice = sessionStorage.getItem('lz_notice');
+    if (notice) { sessionStorage.removeItem('lz_notice'); toast(notice); }
+    if (openResetFromHash()) { /* the reset screen is showing */ }
+    else if (location.hash.includes('login')) showAuthPanel('lg-login');
     else if (location.hash.includes('register')) showAuthPanel('lg-register');
   }
 })();

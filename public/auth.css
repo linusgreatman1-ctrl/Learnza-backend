@@ -82,6 +82,8 @@ select.lg-input { appearance: none; cursor: pointer; background-image: linear-gr
 .lg-check span { font-size: 13px; color: var(--lg-muted); line-height: 1.6; }
 .lg-check a, .lg-note a { color: var(--lg-gold-2); font-weight: 800; text-decoration: none; }
 .lg-note { text-align: center; color: var(--lg-muted); font-size: 12px; margin-top: 14px; line-height: 1.6; }
+.lg-forgot { text-align: right; margin: -4px 0 4px; font-size: 13px; font-weight: 800; }
+.lg-forgot a { color: var(--lg-gold-2); cursor: pointer; }
 .lg-switch { text-align: center; color: var(--lg-muted); font-size: 14px; margin-top: 20px; font-weight: 600; }
 .lg-switch a { color: var(--lg-gold-2); font-weight: 800; cursor: pointer; }
 .lg-light .lg-btn-gold { box-shadow: 0 8px 22px rgba(193, 134, 31, .28); }

@@ -1,11 +1,12 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('./db');
+const { signAccessToken } = require('./session');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-function signToken(user) {
-  return jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
-}
+// Kept under its old name for the few callers that just need an access token; real
+// sign-ins go through session.issueSession() so they get a refresh token as well.
+const signToken = signAccessToken;
 
 const STATUS_MESSAGE = {
   SUSPENDED: 'Your account has been suspended. Contact your school administrator.',
@@ -56,8 +57,11 @@ async function requireAuth(req, res, next) {
     }
     req.user = user;
     next();
-  } catch {
-    return res.status(401).json({ error: 'Session expired, please sign in again' });
+  } catch (err) {
+    // An expired access token is the normal case (they last 15 minutes) -- the frontends
+    // see this and quietly swap their refresh token for a new one instead of signing out.
+    const expired = err && err.name === 'TokenExpiredError';
+    return res.status(401).json({ error: 'Session expired, please sign in again', code: expired ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID' });
   }
 }
 
@@ -74,4 +78,4 @@ async function logActivity(userId, action, detail) {
   await prisma.activityLog.create({ data: { userId, action, detail } });
 }
 
-module.exports = { signToken, requireAuth, requireRole, logActivity, clearSchoolCache };
+module.exports = { signToken, requireAuth, requireRole, logActivity, clearSchoolCache, schoolBlock };

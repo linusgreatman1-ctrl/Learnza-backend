@@ -367,9 +367,30 @@
     <form class="lg-inner lg-form" id="lg-login-form" autocomplete="on">
       <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-login-email" required placeholder="you@example.com"></div>
       <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-login-pw" required placeholder="Your password"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+      <p class="lg-forgot"><a data-go="lg-forgot">Forgot password?</a></p>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-login-submit" style="margin-top:6px">Sign In →</button>
       <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
       <p class="lg-switch">New here? <a data-go="lg-register">Create free account</a></p>
+    </form>
+  </div>
+
+  <!-- FORGOT PASSWORD -->
+  <div class="lg-s lg-light" id="lg-forgot">
+    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-login" aria-label="Back">←</button><div class="lg-bar-title">Reset Password</div><div style="width:40px"></div></div></div>
+    <form class="lg-inner lg-form" id="lg-forgot-form" autocomplete="on">
+      <div class="lg-info"><span>✉️</span><span>Enter the email you signed up with and we'll send you a link to choose a new password.</span></div>
+      <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-forgot-email" required placeholder="you@example.com"></div>
+      <button class="lg-btn lg-btn-gold" type="submit" id="lg-forgot-submit">Send reset link</button>
+    </form>
+  </div>
+
+  <!-- NEW PASSWORD (reached from the link in the reset email) -->
+  <div class="lg-s lg-light" id="lg-reset">
+    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-login" aria-label="Back">←</button><div class="lg-bar-title">Choose a New Password</div><div style="width:40px"></div></div></div>
+    <form class="lg-inner lg-form" id="lg-reset-form" autocomplete="off">
+      <div class="lg-fg"><label class="lg-label">New Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-reset-pw" required minlength="6" placeholder="At least 6 characters"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+      <div class="lg-fg"><label class="lg-label">Confirm New Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-reset-pw2" required minlength="6" placeholder="Repeat your password"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+      <button class="lg-btn lg-btn-gold" type="submit" id="lg-reset-submit">Save new password</button>
     </form>
   </div>
 </div>

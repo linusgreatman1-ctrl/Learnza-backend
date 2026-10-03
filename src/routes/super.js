@@ -2,7 +2,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const prisma = require('../db');
-const { signToken, requireAuth, requireRole, clearSchoolCache } = require('../auth');
+const { requireAuth, requireRole, clearSchoolCache } = require('../auth');
+const { issueSession } = require('../session');
 const { generateJoinCode } = require('../utils');
 const { logAction } = require('../audit');
 const { lockedMessage, recordFailure, clearFailures } = require('../lockout');
@@ -45,7 +46,7 @@ router.post('/login', async (req, res) => {
   await clearFailures(user);
   req.user = user;
   await logAction(req, 'SUPER_ADMIN_LOGIN', 'User', user.id);
-  res.json({ token: signToken(user), user: safeUser(user) });
+  res.json({ ...(await issueSession(user, 'admin')), user: safeUser(user) });
 });
 
 router.use(requireAuth, requireRole('SUPER_ADMIN'));

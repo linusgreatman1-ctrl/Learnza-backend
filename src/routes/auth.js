@@ -1,7 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const prisma = require('../db');
-const { signToken, requireAuth, logActivity } = require('../auth');
+const crypto = require('crypto');
+const { requireAuth, logActivity, schoolBlock } = require('../auth');
+const { issueSession, consumeRefreshToken, revokeRefreshToken, revokeAllRefreshTokens, sha256 } = require('../session');
+const { sendEmail } = require('../services/bulkMessage.service');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const { safeEqual } = require('../utils');
 const { lockedMessage, recordFailure, clearFailures } = require('../lockout');
@@ -85,7 +88,7 @@ router.post('/register-individual', async (req, res) => {
       yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null,
     },
   });
-  res.json({ token: signToken(user), user: publicUser(user) });
+  res.json({ ...(await issueSession(user, 'app')), user: publicUser(user) });
 });
 
 // Email + password -- the Student app's sign-in. Only independent learners sign in this
@@ -109,7 +112,7 @@ router.post('/login', async (req, res) => {
   }
   if (!checkStatus(res, user)) return;
   await clearFailures(user);
-  res.json({ token: signToken(user), user: publicUser(user) });
+  res.json({ ...(await issueSession(user, 'app')), user: publicUser(user) });
 });
 
 // The Schools app's "School" sign-in: the school's name plus the permanent join code the
@@ -133,7 +136,7 @@ router.post('/school-login', async (req, res) => {
     orderBy: { createdAt: 'asc' },
   });
   if (!admin) return res.status(403).json({ error: 'This school has no active admin account. Contact Learnza.' });
-  res.json({ token: signToken(admin), user: publicUser(admin) });
+  res.json({ ...(await issueSession(admin, 'schools')), user: publicUser(admin) });
 });
 
 // School-affiliated students, lecturers, staff and additional admins sign in with the
@@ -163,7 +166,76 @@ router.post('/login-with-code', async (req, res) => {
   if (!checkStatus(res, user)) return;
 
   if (user.role === 'LECTURER') await logActivity(user.id, 'LOGIN', null);
-  res.json({ token: signToken(user), user: publicUser(user) });
+  res.json({ ...(await issueSession(user, 'schools')), user: publicUser(user) });
+});
+
+// Swap a refresh token for a fresh access + refresh pair. Re-checks the account and the
+// school (suspension, lapsed licence) every time, so losing access takes effect within
+// one access-token lifetime even for someone who never signs out.
+router.post('/refresh', async (req, res) => {
+  const result = await consumeRefreshToken(req.body && req.body.refreshToken);
+  if (!result) return res.status(401).json({ error: 'Session expired, please sign in again', code: 'SESSION_EXPIRED' });
+  const { user, surface } = result;
+  if (user.status !== 'ACTIVE') {
+    return res.status(403).json({ error: STATUS_MESSAGE[user.status] || 'This account is inactive.', code: 'ACCOUNT_INACTIVE' });
+  }
+  if (user.schoolId) {
+    const block = await schoolBlock(user.schoolId);
+    if (block) return res.status(403).json(block);
+  }
+  res.json({ ...(await issueSession(user, surface)), user: publicUser(user) });
+});
+
+router.post('/logout', async (req, res) => {
+  await revokeRefreshToken(req.body && req.body.refreshToken);
+  res.json({ ok: true });
+});
+
+// ---- Forgot / reset password (email + password accounts: independent students) ----
+// Always answers the same way whether or not the email exists, so it can't be used to
+// find out who has an account.
+router.post('/password/forgot', async (req, res) => {
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+  if (email) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && user.isIndividual && user.status === 'ACTIVE') {
+      const raw = crypto.randomBytes(32).toString('base64url');
+      await prisma.passwordReset.create({
+        data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
+      });
+      const link = req.protocol + '://' + req.get('host') + '/app#reset=' + raw;
+      try {
+        await sendEmail(
+          user.email,
+          'Reset your Learnza password',
+          'Hi ' + user.fullName + ',\n\nSomeone asked to reset the password for your Learnza account. If that was you, open this link within the next hour:\n\n' + link + '\n\nIf it wasn\'t you, ignore this email and your password stays as it is.\n\n— Learnza'
+        );
+      } catch (err) {
+        if (err.code !== 'EMAIL_NOT_CONFIGURED') console.error('Password reset email failed:', err.message);
+        // With no email set up there is nowhere to send this; in development the link is
+        // printed so the flow can still be tried. Never logged in production.
+        else if (process.env.NODE_ENV !== 'production') console.log('[dev] password reset link for ' + user.email + ': ' + link);
+      }
+    }
+  }
+  res.json({ ok: true, message: 'If that email has a Learnza account, a reset link is on its way.' });
+});
+
+router.post('/password/reset', async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password) return res.status(400).json({ error: 'The reset link and a new password are required.' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  const record = await prisma.passwordReset.findUnique({ where: { tokenHash: sha256(String(token)) } });
+  if (!record || record.usedAt || record.expiresAt <= new Date()) {
+    return res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
+  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: record.userId }, data: { passwordHash, loginAttempts: 0, lockedUntil: null } }),
+    prisma.passwordReset.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+  ]);
+  await revokeAllRefreshTokens(record.userId);
+  res.json({ ok: true });
 });
 
 // Resolved school/department names for the header strip -- the JWT-derived req.user
@@ -221,10 +293,14 @@ router.post('/change-password', requireAuth, async (req, res) => {
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password are required.' });
   if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
   const ok = await bcrypt.compare(currentPassword, req.user.passwordHash);
-  if (!ok) return res.status(401).json({ error: 'Current password is incorrect.' });
+  if (!ok) return res.status(400).json({ error: 'Current password is incorrect.' });
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash } });
-  res.json({ ok: true });
+  // Every refresh token is retired, so any other device or tab is signed out once its
+  // current 15-minute access token lapses. The caller is handed a fresh pair to stay in.
+  await revokeAllRefreshTokens(req.user.id);
+  const surface = req.user.role === 'SUPER_ADMIN' ? 'admin' : (req.user.isIndividual ? 'app' : 'schools');
+  res.json({ ok: true, ...(await issueSession(req.user, surface)) });
 });
 
 // "Mute notifications" -- suppresses new in-app notifications for this user without

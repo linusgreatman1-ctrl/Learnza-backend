@@ -27,21 +27,28 @@
   function readSession(key) {
     return sessionStorage.getItem(key) || (IS_RELOAD ? localStorage.getItem(key) : null);
   }
-  function saveSession(token, user) {
+  function saveSession(token, user, refreshToken) {
     sessionStorage.setItem('lz_schools_token', token);
     sessionStorage.setItem('lz_schools_user', JSON.stringify(user));
     localStorage.setItem('lz_schools_token', token);
     localStorage.setItem('lz_schools_user', JSON.stringify(user));
+    if (refreshToken) {
+      sessionStorage.setItem('lz_schools_refresh', refreshToken);
+      localStorage.setItem('lz_schools_refresh', refreshToken);
+    }
   }
   function clearSession() {
     sessionStorage.removeItem('lz_schools_token');
     sessionStorage.removeItem('lz_schools_user');
+    sessionStorage.removeItem('lz_schools_refresh');
     localStorage.removeItem('lz_schools_token');
     localStorage.removeItem('lz_schools_user');
+    localStorage.removeItem('lz_schools_refresh');
   }
 
   const state = {
     token: readSession('lz_schools_token') || null,
+    refreshToken: readSession('lz_schools_refresh') || null,
     user: JSON.parse(readSession('lz_schools_user') || 'null'),
     schoolId: null,
     view: { screen: 'home', courseId: null, groupId: null, assessmentId: null },
@@ -49,7 +56,7 @@
   // Seed this tab's own sessionStorage immediately so it's independent from here on --
   // later logins in other tabs (which only touch localStorage's "last active" copy)
   // won't affect this tab even though it fell back to localStorage just now.
-  if (state.token && state.user) saveSession(state.token, state.user);
+  if (state.token && state.user) saveSession(state.token, state.user, state.refreshToken);
   let examTimerHandle = null; // the countdown interval from renderTakeAssessment, if any
 
   // Dark Mode (Settings > Appearance) -- a per-device preference, applied immediately
@@ -62,16 +69,70 @@
   })();
 
   // ---------- API helper ----------
+  // Access tokens last 15 minutes. When one lapses the server answers 401; the refresh
+  // token (kept per tab, like the access token) is swapped for a new pair and the request
+  // is retried once, so nobody is signed out mid-lesson. Several requests failing at the
+  // same moment share one refresh call.
+  let refreshInFlight = null;
+  function refreshSession() {
+    if (!refreshInFlight) {
+      refreshInFlight = fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: state.refreshToken }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const err = new Error(data.error || 'Your session expired. Please sign in again.');
+            err.status = res.status;
+            throw err;
+          }
+          state.token = data.token;
+          state.refreshToken = data.refreshToken;
+          if (data.user) state.user = data.user;
+          saveSession(state.token, state.user, state.refreshToken);
+        })
+        .finally(() => { refreshInFlight = null; });
+    }
+    return refreshInFlight;
+  }
+
+  // Back to the sign-in screen, with a one-line reason shown on the way.
+  function endSession(message) {
+    clearSession();
+    if (message) sessionStorage.setItem('lz_notice', message);
+    window.location.href = '/schools';
+  }
+
+  const BLOCKED_CODES = ['SCHOOL_SUSPENDED', 'SCHOOL_LICENCE_EXPIRED', 'ACCOUNT_INACTIVE'];
+
   async function api(path, opts = {}) {
-    const headers = Object.assign({}, opts.headers);
-    if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-    if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
-    const res = await fetch('/api' + path, {
-      method: opts.method || 'GET',
-      headers,
-      body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
-    });
+    const send = () => {
+      const headers = Object.assign({}, opts.headers);
+      if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+      if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+      return fetch('/api' + path, {
+        method: opts.method || 'GET',
+        headers,
+        body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
+      });
+    };
+    let res = await send();
+    if (res.status === 401 && state.token) {
+      if (state.refreshToken) {
+        try {
+          await refreshSession();
+          res = await send();
+        } catch (err) {
+          if (err.status === 401 || err.status === 403) endSession(err.status === 403 ? err.message : 'Your session expired. Please sign in again.');
+          throw err;
+        }
+      }
+      if (res.status === 401) endSession('Your session expired. Please sign in again.');
+    }
     const data = await res.json().catch(() => ({}));
+    if (res.status === 403 && state.token && BLOCKED_CODES.includes(data.code)) endSession(data.error);
     if (!res.ok) {
       const err = new Error(data.error || 'Something went wrong');
       err.code = data.code;
@@ -228,21 +289,21 @@
   document.getElementById('lg-school-form').addEventListener('submit', (e) => {
     e.preventDefault();
     submitting('lg-school-submit', async () => {
-      const { token, user } = await api('/auth/school-login', {
+      const { token, user, refreshToken } = await api('/auth/school-login', {
         method: 'POST',
         body: {
           schoolName: document.getElementById('lg-school-name').value.trim(),
           joinCode: document.getElementById('lg-school-code').value.trim(),
         },
       });
-      onAuthed(token, user);
+      onAuthed(token, user, refreshToken);
     });
   });
 
   document.getElementById('lg-code-form').addEventListener('submit', (e) => {
     e.preventDefault();
     submitting('lg-code-submit', async () => {
-      const { token, user } = await api('/auth/login-with-code', {
+      const { token, user, refreshToken } = await api('/auth/login-with-code', {
         method: 'POST',
         body: {
           fullName: document.getElementById('lg-code-name').value.trim(),
@@ -250,21 +311,30 @@
           accessCode: document.getElementById('lg-code-code').value.trim(),
         },
       });
-      onAuthed(token, user);
+      onAuthed(token, user, refreshToken);
     });
   });
 
   document.getElementById('signout-btn').addEventListener('click', () => {
+    if (state.refreshToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: state.refreshToken }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     clearSession();
     window.speechSynthesis && window.speechSynthesis.cancel();
     window.location.href = '/schools';
   });
 
 
-  async function onAuthed(token, user) {
+  async function onAuthed(token, user, refreshToken) {
     state.token = token;
+    state.refreshToken = refreshToken || null;
     state.user = user;
-    saveSession(token, user);
+    saveSession(token, user, refreshToken);
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     await loadHeaderContext();
@@ -622,7 +692,7 @@
     // Real-time push so a new notification shows up the instant it's created instead
     // of waiting for the next poll -- the same live-class popup and bell badge, just
     // triggered immediately rather than up to 20s late.
-    const notifSocket = io('/notifications', { auth: { token: state.token } });
+    const notifSocket = io('/notifications', { auth: (cb) => cb({ token: state.token }) });
     notifSocket.on('notification:new', () => refreshNotifications());
   }
 
@@ -1964,7 +2034,7 @@
   }
 
   async function setupLiveSocket(isHost, liveClassId, courseId) {
-    const socket = io('/live', { auth: { token: state.token } });
+    const socket = io('/live', { auth: (cb) => cb({ token: state.token }) });
     live.socket = socket;
 
     socket.on('live:error', (err) => {
@@ -2856,10 +2926,15 @@
       const newPassword = document.getElementById('pw-new').value;
       if (newPassword !== document.getElementById('pw-confirm').value) return toast('New passwords do not match.');
       try {
-        await api('/auth/change-password', {
+        const changed = await api('/auth/change-password', {
           method: 'POST',
           body: { currentPassword: document.getElementById('pw-current').value, newPassword },
         });
+        if (changed.token) {
+          state.token = changed.token;
+          state.refreshToken = changed.refreshToken;
+          saveSession(state.token, state.user, state.refreshToken);
+        }
         toast('Password updated');
         navigate('settings');
       } catch (err) { toast(err.message); }
@@ -7079,5 +7154,7 @@
     // #auth-screen starts hidden so a signed-in user refreshing never sees it flash; it's
     // only revealed once we know we're staying on it.
     authScreen.classList.remove('js-hidden');
+    const notice = sessionStorage.getItem('lz_notice');
+    if (notice) { sessionStorage.removeItem('lz_notice'); toast(notice); }
   }
 })();
