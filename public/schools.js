@@ -146,6 +146,10 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // Accounts the school admin creates without an email carry a placeholder address that
+  // can never receive mail; it is never shown.
+  function shownEmail(e) { return !e || /@internal\.learnza\.local$/.test(e) ? '' : e; }
+
   // Show/hide toggle for every password field -- delegated on document so it works
   // for any .password-field/.pw-toggle-btn pair regardless of which screen rendered
   // it or when, with nothing to wire up per-field.
@@ -2358,7 +2362,7 @@
         <div class="id-grid">
           <div><div class="meta">Full name</div><div style="font-weight:600;">${esc(data.fullName)}</div></div>
           <div><div class="meta">Matric number</div><div class="tabular">${esc(data.matricNumber || '—')}</div></div>
-          <div><div class="meta">Email</div><div>${esc(data.email)}</div></div>
+          <div><div class="meta">Email</div><div>${esc(shownEmail(data.email))}</div></div>
           <div><div class="meta">Phone</div><div>${esc(data.phone || '—')}</div></div>
           <div><div class="meta">Department</div><div>${esc(data.department || '—')}</div></div>
           <div><div class="meta">Current level</div><div>${esc(data.level || '—')}</div></div>
@@ -2525,7 +2529,7 @@
           ${selfAvatarHtml('avatar-individual-id')}
           <div>
             <div class="id-value">${esc(u.fullName)}</div>
-            <div class="id-field tabular" style="margin-top:4px;">${esc(u.email)}</div>
+            <div class="id-field tabular" style="margin-top:4px;">${esc(shownEmail(u.email))}</div>
           </div>
         </div>
         <div class="id-grid">
@@ -2632,7 +2636,7 @@
         <div class="id-grid">
           <div><div class="id-field">Department</div><div>${state.department ? esc(state.department.name) : '—'}</div></div>
           <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
-          <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="id-field">Email</div><div>${esc(shownEmail(u.email))}</div></div>
           <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
           <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
         </div>
@@ -2854,7 +2858,7 @@
       if (state.school) readOnlyRows.push(['School', [state.school.name, state.school.state].filter(Boolean).join(', ')]);
       if (u.accessCode) readOnlyRows.push(['Access code', u.accessCode]);
     }
-    readOnlyRows.push(['Email', u.email], ['Member since', new Date(u.createdAt).toLocaleDateString()]);
+    readOnlyRows.push(['Email', shownEmail(u.email)], ['Member since', new Date(u.createdAt).toLocaleDateString()]);
 
     view.innerHTML = `
       <div class="page-head"><h1>Edit Profile</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to Settings</button></div>
@@ -5027,7 +5031,7 @@
         <div class="id-grid">
           <div><div class="id-field">Department</div><div>${department ? esc(department.name) : '—'}</div></div>
           <div><div class="id-field">Courses taught</div><div>${courses.length}</div></div>
-          <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="id-field">Email</div><div>${esc(shownEmail(u.email))}</div></div>
           <div><div class="id-field">Phone</div><div>${esc(u.phone || '—')}</div></div>
           <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
           <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
@@ -5054,7 +5058,7 @@
             <div style="margin:4px 0 8px;">${esc(c.title)}</div>
             <span class="pill">${counts[i].count} student${counts[i].count === 1 ? '' : 's'}</span>
           </div>
-        `).join('') || '<p class="muted">No courses yet.</p>'}
+        `).join('') || '<p class="muted">You don\'t have any classes yet. Add a course under <strong>My Courses</strong> and it will appear here, or ask your school admin to assign you to one.</p>'}
       </div>
     `;
     view.querySelectorAll('[data-open]').forEach((el) => {
@@ -5092,32 +5096,51 @@
   function openAddStudentDialog(courseId, courseTitle) {
     const container = document.createElement('div');
     container.className = 'card';
-    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(420px,92vw); height:fit-content; padding:24px; z-index:200;';
+    container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,94vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
-      <h3 style="margin-bottom:14px;">Add student to ${esc(courseTitle || 'this class')}</h3>
-      <p class="muted" style="font-size:13px; margin-bottom:14px;">Enter the matric number of a student who already has a Learnza account. To create a brand-new account, use the admin's Staff &amp; Student Directory.</p>
-      <div class="field"><label>Matric number</label><input type="text" id="as-matric" required placeholder="e.g. ECOE/23/CSC/041"></div>
-      <div style="display:flex; gap:10px; margin-top:10px;">
-        <button class="btn btn-primary" id="as-save">Add student</button>
-        <button class="btn btn-ghost" id="as-cancel">Cancel</button>
-      </div>
+      <h3 style="margin-bottom:6px;">Add students to ${esc(courseTitle || 'this class')}</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">Search your school's students by name or matric number and add them to the class. Students are created by your school admin (Staff &amp; Student Directory).</p>
+      <div class="field"><input type="text" id="as-search" placeholder="Search by name or matric number…" autocomplete="off"></div>
+      <div id="as-results" style="margin:8px 0 14px;"></div>
+      <button class="btn btn-ghost" id="as-close">Done</button>
     `;
     const backdrop = document.createElement('div');
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     document.body.appendChild(backdrop);
     document.body.appendChild(container);
-    function close() { backdrop.remove(); container.remove(); }
-    container.querySelector('#as-cancel').addEventListener('click', close);
-    container.querySelector('#as-save').addEventListener('click', async () => {
-      const matricNumber = container.querySelector('#as-matric').value.trim();
-      if (!matricNumber) return toast('Enter a matric number.');
+    let added = 0;
+    function close() { backdrop.remove(); container.remove(); if (added) render(); }
+    container.querySelector('#as-close').addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+
+    const results = container.querySelector('#as-results');
+    async function search() {
+      const q = container.querySelector('#as-search').value.trim();
+      results.innerHTML = '<p class="muted" style="font-size:13px;">Searching…</p>';
       try {
-        const { student } = await api(`/courses/${courseId}/enroll-student`, { method: 'POST', body: { matricNumber } });
-        toast(`${student.fullName} added to the class`);
-        close();
-        render();
-      } catch (err) { toast(err.message); }
-    });
+        const { students } = await api(`/courses/${courseId}/addable-students?q=${encodeURIComponent(q)}`);
+        results.innerHTML = students.map((st) => `
+          <div class="list-row" data-student="${st.id}">
+            <div>
+              <div style="font-weight:600;">${esc(st.fullName)}</div>
+              <div class="meta tabular">${esc(st.matricNumber || 'No matric number')}${st.yearOfStudy ? ` · ${st.yearOfStudy * 100}L` : ''}${st.department ? ` · ${esc(st.department)}` : ''}</div>
+            </div>
+            <button class="btn btn-accent btn-sm" data-add="${st.id}">Add</button>
+          </div>`).join('') || '<p class="muted" style="font-size:13px;">' + (q ? 'No matching students who aren\'t already in this class.' : 'Every student in your school is already in this class — or none have been added yet.') + '</p>';
+        results.querySelectorAll('[data-add]').forEach((btn) => btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await api(`/courses/${courseId}/enroll-student`, { method: 'POST', body: { studentId: btn.dataset.add } });
+            added++;
+            btn.closest('.list-row').remove();
+            toast('Student added to the class');
+          } catch (err) { btn.disabled = false; toast(err.message); }
+        }));
+      } catch (err) { results.innerHTML = `<p class="muted" style="font-size:13px;">${esc(err.message)}</p>`; }
+    }
+    let timer;
+    container.querySelector('#as-search').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
+    search();
   }
 
   // Comprehensive detail for one student in the lecturer's class -- reuses the exact
@@ -5133,7 +5156,7 @@
           <div><div class="meta">Department</div><div>${esc(data.department || '—')}</div></div>
           <div><div class="meta">Level</div><div>${esc(data.level || '—')}</div></div>
           <div><div class="meta">Status</div><div>${statusPillHtml(data.status)}</div></div>
-          <div><div class="meta">Email</div><div>${esc(data.email)}</div></div>
+          <div><div class="meta">Email</div><div>${esc(shownEmail(data.email))}</div></div>
           <div><div class="meta">Phone</div><div>${esc(data.phone || '—')}</div></div>
           <div><div class="meta">Year admitted</div><div>${data.yearOfAdmission || '—'}</div></div>
           <div><div class="meta">Expected graduation</div><div>${data.expectedGraduationYear || '—'}</div></div>
@@ -5997,7 +6020,7 @@
         { key: 'staffId', label: 'Staff ID' },
         { key: 'departmentId', label: 'Department', type: 'department', required: true },
         { key: 'courseIds', label: 'Course(s) taught', type: 'courses' },
-        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'email', label: 'Email (optional)', type: 'email' },
         { key: 'phone', label: 'Phone number', type: 'tel' },
       ],
       editFields: [
@@ -6023,7 +6046,7 @@
         { key: 'staffId', label: 'Staff ID' },
         { key: 'position', label: 'Position', required: true },
         { key: 'departmentId', label: 'Department', type: 'department' },
-        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'email', label: 'Email (optional)', type: 'email' },
         { key: 'phone', label: 'Phone number', type: 'tel' },
       ],
       editFields: [
@@ -6050,7 +6073,7 @@
         { key: 'departmentId', label: 'Department', type: 'department', required: true },
         { key: 'yearOfStudy', label: 'Level', type: 'year', required: true },
         { key: 'courseIds', label: 'Course(s)', type: 'courses' },
-        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'email', label: 'Email (optional)', type: 'email' },
         { key: 'phone', label: 'Phone number', type: 'tel' },
       ],
       editFields: [
@@ -6131,7 +6154,7 @@
           <div class="list-row">
             <div>
               <div style="font-weight:600;">${esc(a.fullName)} ${a.id === u.id ? '<span class="pill pill-muted" style="margin-left:6px;">You</span>' : ''}</div>
-              <div class="meta">${esc(a.email)}${a.phone ? ` · ${esc(a.phone)}` : ''}</div>
+              <div class="meta">${esc(shownEmail(a.email))}${a.phone ? ` · ${esc(a.phone)}` : ''}</div>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               ${statusPillHtml(a.status)}
@@ -6247,9 +6270,23 @@
       const box = document.getElementById('add-box');
       box.hidden = !box.hidden;
       if (box.hidden) return;
+      const departmentOptions = await departmentOptionsHtml();
+      // Lecturers and students belong to a department, and a newly onboarded school has none
+      // yet -- without this the form below would have an empty, required dropdown and could
+      // never be submitted, with nothing to say why.
+      if (!departmentOptions && cfg.addFields.some((f) => f.type === 'department' && f.required)) {
+        box.innerHTML = `
+          <div class="card" style="padding:20px; margin-bottom:18px;">
+            <h3 style="margin-bottom:8px;">Add a department first</h3>
+            <p class="muted" style="margin-bottom:14px;">${esc(cfg.label)} belong to a department, and your school doesn't have any yet. Set up your departments (and their courses) first, then come back here to add people.</p>
+            <button class="btn btn-accent" id="goto-departments">Go to Departments &amp; Courses</button>
+          </div>`;
+        document.getElementById('goto-departments').addEventListener('click', () => navigate('admin-academics'));
+        return;
+      }
       const fieldsHtml = await Promise.all(cfg.addFields.map(async (f) => {
         if (f.type === 'department') {
-          return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">${f.required ? 'Select…' : 'None'}</option>${await departmentOptionsHtml()}</select></div>`;
+          return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">${f.required ? 'Select…' : 'None'}</option>${departmentOptions}</select></div>`;
         }
         if (f.type === 'year') {
           const opts = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n * 100}L</option>`).join('');
@@ -6290,7 +6327,7 @@
           ${state.view.directoryType === 'STUDENT' ? `<div><div class="meta">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>` : ''}
           <div><div class="meta">${cfg.extraLabel}</div><div>${esc(cfg.extraValue(u))}</div></div>
           <div><div class="meta">Status</div><div>${statusPillHtml(u.status)}</div></div>
-          <div><div class="meta">Email</div><div>${esc(u.email)}</div></div>
+          <div><div class="meta">Email</div><div>${esc(shownEmail(u.email))}</div></div>
           <div><div class="meta">Phone</div><div>${esc(u.phone || '—')}</div></div>
           <div><div class="meta">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
         </div>
@@ -6340,7 +6377,7 @@
         if (f.type === 'courses') {
           return `<div class="field"><label>${f.label} <span class="muted">(ctrl/cmd-click for more than one)</span></label><select id="edit-${f.key}" multiple size="5">${await courseOptionsHtml((u.courses || []).map((c) => c.id))}</select></div>`;
         }
-        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="edit-${f.key}" value="${esc(u[f.key] || '')}" ${f.required ? 'required' : ''}></div>`;
+        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="edit-${f.key}" value="${esc(f.key === 'email' ? shownEmail(u.email) : (u[f.key] || ''))}" ${f.required ? 'required' : ''}></div>`;
       }));
       box.innerHTML = `<form id="edit-form" class="card" style="padding:20px; margin-top:6px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">Save changes</button></form>`;
       box.hidden = false;

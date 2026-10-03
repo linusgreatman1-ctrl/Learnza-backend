@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { getCurrentSemesterId } = require('../semester');
+const { loadCourse, studentInSchool } = require('../scope');
 
 const router = express.Router();
 
@@ -12,14 +13,14 @@ function startOfDay(dateStr) {
 }
 
 // Roster + today's marks, so the lecturer's attendance screen can render in one call.
-router.get('/courses/:id/attendance', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.get('/courses/:id/attendance', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const date = startOfDay(req.query.date);
   const enrollments = await prisma.enrollment.findMany({
-    where: { courseId: req.params.id },
+    where: { courseId: req.course.id },
     include: { student: { select: { id: true, fullName: true, matricNumber: true } } },
     orderBy: { student: { fullName: 'asc' } },
   });
-  const marks = await prisma.classAttendanceRecord.findMany({ where: { courseId: req.params.id, date } });
+  const marks = await prisma.classAttendanceRecord.findMany({ where: { courseId: req.course.id, date } });
   const markByStudent = new Map(marks.map((m) => [m.studentId, m.status]));
   res.json({
     date,
@@ -27,16 +28,17 @@ router.get('/courses/:id/attendance', requireAuth, requireRole('LECTURER', 'ADMI
   });
 });
 
-router.post('/courses/:id/attendance', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/courses/:id/attendance', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const { studentId, status, date } = req.body;
   if (!studentId || !['PRESENT', 'ABSENT'].includes(status)) {
     return res.status(400).json({ error: 'studentId and a valid status (PRESENT/ABSENT) are required.' });
   }
+  if (!(await studentInSchool(studentId, req.user.schoolId))) return res.status(404).json({ error: 'Student not found in your school.' });
   const markDate = startOfDay(date);
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const record = await prisma.classAttendanceRecord.upsert({
-    where: { courseId_studentId_date: { courseId: req.params.id, studentId, date: markDate } },
-    create: { courseId: req.params.id, studentId, date: markDate, status, markedById: req.user.id, semesterId },
+    where: { courseId_studentId_date: { courseId: req.course.id, studentId, date: markDate } },
+    create: { courseId: req.course.id, studentId, date: markDate, status, markedById: req.user.id, semesterId },
     update: { status, markedById: req.user.id },
   });
   res.json({ record });

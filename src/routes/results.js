@@ -3,6 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { notify, notifySchoolAdmins } = require('../services/notification.service');
 const { getCurrentSemesterId } = require('../semester');
+const { loadCourse, studentInSchool } = require('../scope');
 
 const router = express.Router();
 
@@ -11,15 +12,16 @@ const router = express.Router();
 // notifications) or is just saved as a draft (sentAt stays null, invisible to the
 // student) for the lecturer to review and send later, individually or in bulk via
 // the /publish route below.
-router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const { studentId, term, score, grade, remark, send } = req.body;
   if (!studentId || !term || score === undefined || score === null) {
     return res.status(400).json({ error: 'Student, semester and score are required.' });
   }
+  if (!(await studentInSchool(studentId, req.user.schoolId))) return res.status(404).json({ error: 'Student not found in your school.' });
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const result = await prisma.result.create({
     data: {
-      courseId: req.params.id, studentId, authorId: req.user.id, term, semesterId,
+      courseId: req.course.id, studentId, authorId: req.user.id, term, semesterId,
       score: Number(score), grade: grade || null, remark: remark || null,
       sentAt: send === false ? null : new Date(),
     },
@@ -81,9 +83,9 @@ router.put('/results/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async 
 // Sends every draft (sentAt still null) result this lecturer has saved for a course,
 // individually notifying each student by name in one action -- the bulk counterpart
 // to sending one result at a time from the create dialog.
-router.post('/courses/:id/results/publish', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/courses/:id/results/publish', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const drafts = await prisma.result.findMany({
-    where: { courseId: req.params.id, authorId: req.user.id, sentAt: null },
+    where: { courseId: req.course.id, authorId: req.user.id, sentAt: null },
     include: { student: { select: { fullName: true, schoolId: true } } },
   });
   if (!drafts.length) return res.json({ count: 0 });
@@ -100,9 +102,9 @@ router.post('/courses/:id/results/publish', requireAuth, requireRole('LECTURER',
   res.json({ count: drafts.length });
 });
 
-router.get('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.get('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const results = await prisma.result.findMany({
-    where: { courseId: req.params.id },
+    where: { courseId: req.course.id },
     include: { student: { select: { fullName: true, matricNumber: true } } },
     orderBy: { publishedAt: 'desc' },
   });

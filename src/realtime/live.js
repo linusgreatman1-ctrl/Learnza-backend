@@ -72,9 +72,16 @@ function attachLiveNamespace(io) {
         if (!active) return socket.emit('live:error', { message: 'Live classes need an active Learnza subscription.', code: 'SUBSCRIPTION_REQUIRED' });
       }
 
-      const liveClass = await prisma.liveClass.findUnique({ where: { id: liveClassId } });
+      const liveClass = await prisma.liveClass.findUnique({
+        where: { id: liveClassId },
+        include: { course: { select: { department: { select: { schoolId: true } } } } },
+      });
       if (!liveClass || liveClass.status !== 'ACTIVE') {
         return socket.emit('live:error', { message: 'This class has ended.' });
+      }
+      // Only students of the school that is running the class may watch it.
+      if (!socket.user.schoolId || liveClass.course.department.schoolId !== socket.user.schoolId) {
+        return socket.emit('live:error', { message: 'This class is not open to you.' });
       }
       socket.liveClassId = liveClassId;
       socket.join(`live:${liveClassId}`);

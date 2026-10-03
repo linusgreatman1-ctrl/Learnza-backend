@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require('../auth');
 const { requireActiveSubscription, isEnforced, requireAiCredits, recordAiUsage, getAiCreditStatus } = require('../subscription');
 const aiTeacher = require('../services/aiTeacher.service');
 const simli = require('../services/simli.service');
+const { loadCourse } = require('../scope');
 
 const router = express.Router();
 
@@ -47,9 +48,8 @@ async function startSession(req, res, { courseId, individualCourseId, courseTitl
   }
 }
 
-router.post('/courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
-  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-  if (!course) return res.status(404).json({ error: 'Course not found' });
+router.post('/courses/:id/ai-teacher/sessions', requireAuth, requireRole('STUDENT'), loadCourse(), requireActiveSubscription, async (req, res) => {
+  const course = req.course;
   await startSession(req, res, { courseId: course.id, courseTitle: course.title });
 });
 

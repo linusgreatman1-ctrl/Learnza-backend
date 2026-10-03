@@ -27,6 +27,7 @@ model School {
   users                 User[]
   semesters             Semester[]
   hostels               Hostel[]
+  libraryResources      LibraryResource[]
 }
 
 // A school's own term/semester calendar. isCurrent marks the one new activity
@@ -122,6 +123,7 @@ model User {
   resultsReceived Result[]    @relation("ResultStudent")
   notifications  Notification[]
   refreshTokens  RefreshToken[]
+  aiConversationLogs AiConversationLog[]
   passwordResets PasswordReset[]
   coursesAssigned CourseLecturer[]
   labAttempts    LabAttempt[]
@@ -285,6 +287,10 @@ model LibraryResource {
   fileUrl      String
   uploader     User?      @relation("LibraryUploader", fields: [uploaderId], references: [id])
   uploaderId   String?
+  // The school that owns this resource. null = the platform's own catalog, uploaded by the
+  // super admin and visible to everyone; a school's resources are only visible to that school.
+  school       School?    @relation(fields: [schoolId], references: [id])
+  schoolId     String?
   createdAt    DateTime   @default(now())
 }
 
@@ -732,6 +738,47 @@ model AuditLog {
   metadata   String?  // JSON-encoded
   ip         String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// A message from the platform owner to a slice of users: always an in-app notification,
+// optionally also email and/or SMS.
+model Announcement {
+  id             String   @id @default(cuid())
+  title          String
+  body           String
+  audience       String   // ALL | INDEPENDENT | SCHOOLS | SCHOOL
+  schoolId       String?  // when audience is SCHOOL
+  channels       String   // comma list of IN_APP, EMAIL, SMS
+  recipientCount Int      @default(0)
+  emailSent      Int      @default(0)
+  smsSent        Int      @default(0)
+  sentById       String?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Platform settings edited from the admin panel (key -> JSON value). Read through
+// src/settings.js, which falls back to a default when a key has never been set.
+model AppSetting {
+  key       String   @id
+  value     String   // JSON-encoded
+  category  String   @default("general")
+  updatedAt DateTime @updatedAt
+}
+
+// Questions students put to the AI (research assistant, lab Q&A) and what came back, kept
+// so the super admin can review quality and abuse. The Terms & Privacy page says so.
+model AiConversationLog {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  kind      String   // RESEARCH | LAB
+  question  String
+  answer    String
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
 }

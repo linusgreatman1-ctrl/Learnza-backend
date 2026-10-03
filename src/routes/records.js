@@ -6,6 +6,11 @@ const { notify, notifySchoolAdmins } = require('../services/notification.service
 
 const router = express.Router();
 
+// Admin actions on a request (transcript, clearance, hostel, disciplinary record) must only
+// reach students of the admin's own school -- the id in the URL alone proves nothing.
+// A missing schoolId would make Prisma drop the filter, so refuse that outright.
+const inMySchool = (req) => (req.user.schoolId ? { student: { schoolId: req.user.schoolId } } : { id: '__none__' });
+
 // ---- Transcript ----
 
 router.post('/students/me/transcript-request', requireAuth, requireRole('STUDENT'), async (req, res) => {
@@ -56,8 +61,10 @@ router.get('/admin/transcript-requests', requireAuth, requireRole('ADMIN'), asyn
 });
 
 router.post('/admin/transcript-requests/:id/issue', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const found = await prisma.transcriptRequest.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
+  if (!found) return res.status(404).json({ error: 'Request not found' });
   const request = await prisma.transcriptRequest.update({
-    where: { id: req.params.id },
+    where: { id: found.id },
     data: { status: 'ISSUED', issuedAt: new Date() },
   });
   await notify(request.studentId, 'Transcript issued', 'Your official transcript is ready to view.', 'digital-id');
@@ -94,8 +101,10 @@ router.get('/admin/clearance-requests', requireAuth, requireRole('ADMIN'), async
 router.post('/admin/clearance-requests/:id/decide', requireAuth, requireRole('ADMIN'), async (req, res) => {
   const { status, note } = req.body;
   if (!['CLEARED', 'DENIED'].includes(status)) return res.status(400).json({ error: 'Status must be CLEARED or DENIED.' });
+  const found = await prisma.clearanceRequest.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
+  if (!found) return res.status(404).json({ error: 'Request not found' });
   const request = await prisma.clearanceRequest.update({
-    where: { id: req.params.id },
+    where: { id: found.id },
     data: { status, note: note || null, decidedAt: new Date() },
   });
   await notify(request.studentId, 'Clearance update', status === 'CLEARED' ? 'You have been cleared.' : `Clearance denied${note ? `: ${note}` : ''}.`, 'digital-id');
@@ -137,8 +146,10 @@ router.post('/admin/hostel-applications/:id/approve', requireAuth, requireRole('
   if (!hostelId) return res.status(400).json({ error: 'Choose a hostel to allocate into.' });
   const hostel = await prisma.hostel.findFirst({ where: { id: hostelId, schoolId: req.user.schoolId } });
   if (!hostel) return res.status(404).json({ error: 'Hostel not found' });
+  const found = await prisma.hostelApplication.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
+  if (!found) return res.status(404).json({ error: 'Application not found' });
   const application = await prisma.hostelApplication.update({
-    where: { id: req.params.id },
+    where: { id: found.id },
     data: { status: 'APPROVED', hostelId, roomAssigned: roomAssigned || 'To be confirmed', decidedAt: new Date() },
   });
   await notify(application.studentId, 'Hostel application approved', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'digital-id');
@@ -146,8 +157,10 @@ router.post('/admin/hostel-applications/:id/approve', requireAuth, requireRole('
 });
 
 router.post('/admin/hostel-applications/:id/reject', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const found = await prisma.hostelApplication.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
+  if (!found) return res.status(404).json({ error: 'Application not found' });
   const application = await prisma.hostelApplication.update({
-    where: { id: req.params.id },
+    where: { id: found.id },
     data: { status: 'REJECTED', decidedAt: new Date() },
   });
   await notify(application.studentId, 'Hostel application update', 'Your hostel application was not approved.', 'digital-id');
@@ -273,7 +286,9 @@ router.post('/admin/students/:id/disciplinary-records', requireAuth, requireRole
 });
 
 router.post('/admin/disciplinary-records/:id/resolve', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const record = await prisma.disciplinaryRecord.update({ where: { id: req.params.id }, data: { status: 'RESOLVED' } });
+  const found = await prisma.disciplinaryRecord.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
+  if (!found) return res.status(404).json({ error: 'Record not found' });
+  const record = await prisma.disciplinaryRecord.update({ where: { id: found.id }, data: { status: 'RESOLVED' } });
   res.json({ record });
 });
 

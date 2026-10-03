@@ -4,6 +4,27 @@ const { requireAuth, requireRole, logActivity } = require('../auth');
 const { requireActiveSubscription } = require('../subscription');
 const labDemo = require('../services/labDemo.service');
 const ai = require('../services/aiProvider.service');
+const { loadCourse, hasSchool } = require('../scope');
+
+// A practical is visible to the school that owns its course, or to the independent learner
+// whose own course it belongs to -- nobody else.
+function loadDemo() {
+  return async (req, res, next) => {
+    const demo = await prisma.labDemonstration.findUnique({
+      where: { id: req.params.id },
+      include: {
+        course: { select: { department: { select: { schoolId: true } } } },
+        individualCourse: { select: { studentId: true } },
+      },
+    });
+    const ok = demo && (demo.courseId
+      ? hasSchool(req.user) && demo.course.department.schoolId === req.user.schoolId
+      : demo.individualCourse && req.user.role === 'STUDENT' && demo.individualCourse.studentId === req.user.id);
+    if (!ok) return res.status(404).json({ error: 'Practical not found' });
+    req.demo = demo;
+    next();
+  };
+}
 
 const router = express.Router();
 
@@ -13,23 +34,23 @@ function shape(demo) {
 
 // Every approved demonstration for a course -- curated and AI-generated alike are
 // visible immediately (AI generation is gated by subscription, not admin review).
-router.get('/courses/:id/lab', requireAuth, async (req, res) => {
+router.get('/courses/:id/lab', requireAuth, loadCourse(), async (req, res) => {
   const demos = await prisma.labDemonstration.findMany({
-    where: { courseId: req.params.id, status: 'APPROVED' },
+    where: { courseId: req.course.id, status: 'APPROVED' },
     orderBy: { createdAt: 'desc' },
   });
   res.json({ demonstrations: demos.map(shape) });
 });
 
 // Lecturer/admin-authored demonstrations are trusted content -- approved immediately.
-router.post('/courses/:id/lab', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/courses/:id/lab', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const { title, description, steps } = req.body;
   if (!title || !Array.isArray(steps) || steps.length === 0) {
     return res.status(400).json({ error: 'Title and at least one step are required.' });
   }
   const demo = await prisma.labDemonstration.create({
     data: {
-      courseId: req.params.id,
+      courseId: req.course.id,
       title,
       description: description || '',
       stepsJson: JSON.stringify(steps),
@@ -45,11 +66,10 @@ router.post('/courses/:id/lab', requireAuth, requireRole('LECTURER', 'ADMIN'), a
 // Any subscribed student can request a practical on a topic not yet covered -- the AI
 // drafts it and it's live immediately, gated only by having an active subscription
 // (no admin review step).
-router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), requireActiveSubscription, async (req, res) => {
+router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), loadCourse(), requireActiveSubscription, async (req, res) => {
   const { topic } = req.body;
   if (!topic || !topic.trim()) return res.status(400).json({ error: 'Describe the practical topic first.' });
-  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const course = req.course;
 
   try {
     const draft = await labDemo.generateDemonstration({ courseTitle: course.title, topic });
@@ -73,11 +93,10 @@ router.post('/courses/:id/lab/generate', requireAuth, requireRole('STUDENT'), re
 
 // "Got a question" for a practical -- same subscription gate as generating one,
 // answered with the practical's own content as context so it stays on-topic.
-router.post('/lab/:id/ask', requireAuth, requireActiveSubscription, async (req, res) => {
+router.post('/lab/:id/ask', requireAuth, loadDemo(), requireActiveSubscription, async (req, res) => {
   const { question } = req.body;
   if (!question || !question.trim()) return res.status(400).json({ error: 'Type a question first.' });
-  const demo = await prisma.labDemonstration.findUnique({ where: { id: req.params.id } });
-  if (!demo) return res.status(404).json({ error: 'Practical not found' });
+  const demo = req.demo;
 
   const steps = JSON.parse(demo.stepsJson).map((s, i) => `${i + 1}. ${s.title}: ${s.instruction}`).join('\n');
   const systemPrompt = `You are the AI teacher guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
@@ -96,9 +115,8 @@ router.post('/lab/:id/ask', requireAuth, requireActiveSubscription, async (req, 
 // right when narration begins, same moment "Got a question" unlocks) -- re-doing the
 // same practical just refreshes startedAt rather than piling up duplicate rows, so
 // admin's view always shows one row per student per practical: who did it, and when.
-router.post('/lab/:id/attempt', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const demo = await prisma.labDemonstration.findUnique({ where: { id: req.params.id } });
-  if (!demo) return res.status(404).json({ error: 'Practical not found' });
+router.post('/lab/:id/attempt', requireAuth, requireRole('STUDENT'), loadDemo(), async (req, res) => {
+  const demo = req.demo;
   await prisma.labAttempt.upsert({
     where: { demoId_studentId: { demoId: demo.id, studentId: req.user.id } },
     create: { demoId: demo.id, studentId: req.user.id },

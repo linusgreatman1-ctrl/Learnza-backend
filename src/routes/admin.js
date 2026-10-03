@@ -6,6 +6,13 @@ const { generateAccessCode } = require('../utils');
 const { notify, notifyMany } = require('../services/notification.service');
 const { getCurrentSemesterId } = require('../semester');
 const bulkMessage = require('../services/bulkMessage.service');
+const { departmentsInSchool, coursesInSchool } = require('../scope');
+
+// People added by the school admin don't need an email -- they sign in with their access
+// code. The column is required and unique, so those accounts get an address that can never
+// receive mail (and is never shown or emailed).
+const INTERNAL_EMAIL_DOMAIN = 'internal.learnza.local';
+const isInternalEmail = (e) => typeof e === 'string' && e.endsWith('@' + INTERNAL_EMAIL_DOMAIN);
 
 const router = express.Router();
 router.use(requireAuth, requireRole('ADMIN'));
@@ -47,7 +54,7 @@ router.post('/bulk-message', async (req, res) => {
       result.emailError = 'Email is not configured yet -- ask your developer to set SMTP_HOST/SMTP_USER/SMTP_PASS.';
     } else {
       for (const r of recipients) {
-        if (!r.email) { result.emailSkipped++; continue; }
+        if (!r.email || isInternalEmail(r.email)) { result.emailSkipped++; continue; }
         try { await bulkMessage.sendEmail(r.email, subject || 'Message from your school', body); result.email++; }
         catch { result.emailSkipped++; }
       }
@@ -228,19 +235,44 @@ router.get('/student-activity', async (req, res) => {
 // or null after sending an error response itself, so callers can do post-creation work
 // (attaching courses) before sending their own final response.
 async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [] }) {
-  const { fullName, email, phone, password } = req.body;
-  if (!fullName || !email || requiredFields.some((f) => !req.body[f])) {
-    res.status(400).json({ error: 'Missing required fields' });
+  const { fullName, phone, password } = req.body;
+  const name = typeof fullName === 'string' ? fullName.trim() : '';
+  const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (!name || requiredFields.some((f) => !String(req.body[f] || '').trim())) {
+    res.status(400).json({ error: 'Please fill in every required field.' });
+    return null;
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: 'That email address does not look right.' });
     return null;
   }
   if (password && password.length < 6) {
     res.status(400).json({ error: 'Password must be at least 6 characters.' });
     return null;
   }
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  // Every id that arrives in the body must belong to THIS school.
+  if (extraFields.departmentId && !(await departmentsInSchool([extraFields.departmentId], req.user.schoolId))) {
+    res.status(400).json({ error: 'That department does not exist in your school. Pick one from the list.' });
+    return null;
+  }
+  const courseIds = parseCourseIds(req.body);
+  if (courseIds.length && !(await coursesInSchool(courseIds, req.user.schoolId))) {
+    res.status(400).json({ error: 'One of the chosen courses does not exist in your school.' });
+    return null;
+  }
+  if (email && (await prisma.user.findUnique({ where: { email } }))) {
     res.status(409).json({ error: 'An account with that email already exists' });
     return null;
+  }
+  if (role === 'STUDENT' && extraFields.matricNumber) {
+    extraFields.matricNumber = String(extraFields.matricNumber).trim();
+    const dup = await prisma.user.findFirst({
+      where: { schoolId: req.user.schoolId, role: 'STUDENT', matricNumber: { equals: extraFields.matricNumber, mode: 'insensitive' } },
+    });
+    if (dup) {
+      res.status(409).json({ error: 'A student with that matric number already exists in your school.' });
+      return null;
+    }
   }
   const tempPassword = password || generateAccessCode(12);
   const passwordHash = await bcrypt.hash(tempPassword, 10);
@@ -248,7 +280,16 @@ async function createSchoolUser(req, res, { role, extraFields = {}, requiredFiel
   while (await prisma.user.findUnique({ where: { accessCode } })) accessCode = generateAccessCode();
 
   const user = await prisma.user.create({
-    data: { fullName, email, phone: phone || null, passwordHash, schoolId: req.user.schoolId, role, accessCode, ...extraFields },
+    data: {
+      fullName: name,
+      email: email || `u.${accessCode.toLowerCase()}@${INTERNAL_EMAIL_DOMAIN}`,
+      phone: phone || null,
+      passwordHash,
+      schoolId: req.user.schoolId,
+      role,
+      accessCode,
+      ...extraFields,
+    },
   });
   return { user, accessCode, tempPassword: password ? null : tempPassword };
 }
@@ -350,6 +391,7 @@ router.post('/departments', async (req, res) => {
 router.post('/courses', async (req, res) => {
   const { departmentId, code, title, level, semester } = req.body;
   if (!departmentId || !code || !title) return res.status(400).json({ error: 'Missing required fields' });
+  if (!(await departmentsInSchool([departmentId], req.user.schoolId))) return res.status(400).json({ error: 'Pick a department from your school.' });
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const course = await prisma.course.create({
     data: { departmentId, code, title, level: level || '100L', semester: semester || 'First', semesterId },
@@ -374,6 +416,7 @@ router.patch('/courses/:id', async (req, res) => {
   const course = await prisma.course.findFirst({ where: { id: req.params.id, department: { schoolId: req.user.schoolId } } });
   if (!course) return res.status(404).json({ error: 'Course not found' });
   const { code, title, level, semester, departmentId } = req.body;
+  if (departmentId && !(await departmentsInSchool([departmentId], req.user.schoolId))) return res.status(400).json({ error: 'Pick a department from your school.' });
   const updated = await prisma.course.update({
     where: { id: course.id },
     data: {
@@ -394,6 +437,27 @@ router.patch('/courses/:id', async (req, res) => {
 async function updateSchoolUser(req, res, role, fields) {
   const user = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role } });
   if (!user) return null;
+  if (req.body.departmentId && !(await departmentsInSchool([req.body.departmentId], req.user.schoolId))) {
+    res.status(400).json({ error: 'That department does not exist in your school.' });
+    return 'handled';
+  }
+  const courseIds = parseCourseIds(req.body);
+  if (req.body.courseIds !== undefined && courseIds.length && !(await coursesInSchool(courseIds, req.user.schoolId))) {
+    res.status(400).json({ error: 'One of the chosen courses does not exist in your school.' });
+    return 'handled';
+  }
+  if (typeof req.body.email === 'string') {
+    const e = req.body.email.trim().toLowerCase();
+    if (!e) delete req.body.email; // blank = leave the address as it is
+    else {
+      const clash = await prisma.user.findFirst({ where: { email: e, NOT: { id: user.id } } });
+      if (clash) {
+        res.status(409).json({ error: 'Another account already uses that email.' });
+        return 'handled';
+      }
+      req.body.email = e;
+    }
+  }
   const data = {};
   for (const key of fields) {
     if (req.body[key] === undefined) continue;
@@ -408,6 +472,7 @@ async function updateSchoolUser(req, res, role, fields) {
 
 router.patch('/lecturers/:id', async (req, res) => {
   const updated = await updateSchoolUser(req, res, 'LECTURER', ['fullName', 'email', 'phone', 'staffId', 'departmentId']);
+  if (updated === 'handled') return;
   if (!updated) return res.status(404).json({ error: 'Not found' });
   const courseIds = parseCourseIds(req.body);
   if (req.body.courseIds !== undefined) await setLecturerCourses(updated.id, courseIds);
@@ -417,6 +482,7 @@ router.patch('/lecturers/:id', async (req, res) => {
 
 router.patch('/non-academic-staff/:id', async (req, res) => {
   const updated = await updateSchoolUser(req, res, 'STAFF', ['fullName', 'email', 'phone', 'staffId', 'position', 'departmentId']);
+  if (updated === 'handled') return;
   if (!updated) return res.status(404).json({ error: 'Not found' });
   const { passwordHash, ...safe } = updated;
   res.json({ user: safe });
@@ -424,6 +490,7 @@ router.patch('/non-academic-staff/:id', async (req, res) => {
 
 router.patch('/students/:id', async (req, res) => {
   const updated = await updateSchoolUser(req, res, 'STUDENT', ['fullName', 'email', 'phone', 'matricNumber', 'departmentId', 'yearOfStudy']);
+  if (updated === 'handled') return;
   if (!updated) return res.status(404).json({ error: 'Not found' });
   if (req.body.courseIds !== undefined) {
     const courseIds = parseCourseIds(req.body);

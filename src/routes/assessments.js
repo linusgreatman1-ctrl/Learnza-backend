@@ -4,6 +4,7 @@ const { requireAuth, requireRole, logActivity } = require('../auth');
 const gamification = require('../services/gamification.service');
 const { getCurrentSemesterId } = require('../semester');
 const { notify, notifyMany, notifySchoolAdmins } = require('../services/notification.service');
+const { loadCourse, loadAssessment, plainCourse, loadSubmission, mayModify } = require('../scope');
 
 const router = express.Router();
 
@@ -14,11 +15,11 @@ function minutesFor(questionCount) {
   return Math.max(1, questionCount);
 }
 
-router.get('/courses/:id/assessments', requireAuth, async (req, res) => {
+router.get('/courses/:id/assessments', requireAuth, loadCourse(), async (req, res) => {
   const assessments = await prisma.assessment.findMany({
     // Drafts (sentAt still null) are the lecturer's own working copy -- invisible to
     // students until deliberately sent, same as a draft Result.
-    where: { courseId: req.params.id, ...(req.user.role === 'STUDENT' ? { sentAt: { not: null } } : {}) },
+    where: { courseId: req.course.id, ...(req.user.role === 'STUDENT' ? { sentAt: { not: null } } : {}) },
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: 'desc' },
   });
@@ -39,7 +40,7 @@ function questionCreateData(questions) {
   }));
 }
 
-router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const { title, type, durationMin, questions, send } = req.body;
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Title and at least one question are required' });
@@ -51,7 +52,7 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const assessment = await prisma.assessment.create({
     data: {
-      courseId: req.params.id,
+      courseId: req.course.id,
       title,
       type: type || 'CA',
       durationMin: durationMin || 20,
@@ -68,7 +69,7 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
   // later); PAST_QUESTION sets are practice material a student opts into, not an
   // event worth pushing a notification for.
   if (type !== 'PAST_QUESTION' && send !== false) {
-    const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
+    const students = await prisma.enrollment.findMany({ where: { courseId: req.course.id }, select: { studentId: true } });
     const label = type === 'SEMESTER_EXAM' ? 'New semester exam' : 'New test';
     await notifyMany(students.map((s) => s.studentId), label, title, type === 'SEMESTER_EXAM' ? 'semester-exam-hub' : 'cbt-mock');
   }
@@ -79,10 +80,9 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
 // Sends (or resends) a test/exam to its class -- draft -> sent the first time, just a
 // fresh round of notifications every time after (e.g. a reminder, or for students who
 // missed the first one). Mirrors the equivalent /results/:id/send.
-router.post('/assessments/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-  if (assessment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
+router.post('/assessments/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), loadAssessment(), async (req, res) => {
+  const assessment = req.assessment;
+  if (!mayModify(req.user, assessment.authorId)) {
     return res.status(403).json({ error: 'You can only send tests/exams you created.' });
   }
   const updated = await prisma.assessment.update({ where: { id: assessment.id }, data: { sentAt: assessment.sentAt || new Date() } });
@@ -99,11 +99,10 @@ router.post('/assessments/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN
 // editing a test is expected to review the whole thing anyway); refused once anyone
 // has submitted, since changing questions under a student mid-attempt (or after
 // grading) would silently invalidate their score.
-router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), loadAssessment(), async (req, res) => {
   const { title, questions, send } = req.body;
-  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-  if (assessment.authorId !== req.user.id && req.user.role !== 'ADMIN') {
+  const assessment = req.assessment;
+  if (!mayModify(req.user, assessment.authorId)) {
     return res.status(403).json({ error: 'You can only edit tests/exams you created.' });
   }
   const submissionCount = await prisma.submission.count({ where: { assessmentId: assessment.id, submittedAt: { not: null } } });
@@ -141,12 +140,8 @@ router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), as
 // Student view: questions without the correct answer revealed. mySubmission may be a
 // completed attempt (score set) or an in-progress one (startedAt set, score still
 // null) -- the frontend uses that to resume a timer rather than restart it.
-router.get('/assessments/:id', requireAuth, async (req, res) => {
-  const assessment = await prisma.assessment.findUnique({
-    where: { id: req.params.id },
-    include: { questions: true, course: true },
-  });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+router.get('/assessments/:id', requireAuth, loadAssessment({ include: { questions: true } }), async (req, res) => {
+  const assessment = { ...req.assessment, course: plainCourse(req.assessment) };
 
   if (req.user.role === 'STUDENT') {
     const mySubmission = await prisma.submission.findUnique({
@@ -166,9 +161,8 @@ router.get('/assessments/:id', requireAuth, async (req, res) => {
 
 // Stamps (or resumes) the student's attempt start time -- the deadline for /submit is
 // measured from here, not from whenever the client happens to POST the answers.
-router.post('/assessments/:id/start', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id }, include: { _count: { select: { questions: true } } } });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+router.post('/assessments/:id/start', requireAuth, requireRole('STUDENT'), loadAssessment({ include: { _count: { select: { questions: true } } } }), async (req, res) => {
+  const assessment = req.assessment;
   const durationMin = minutesFor(assessment._count.questions);
 
   const existing = await prisma.submission.findUnique({
@@ -183,13 +177,9 @@ router.post('/assessments/:id/start', requireAuth, requireRole('STUDENT'), async
   res.json({ startedAt: submission.startedAt, durationMin });
 });
 
-router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), loadAssessment({ include: { questions: true } }), async (req, res) => {
   const { answers } = req.body; // array of { questionId, choice } (objective) / { questionId, text } (theory)
-  const assessment = await prisma.assessment.findUnique({
-    where: { id: req.params.id },
-    include: { questions: true },
-  });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+  const assessment = req.assessment;
 
   const existing = await prisma.submission.findUnique({
     where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: req.user.id } },
@@ -241,9 +231,8 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), asyn
 // Review-mistakes: correct answers + the student's own choice, for after a graded
 // (non-practice) submission. Theory questions show the model answer alongside the
 // student's text for self-comparison, never a correct/wrong verdict.
-router.get('/assessments/:id/my-review', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id }, include: { questions: true } });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+router.get('/assessments/:id/my-review', requireAuth, requireRole('STUDENT'), loadAssessment({ include: { questions: true } }), async (req, res) => {
+  const assessment = req.assessment;
   const submission = await prisma.submission.findUnique({
     where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: req.user.id } },
   });
@@ -268,10 +257,9 @@ router.get('/assessments/:id/my-review', requireAuth, requireRole('STUDENT'), as
 // gamification points -- just instant grading so a student can retry as many times as
 // they want. Theory questions are never auto-graded -- the model answer comes back for
 // self-comparison and doesn't affect the score.
-router.post('/assessments/:id/practice-submit', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.post('/assessments/:id/practice-submit', requireAuth, requireRole('STUDENT'), loadAssessment({ include: { questions: true } }), async (req, res) => {
   const { answers } = req.body;
-  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id }, include: { questions: true } });
-  if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+  const assessment = req.assessment;
   if (assessment.type !== 'PAST_QUESTION') return res.status(400).json({ error: 'Only past-question sets support practice mode.' });
 
   const answerMap = new Map((answers || []).map((a) => [a.questionId, a]));
@@ -328,13 +316,16 @@ router.get('/lecturer/theory-submissions', requireAuth, requireRole('LECTURER', 
 // The score/max the lecturer enters for the theory portion only -- kept separate from
 // the auto-graded objective `score`/`total` rather than merged into one number, since
 // the two are graded through entirely different mechanisms.
-router.post('/submissions/:id/mark-theory', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/submissions/:id/mark-theory', requireAuth, requireRole('LECTURER', 'ADMIN'), loadSubmission({ include: { student: { select: { fullName: true, schoolId: true } } } }), async (req, res) => {
   const { theoryScore, theoryMaxScore } = req.body;
   if (theoryScore === undefined || theoryScore === null || theoryMaxScore === undefined || theoryMaxScore === null) {
     return res.status(400).json({ error: 'A score and max score are required.' });
   }
+  if (!mayModify(req.user, req.submission.assessment.authorId)) {
+    return res.status(403).json({ error: 'You can only mark work on tests you set.' });
+  }
   const submission = await prisma.submission.update({
-    where: { id: req.params.id },
+    where: { id: req.submission.id },
     data: { theoryScore: Number(theoryScore), theoryMaxScore: Number(theoryMaxScore), markedAt: new Date() },
     include: { assessment: { select: { title: true } }, student: { select: { fullName: true, schoolId: true } } },
   });
@@ -387,9 +378,10 @@ router.get('/students/me/results', requireAuth, requireRole('STUDENT'), async (r
 });
 
 // Lecturer: score sheet for an assessment. Only completed attempts.
-router.get('/assessments/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.get('/assessments/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'), loadAssessment(), async (req, res) => {
+  if (!mayModify(req.user, req.assessment.authorId)) return res.status(403).json({ error: 'Only the lecturer who set this test can see its scores.' });
   const submissions = await prisma.submission.findMany({
-    where: { assessmentId: req.params.id, submittedAt: { not: null } },
+    where: { assessmentId: req.assessment.id, submittedAt: { not: null } },
     include: { student: { select: { fullName: true, matricNumber: true } } },
     orderBy: { score: 'desc' },
   });

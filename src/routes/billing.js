@@ -49,7 +49,7 @@ router.post('/checkout', requireAuth, requireRole('STUDENT'), async (req, res) =
         email: req.user.email,
         amountKobo: planConfig.amountKobo,
         reference,
-        callbackUrl: `${origin}/app.html#billing-callback`,
+        callbackUrl: `${origin}${req.user.schoolId ? "/schools" : "/app"}#billing-callback`,
         metadata: { userId: req.user.id, plan },
       });
       return res.json({ checkoutUrl: data.authorization_url, reference: payment.reference });
@@ -59,7 +59,7 @@ router.post('/checkout', requireAuth, requireRole('STUDENT'), async (req, res) =
       email: req.user.email,
       amountNaira: planConfig.amountNaira,
       reference,
-      redirectUrl: `${origin}/app.html#billing-callback`,
+      redirectUrl: `${origin}${req.user.schoolId ? "/schools" : "/app"}#billing-callback`,
       meta: { userId: req.user.id, plan },
     });
     return res.json({ checkoutUrl: data.link, reference: payment.reference });

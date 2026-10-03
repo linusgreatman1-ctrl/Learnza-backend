@@ -4,31 +4,32 @@ const { requireAuth, requireRole, logActivity } = require('../auth');
 const { notifyMany } = require('../services/notification.service');
 const liveRealtime = require('../realtime/live');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
+const { loadCourse, hasSchool } = require('../scope');
 
 const router = express.Router();
 const recordingUpload = memoryUpload(80); // recorded class videos, same cap as lecture-upload
 
-router.get('/courses/:id/live', requireAuth, async (req, res) => {
+router.get('/courses/:id/live', requireAuth, loadCourse(), async (req, res) => {
   const liveClass = await prisma.liveClass.findFirst({
-    where: { courseId: req.params.id, status: 'ACTIVE' },
+    where: { courseId: req.course.id, status: 'ACTIVE' },
     include: { host: { select: { fullName: true } } },
   });
   res.json({ liveClass });
 });
 
-router.post('/courses/:id/live/start', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+router.post('/courses/:id/live/start', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const { title } = req.body;
-  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-  await prisma.liveClass.updateMany({ where: { courseId: req.params.id, status: 'ACTIVE' }, data: { status: 'ENDED', endedAt: new Date() } });
+  const course = req.course;
+  await prisma.liveClass.updateMany({ where: { courseId: course.id, status: 'ACTIVE' }, data: { status: 'ENDED', endedAt: new Date() } });
   const liveClass = await prisma.liveClass.create({
-    data: { courseId: req.params.id, hostId: req.user.id, title: title || 'Live class' },
+    data: { courseId: course.id, hostId: req.user.id, title: title || 'Live class' },
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'START_LIVE_CLASS', liveClass.title);
 
   // Deep-links straight into the live session (not just the course page) so tapping
   // the notification really is "tap to join", not "tap, then hunt for the join button".
-  const joinLink = `live-class?courseId=${req.params.id}&liveClassId=${liveClass.id}&title=${encodeURIComponent(liveClass.title)}`;
-  const students = await prisma.enrollment.findMany({ where: { courseId: req.params.id }, select: { studentId: true } });
+  const joinLink = `live-class?courseId=${course.id}&liveClassId=${liveClass.id}&title=${encodeURIComponent(liveClass.title)}`;
+  const students = await prisma.enrollment.findMany({ where: { courseId: course.id }, select: { studentId: true } });
   await notifyMany(
     students.map((s) => s.studentId),
     `${req.user.fullName} is teaching live — tap to join`,
