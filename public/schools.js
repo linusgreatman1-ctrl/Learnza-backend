@@ -706,7 +706,22 @@
 
   function navigate(screen, params = {}) {
     window.speechSynthesis && window.speechSynthesis.cancel();
-    if (state.view.screen === 'live-class' && screen !== 'live-class') teardownLive();
+    if (state.view.screen === 'live-class' && screen !== 'live-class') {
+      // A live class cannot continue once the lecturer's screen is gone (the camera and the connections live on it), so
+      // leaving it is a deliberate choice, never an accident.
+      if (live && live.isHost) {
+        if (!window.confirm('Your class is still live. Leaving ends it for everyone. End the class and leave?')) return;
+        const endingId = live.liveClassId;
+        const blobPromise = stopRecordingAndGetBlob();
+        teardownLive();
+        blobPromise.then(async (blob) => {
+          try { await api(`/live/${endingId}/end`, { method: 'POST' }); } catch { /* the server also ends it after a short wait */ }
+          if (blob && blob.size > 0) uploadLiveRecording(endingId, blob);
+        });
+      } else {
+        teardownLive();
+      }
+    }
     if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
     if (speechCtrl) {
@@ -756,6 +771,9 @@
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
         case 'settings': return renderSettings();
+        case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
+        case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
+        case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'settings-profile': return renderSettingsProfile();
         case 'settings-password': return renderSettingsPassword();
         case 'lab': return renderLab();
@@ -771,9 +789,6 @@
         case 'lect-dashboard': return renderLecturerDashboard();
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
-        case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
-        case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
-        case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'lect-library': return renderLibrary(true);
         case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM', 'PAST_QUESTION'], allowedTypes: ['CA', 'Test', 'Mock'] });
         case 'lect-assessments': return renderAssessments(true, { heading: 'Assessments', typeFilter: ['PAST_QUESTION'], defaultType: 'PAST_QUESTION', allowedTypes: ['PAST_QUESTION'] });
@@ -1792,7 +1807,11 @@
         <div class="live-video-col">
           <div class="live-stage">
             <div class="page-head">
-              <div><span class="pill pill-danger"><span class="live-dot"></span>Live</span><h1 style="margin-top:8px;">${esc(title || 'Live class')}</h1></div>
+              <div>
+                <span class="pill pill-danger"><span class="live-dot"></span>Live</span>
+                <div class="meta" id="live-subject" style="margin-top:8px; font-weight:600;"></div>
+                <h1 style="margin-top:4px;" id="live-topic-title">${esc(title || 'Live class')}</h1>
+              </div>
               <div style="display:flex; align-items:center; gap:10px;">
                 <span class="pill pill-muted" id="live-watching-pill">👀 0 watching</span>
                 <button class="btn btn-ghost btn-sm" id="leave-btn">${isHost ? 'End class' : 'Leave'}</button>
@@ -1804,23 +1823,31 @@
         <div class="live-side-col">
           ${isHost ? `
             <div class="card" style="padding:12px 16px; margin-bottom:10px;">
+              <label class="meta" for="live-topic-input">Topic (students see this)</label>
+              <input type="text" id="live-topic-input" value="${esc(title || '')}" placeholder="What are you teaching now?" style="width:100%; margin-top:6px;">
+            </div>
+            <div class="card" style="padding:12px 16px; margin-bottom:10px;">
+              <h3 style="font-size:0.95rem; margin-bottom:8px;">📣 Ask the class a question</h3>
+              <form id="live-askclass-form" style="display:flex; gap:8px;">
+                <input type="text" id="live-askclass-input" placeholder="Type your question for the class…" style="flex:1;">
+                <button class="btn btn-accent btn-sm" type="submit">Ask</button>
+              </form>
+              <div id="live-askclass-active"></div>
+            </div>
+            <div class="card" style="padding:12px 16px; margin-bottom:10px;">
               <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                <h3 style="font-size:0.95rem;">🙋 Student questions</h3>
+                <h3 style="font-size:0.95rem;">✋ Hands &amp; questions</h3>
                 <span class="pill pill-accent" id="live-question-count">0 waiting</span>
               </div>
               <div id="live-speaking-list"></div>
-              <div id="live-question-queue"><p class="muted">No questions yet.</p></div>
+              <div id="live-question-queue"><p class="muted">Nothing yet. When students raise a hand you can let them speak.</p></div>
             </div>
-          ` : ''}
+          ` : `
+            <div class="card" style="padding:14px 16px; margin-bottom:10px;"><div id="live-hand-zone"></div></div>
+          `}
           <div id="live-qa-feed"></div>
           <div class="card live-chat">
             <div class="chat-messages" id="live-chat-messages"></div>
-            ${!isHost ? `
-              <form class="chat-input-row" id="live-question-form">
-                <input type="text" id="live-question-input" placeholder="Ask the lecturer a question…">
-                <button class="btn btn-accent btn-sm" type="submit">🙋 Ask</button>
-              </form>
-            ` : ''}
             <form class="chat-input-row" id="live-chat-form">
               <input type="text" id="live-chat-input" placeholder="Message the class…">
               <button class="btn btn-primary btn-sm" type="submit">Send</button>
@@ -1831,7 +1858,7 @@
     `;
 
     teardownLive();
-    live = { isHost, liveClassId, peers: new Map(), localStream: null, socket: null, questions: new Map() };
+    live = { isHost, liveClassId, peers: new Map(), localStream: null, socket: null, questions: new Map(), hands: new Map(), floor: null, classQuestion: null, hand: { state: 'idle', kind: 'question' } };
 
     document.getElementById('leave-btn').addEventListener('click', async () => {
       // Call the REST endpoint directly rather than emitting a socket event right
@@ -1862,16 +1889,25 @@
       live.socket.emit('chat:message', { liveClassId, text: input.value.trim() });
       input.value = '';
     });
-    const questionForm = document.getElementById('live-question-form');
-    if (questionForm) {
-      questionForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const input = document.getElementById('live-question-input');
-        if (!input.value.trim()) return;
-        live.socket.emit('live:question', { liveClassId, text: input.value.trim() });
-        toast('Question sent to the lecturer');
-        input.value = '';
+    if (isHost) {
+      // The topic the lecturer types shows on every student's screen.
+      let topicTimer = null;
+      document.getElementById('live-topic-input').addEventListener('input', (e) => {
+        clearTimeout(topicTimer);
+        topicTimer = setTimeout(() => live && live.socket && live.socket.emit('live:update-info', { liveClassId, topic: e.target.value }), 500);
       });
+      document.getElementById('live-askclass-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = document.getElementById('live-askclass-input');
+        if (!input.value.trim()) return;
+        live.classQuestion = input.value.trim();
+        live.socket.emit('live:ask-class', { liveClassId, question: live.classQuestion });
+        input.value = '';
+        renderAskClassActive();
+      });
+      renderAskClassActive();
+    } else {
+      renderHandZone();
     }
 
     try {
@@ -1881,30 +1917,42 @@
     }
   }
 
-  // A student only becomes inviteable once they've raised their hand by sending a
-  // question -- there's no standing "Invite to speak" on every connected student
-  // (that used to show automatically the moment anyone joined, cluttering the host's
-  // screen with a control for students who had said nothing).
+  // Host: the question the class is currently being asked, with a way to put it away.
+  function renderAskClassActive() {
+    const box = document.getElementById('live-askclass-active');
+    if (!box || !live) return;
+    if (!live.classQuestion) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="meta" style="margin-top:10px;"><b>The class is answering:</b> ${esc(live.classQuestion)} <button class="btn btn-ghost btn-sm" id="live-askclass-clear">Clear</button></div>`;
+    document.getElementById('live-askclass-clear').addEventListener('click', () => {
+      live.classQuestion = null;
+      live.socket.emit('live:ask-class', { liveClassId: live.liveClassId, question: '' });
+      renderAskClassActive();
+    });
+  }
+
+  // Host: raised hands (each can be let in), then the typed questions and answers students have sent.
   function renderQuestionQueue() {
     const box = document.getElementById('live-question-queue');
     const countPill = document.getElementById('live-question-count');
     if (!box || !live) return;
+    const hands = Array.from(live.hands.values());
     const items = Array.from(live.questions.values());
-    countPill.textContent = `${items.length} waiting`;
-    box.innerHTML = items.length ? items.map((q) => `
+    countPill.textContent = `${hands.length + items.length} waiting`;
+    const handHtml = hands.map((h) => `
+      <div class="list-row" style="align-items:center; gap:8px;">
+        <div><div style="font-weight:600;">✋ ${esc(h.studentName)}</div><div class="meta">${h.kind === 'answer' ? 'wants to answer' : 'has a question'}</div></div>
+        <button class="btn btn-accent btn-sm" data-allow="${esc(h.studentSocketId)}">🎤 Allow to speak</button>
+      </div>`).join('');
+    const itemHtml = items.map((q) => `
       <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:8px;" data-question-row="${q.id}">
-        <div><div style="font-weight:600;">${esc(q.studentName)}</div><p style="margin-top:4px;">${esc(q.text)}</p></div>
-        <div style="display:flex; gap:8px; width:100%;">
-          ${live.speakingStudents.has(q.studentSocketId)
-            ? '<span class="pill pill-accent">🎤 Speaking now</span>'
-            : `<button class="btn btn-accent btn-sm invite-speak-btn" data-invite-speak="${q.studentSocketId}" data-student-name="${esc(q.studentName)}">🎤 Invite to speak</button>`}
-        </div>
+        <div><div style="font-weight:600;">${q.kind === 'answer' ? '✍' : '💬'} ${esc(q.studentName)} ${q.kind === 'answer' ? 'answered' : 'asked'}</div><p style="margin-top:4px;">${esc(q.text)}</p></div>
         <form class="answer-form" data-answer-for="${q.id}" style="display:flex; gap:8px; width:100%;">
-          <input type="text" class="answer-input" placeholder="Type your answer…" style="flex:1;">
-          <button class="btn btn-primary btn-sm" type="submit">Answer</button>
+          <input type="text" class="answer-input" placeholder="Reply to the class…" style="flex:1;">
+          <button class="btn btn-primary btn-sm" type="submit">Reply</button>
+          <button class="btn btn-ghost btn-sm done-btn" type="button" title="Mark as done">✅</button>
         </form>
-      </div>
-    `).join('') : '<p class="muted">No questions yet.</p>';
+      </div>`).join('');
+    box.innerHTML = (handHtml + itemHtml) || '<p class="muted">Nothing yet. When students raise a hand you can let them speak.</p>';
     box.querySelectorAll('.answer-form').forEach((form) => {
       form.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -1914,37 +1962,86 @@
         live.questions.delete(form.dataset.answerFor);
         renderQuestionQueue();
       });
+      form.querySelector('.done-btn').addEventListener('click', () => { live.questions.delete(form.dataset.answerFor); renderQuestionQueue(); });
     });
-    box.querySelectorAll('[data-invite-speak]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const studentSocketId = btn.dataset.inviteSpeak;
-        live.socket.emit('live:invite-to-speak', { liveClassId: live.liveClassId, studentSocketId });
-        live.speakingStudents.set(studentSocketId, btn.dataset.studentName);
-        renderSpeakingList();
-        renderQuestionQueue();
-      });
+    box.querySelectorAll('[data-allow]').forEach((btn) => {
+      btn.addEventListener('click', () => live.socket.emit('live:allow', { liveClassId: live.liveClassId, studentSocketId: btn.dataset.allow }));
     });
   }
 
-  // Host-side: everyone currently invited to speak, with a direct way to cut any of
-  // them off and keep teaching -- kept separate from the question queue itself so
-  // this control survives answering (which removes the question) or the queue
-  // otherwise re-rendering.
+  // Host: the one student who has the floor right now, with a way to end their turn. The lecturer hears a student
+  // only while that student has been let in.
   function renderSpeakingList() {
     const box = document.getElementById('live-speaking-list');
     if (!box || !live) return;
-    const entries = Array.from(live.speakingStudents.entries());
-    box.innerHTML = entries.map(([studentSocketId, name]) => `
-      <div class="list-row" style="padding:8px 0;">
-        <span>🎤 ${esc(name)} is speaking</span>
-        <button class="btn btn-ghost btn-sm" data-stop-speaking="${studentSocketId}">🛑 Stop speaking</button>
-      </div>
-    `).join('');
-    box.querySelectorAll('[data-stop-speaking]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        live.socket.emit('live:stop-speaking', { liveClassId: live.liveClassId, studentSocketId: btn.dataset.stopSpeaking });
-      });
+    const f = live.floor;
+    if (!f) { box.innerHTML = ''; return; }
+    const line = f.phase === 'speaking' ? `🎤 ${esc(f.name)} is speaking — the class can hear them`
+      : f.phase === 'typing' ? `⌨ ${esc(f.name)} is typing…`
+      : `⏳ ${esc(f.name)} is choosing how to ${f.kind === 'answer' ? 'answer' : 'ask'}…`;
+    box.innerHTML = `<div class="list-row" style="padding:8px 0;"><span>${line}</span><button class="btn btn-ghost btn-sm" id="live-end-turn">⏹ End turn</button></div>`;
+    document.getElementById('live-end-turn').addEventListener('click', () => {
+      live.socket.emit('live:end-speak', { liveClassId: live.liveClassId, studentSocketId: f.socketId });
     });
+  }
+
+  // Student: the one question button, and everything that follows it.
+  function renderHandZone() {
+    const zone = document.getElementById('live-hand-zone');
+    if (!zone || !live || live.isHost) return;
+    const h = live.hand || { state: 'idle', kind: 'question' };
+    const noun = h.kind === 'answer' ? 'answer' : 'question';
+    const other = live.floor && live.floor.socketId !== live.socket.id ? live.floor : null;
+    const q = live.classQuestion ? `<div class="live-banner" style="margin-bottom:10px;"><div><strong>📣 Your lecturer asks:</strong> ${esc(live.classQuestion)}</div></div>` : '';
+    let body;
+    if (h.state === 'allowed') {
+      body = `<div style="font-weight:600; margin-bottom:8px;">✅ Go ahead — how would you like to give your ${noun}?</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-accent btn-sm" data-hand="mic">🎤 Use mic</button><button class="btn btn-primary btn-sm" data-hand="type">⌨ Type it</button></div>`;
+    } else if (h.state === 'mic') {
+      body = `<div style="display:flex; align-items:center; gap:10px;"><span class="live-dot"></span><span style="flex:1; font-weight:600;">You're live — the class can hear you</span><button class="btn btn-ghost btn-sm" data-hand="done">✔ Done</button></div>`;
+    } else if (h.state === 'typing') {
+      body = `<div style="font-weight:600; margin-bottom:8px;">⌨ Type your ${noun}</div>
+        <form id="live-hand-form" style="display:flex; gap:8px;"><input type="text" id="live-hand-input" placeholder="Type your ${noun}…" style="flex:1;" autocomplete="off"><button class="btn btn-accent btn-sm" type="submit">Send</button></form>
+        <button class="btn btn-ghost btn-sm" data-hand="cancel" style="margin-top:6px;">Cancel</button>`;
+    } else if (h.state === 'waiting') {
+      body = `<div style="font-weight:600;">⏳ Waiting for your lecturer to let you ${h.kind === 'answer' ? 'answer' : 'ask your question'}…</div>${other ? `<div class="meta" style="margin-top:4px;">${esc(other.name)} is ${other.kind === 'answer' ? 'answering' : 'asking'} now</div>` : ''}
+        <button class="btn btn-ghost btn-sm" data-hand="lower" style="margin-top:6px;">Put my hand down</button>`;
+    } else if (h.state === 'sent') {
+      body = '<div style="font-weight:700; color:var(--accent);">✅ Sent to your lecturer</div>';
+    } else if (other) {
+      body = `<div class="meta" style="opacity:.6;">🎤 ${esc(other.name)} is ${other.kind === 'answer' ? 'answering' : 'asking a question'}…</div>`;
+    } else {
+      body = `<button class="btn btn-primary" style="width:100%;" data-hand="raise">${live.classQuestion ? '✋ Raise your hand to answer' : '✋ Got a question? Raise your hand'}</button>`;
+    }
+    zone.innerHTML = q + body;
+    zone.querySelectorAll('[data-hand]').forEach((btn) => btn.addEventListener('click', () => handAction(btn.dataset.hand)));
+    const form = document.getElementById('live-hand-form');
+    if (form) {
+      const input = document.getElementById('live-hand-input');
+      input.focus();
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!input.value.trim()) return;
+        live.socket.emit('live:question', { liveClassId: live.liveClassId, text: input.value.trim() });
+      });
+    }
+  }
+  function setHand(state, kind) {
+    if (!live) return;
+    live.hand = { state, kind: kind || (live.hand && live.hand.kind) || 'question' };
+    clearTimeout(live.sentTimer);
+    if (state === 'sent') live.sentTimer = setTimeout(() => { if (live && live.hand.state === 'sent') { live.hand = { state: 'idle', kind: 'question' }; renderHandZone(); } }, 3500);
+    renderHandZone();
+  }
+  function handAction(action) {
+    if (!live || !live.socket) return;
+    const id = live.liveClassId;
+    if (action === 'raise') { live.socket.emit('live:raise-hand', { liveClassId: id }); setHand('waiting', live.classQuestion ? 'answer' : 'question'); }
+    else if (action === 'lower') { live.socket.emit('live:lower-hand', { liveClassId: id }); setHand('idle', 'question'); }
+    else if (action === 'mic') { live.socket.emit('live:speak-mode', { liveClassId: id, mode: 'mic' }); setHand('mic'); live.startMic && live.startMic(); }
+    else if (action === 'type') { live.socket.emit('live:speak-mode', { liveClassId: id, mode: 'type' }); setHand('typing'); }
+    else if (action === 'done') { live.socket.emit('live:stop-speaking', { liveClassId: id, studentSocketId: live.socket.id }); stopSpeaking(); setHand('idle', 'question'); }
+    else if (action === 'cancel') { live.socket.emit('live:stop-speaking', { liveClassId: id, studentSocketId: live.socket.id }); setHand('idle', 'question'); }
   }
 
   function appendQaFeed(studentName, question, answer) {
@@ -2028,6 +2125,7 @@
   }
   function stopSpeaking() {
     document.getElementById('speaking-banner')?.remove();
+    if (!live) return;
     if (live.speakMicStream) { live.speakMicStream.getTracks().forEach((t) => t.stop()); live.speakMicStream = null; }
     if (live.speakPc) { live.speakPc.close(); live.speakPc = null; }
   }
@@ -2064,8 +2162,54 @@
       const pill = document.getElementById('live-watching-pill');
       if (pill) pill.textContent = `👀 ${count} watching`;
     });
-    socket.on('live:room-info', ({ title: roomTitle }) => {
-      if (roomTitle) { const h1 = view.querySelector('.page-head h1'); if (h1) h1.textContent = roomTitle; }
+    // What the lecturer has set: the subject (course) and the topic they typed. Shown to everyone, updated live.
+    socket.on('live:room-info', ({ title: roomTitle, subject, classQuestion, floor }) => {
+      const subj = document.getElementById('live-subject'); if (subj) subj.textContent = subject ? `📚 ${subject}` : '';
+      const h1 = document.getElementById('live-topic-title'); if (h1 && roomTitle) h1.textContent = roomTitle;
+      if (!live) return;
+      live.classQuestion = classQuestion || null;
+      live.floor = floor || null;
+      if (!isHost) renderHandZone();
+    });
+    socket.on('live:floor', (floor) => {
+      if (!live) return;
+      live.floor = floor || null;
+      if (isHost) renderSpeakingList(); else renderHandZone();
+    });
+    socket.on('live:class-question', ({ question }) => {
+      if (!live) return;
+      live.classQuestion = question || null;
+      if (!isHost && ['idle', 'waiting', 'sent'].includes(live.hand.state)) live.hand = { state: 'idle', kind: 'question' };
+      if (!isHost) renderHandZone();
+    });
+    socket.on('live:hand-raised', ({ studentSocketId, studentName, kind }) => {
+      if (!live || !isHost) return;
+      live.hands.set(studentSocketId, { studentSocketId, studentName, kind });
+      renderQuestionQueue();
+    });
+    socket.on('live:hand-lowered', ({ studentSocketId }) => {
+      if (!live || !isHost) return;
+      live.hands.delete(studentSocketId);
+      renderQuestionQueue();
+    });
+    socket.on('live:hands-sync', ({ hands, floor, classQuestion }) => {
+      if (!live || !isHost) return;
+      live.hands = new Map((hands || []).map((h) => [h.studentSocketId, h]));
+      live.floor = floor || null;
+      if (classQuestion && !live.classQuestion) live.classQuestion = classQuestion;
+      renderQuestionQueue(); renderSpeakingList(); renderAskClassActive();
+    });
+    socket.on('live:hand-state', ({ state, kind }) => {
+      if (!live || isHost) return;
+      // "speak-ended" below handles the end of a turn that was already under way
+      if (state === 'idle' && ['mic', 'typing', 'allowed'].includes(live.hand.state)) return;
+      setHand(state, kind);
+    });
+    socket.on('live:allowed', ({ kind }) => { if (live && !isHost) { toast('Your lecturer says go ahead'); setHand('allowed', kind || 'question'); } });
+    socket.on('live:speak-ended', () => {
+      if (!live || isHost) return;
+      stopSpeaking();
+      if (['mic', 'typing', 'allowed'].includes(live.hand.state)) { toast('Your turn has ended.'); setHand('idle', 'question'); }
     });
     socket.on('live:qa', ({ studentName, question, answer }) => appendQaFeed(studentName, question, answer));
     socket.on('live:new-question', (q) => { live.questions.set(q.id, q); renderQuestionQueue(); });
@@ -2142,6 +2286,8 @@
       // without renegotiating any of the existing per-student video connections.
       socket.on('webrtc:offer', async ({ from: studentSocketId, offer, purpose }) => {
         if (purpose !== 'speak') return;
+        // The lecturer hears a student only while that student has been let in.
+        if (!live.floor || live.floor.socketId !== studentSocketId) return;
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         live.speakerInboundPcs.set(studentSocketId, pc);
         pc.onicecandidate = (e) => { if (e.candidate) socket.emit('webrtc:ice-candidate', { to: studentSocketId, candidate: e.candidate, purpose: 'speak' }); };
@@ -2185,12 +2331,6 @@
         });
         removeRelayedAudio(studentSocketId);
         live.speakingStudents.delete(studentSocketId);
-        // Clear their question off the queue entirely once they're done speaking --
-        // otherwise it just sat there re-showing "Invite to speak" for someone who'd
-        // already had the floor. They only reappear by raising their hand again.
-        Array.from(live.questions.entries()).forEach(([id, q]) => {
-          if (q.studentSocketId === studentSocketId) live.questions.delete(id);
-        });
         renderSpeakingList();
         renderQuestionQueue();
       });
@@ -2229,10 +2369,9 @@
         if (pc) { try { await pc.addIceCandidate(candidate); } catch {} }
       });
 
-      // Invited by the teacher to speak: opens this student's mic on a fresh,
-      // separate connection to the host (never touching the always-on video pc
-      // above), so joining/leaving speaking never risks the video feed.
-      socket.on('live:invited-to-speak', async () => {
+      // The student chose "Use mic" after being let in: open the mic on a fresh, separate connection to the host
+      // (never touching the always-on video pc above), so speaking can never risk the video feed.
+      live.startMic = async () => {
         try {
           const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -2243,11 +2382,12 @@
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           socket.emit('webrtc:offer', { to: live.hostSocketId, offer, purpose: 'speak' });
-          showSpeakingBanner();
         } catch {
           toast('Could not access your microphone.');
+          socket.emit('live:stop-speaking', { liveClassId: live.liveClassId, studentSocketId: socket.id });
+          setHand('idle', 'question');
         }
-      });
+      };
       socket.on('webrtc:answer', async ({ answer, purpose }) => {
         if (purpose === 'speak' && live.speakPc) await live.speakPc.setRemoteDescription(answer);
       });
@@ -2806,6 +2946,15 @@
       ` : ''}
 
       <div class="settings-section">
+        <div class="settings-section-label">Help</div>
+        <div class="card">
+          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Teacher time', action: 'nav:wallet' }) : ''}
+          ${settingsArrowRowHtml({ icon: '🎧', label: 'Help & Support', sub: 'Tickets and live chat', action: 'nav:support' })}
+          ${settingsArrowRowHtml({ icon: '⭐', label: 'Rate Learnza', action: 'nav:support-review' })}
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-label">Account</div>
         <div class="card">
           ${settingsArrowRowHtml({ icon: '👤', label: 'Edit Profile', sub: 'Name and phone number', action: 'nav:settings-profile' })}
@@ -2945,15 +3094,6 @@
           saveSession(state.token, state.user, state.refreshToken);
         }
         toast('Password updated');
-      <div class="settings-section">
-        <div class="settings-section-label">Help</div>
-        <div class="card">
-          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Teacher time', action: 'nav:wallet' }) : ''}
-          ${settingsArrowRowHtml({ icon: '🎧', label: 'Help & Support', sub: 'Tickets and live chat', action: 'nav:support' })}
-          ${settingsArrowRowHtml({ icon: '⭐', label: 'Rate Learnza', action: 'nav:support-review' })}
-        </div>
-      </div>
-
         navigate('settings');
       } catch (err) { toast(err.message); }
     });
@@ -4052,6 +4192,7 @@
     } catch {
       // Webhook may still be catching up; the billing page will reflect status shortly either way.
     }
+    return 'billing';
   }
 
   function libraryTypeIcon(type) {
@@ -4192,7 +4333,6 @@
     view.querySelectorAll('[data-open-pdf]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('pdf-viewer', { url: btn.dataset.openPdf, title: btn.dataset.pdfTitle, backTo: isLecturer ? 'lect-library' : 'library' }));
     });
-    return 'billing';
   }
 
   async function renderGroups() {
@@ -4330,6 +4470,7 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('groups'));
     const box = document.getElementById('chat-messages');
     box.scrollTop = box.scrollHeight;
+    LZX.groupExtras({ api, esc, toast, groupId: state.view.groupId, view }).catch(() => {});
     view.querySelectorAll('[data-toggle-delete-menu]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -4470,7 +4611,6 @@
       }).join('') || '<p class="muted">No courses yet.</p>'}
     `;
     view.querySelectorAll('[data-take]').forEach((btn) => {
-    LZX.groupExtras({ api, esc, toast, groupId: state.view.groupId, view }).catch(() => {});
       btn.addEventListener('click', () => navigate('take-assessment', { assessmentId: btn.dataset.take, backTo: state.view.screen }));
     });
     view.querySelectorAll('[data-results]').forEach((btn) => {
