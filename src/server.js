@@ -20,7 +20,6 @@ const supportRoutes = require('./routes/support');
 const questionsRoutes = require('./routes/questions');
 const siteFiles = require('./siteFiles');
 const syslog = require('./syslog');
-const { previewHandler } = require('./routes/superCode');
 const assessmentsRoutes = require('./routes/assessments');
 const adminRoutes = require('./routes/admin');
 const billingRoutes = require('./routes/billing');
@@ -150,10 +149,7 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 //   /app      the Student app    (independent learners)
 //   /schools  the Schools app    (school admin, lecturers, school students)
 //   /admin    the Super-admin panel (platform owner; onboards schools)
-// Front-end files edited in the admin panel's Code Editor win over the copies on disk, and the
-// live preview serves unpublished drafts under a short-lived token.
-app.get('/_preview/:token/*', previewHandler);
-app.get('/_preview/:token', previewHandler);
+// Front-end files edited in the admin panel (Code Editor / Codes) win over the copies on disk.
 app.use(siteFiles.middleware);
 
 // The apps poll this to notice a new deploy and offer a refresh. The commit id changes on

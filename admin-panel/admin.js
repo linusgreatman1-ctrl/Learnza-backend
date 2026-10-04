@@ -181,7 +181,7 @@
     users: renderUsers, teachers: renderTeachers, schools: renderSchools,
     announcements: renderAnnouncements, 'bulk-email': () => renderBulk('EMAIL'), 'bulk-sms': () => renderBulk('SMS'),
     tickets: () => renderSupport('tickets'), reviews: renderReviews, chat: () => renderSupport('chat'),
-    live: renderLive, library: renderLibrary, codes: renderCodes, editor: renderCodeEditor,
+    live: renderLive, library: renderLibrary, 'access-codes': renderAccessCodes, editor: renderCodeEditor, preview: renderPreview, codes: renderCodes,
     settings: renderSettings, admins: renderAdmins, audit: renderAudit, logs: renderSystemLogs,
   };
 
@@ -1038,8 +1038,8 @@
   }
 
   // ---------------- codes ----------------
-  async function renderCodes() {
-    view.innerHTML = '<div class="view-head"><div><h1>Codes</h1><div class="muted">Join codes for schools and access codes for the people they add. Treat these like passwords.</div></div></div><div id="cd-host"></div>';
+  async function renderAccessCodes() {
+    view.innerHTML = '<div class="view-head"><div><h1>Access Codes</h1><div class="muted">Join codes for schools and access codes for the people they add. Treat these like passwords.</div></div></div><div id="cd-host"></div>';
     tabs($('cd-host'), [['users', 'Access codes'], ['schools', 'School join codes']], async (tab, body) => {
       if (tab === 'schools') {
         const { schools } = await api('/schools');
@@ -1047,7 +1047,7 @@
         body.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copy(b.dataset.copy)));
         body.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', async () => {
           if (!confirm('Issue a new join code? The old one stops working immediately and the school admin must be given the new one.')) return;
-          try { const r = await api('/schools/' + b.dataset.regen + '/regenerate-join-code', { method: 'POST' }); toast('New code: ' + r.joinCode); go('codes'); } catch (err) { toast(err.message); }
+          try { const r = await api('/schools/' + b.dataset.regen + '/regenerate-join-code', { method: 'POST' }); toast('New code: ' + r.joinCode); go('access-codes'); } catch (err) { toast(err.message); }
         }));
         return;
       }
@@ -1089,105 +1089,174 @@
     });
   }
 
-  // ---------------- code editor ----------------
-  let editorTimers = [];
-  async function renderCodeEditor() {
-    view.innerHTML = '<div class="view-head"><div><h1>Code Editor</h1><div class="muted">Edit the apps\' front-end files. Changes are saved as a draft that only the live preview shows — nothing reaches users until you publish (with your password). Every version is kept and can be rolled back.</div></div></div>' +
-      '<div class="ce-layout"><div class="ce-files"><input id="ce-search" placeholder="Find a file…"><div id="ce-filelist"></div></div>' +
-      '<div class="ce-main"><div id="ce-empty" class="muted" style="padding:30px">Pick a file on the left.</div><div id="ce-work" class="hidden">' +
-      '<div class="ce-bar"><strong id="ce-name"></strong><span id="ce-state" class="pill"></span><span style="flex:1"></span>' +
-      '<button class="btn-ghost btn-sm" id="ce-versions">History</button><button class="btn-ghost btn-sm" id="ce-discard">Discard draft</button><button class="btn-ghost btn-sm" id="ce-revert">Restore original</button><button class="btn-gold btn-sm" id="ce-publish">Publish…</button></div>' +
-      '<div id="ce-err" class="error-msg"></div><div class="ce-split"><textarea id="ce-text" spellcheck="false" wrap="off"></textarea><div class="ce-preview"><div class="ce-prevbar"><label style="margin:0">Preview</label><select id="ce-page"><option value="app">Student app</option><option value="schools">Schools app</option><option value="legal">Legal page</option></select><button class="btn-ghost btn-sm" id="ce-reload">Reload</button></div><iframe id="ce-frame" title="Live preview"></iframe></div></div></div></div></div>';
-    editorTimers.forEach(clearTimeout); editorTimers = [];
-    let current = null;      // { path, published, hasDraft }
-    let previewToken = null;
-    let dirty = false;
+  // ---------------- Code Editor / Live Preview / Codes (modelled on PassNow's) ----------------
+  // Saves are live immediately and each one keeps a backup; JavaScript that does not parse is
+  // refused. All three views share these helpers.
+  const APP_FILES = {
+    app: { label: 'Learnza App (student)', files: ['app.js', 'app.html', 'auth.css'], page: '/app' },
+    schools: { label: 'Learnza For Schools', files: ['schools.js', 'schools.html', 'auth.css'], page: '/schools' },
+    shared: { label: 'Shared', files: ['extras.js', 'style.css', 'legal.html', 'legal.js', 'verify.html', 'verify.js'], page: null },
+  };
+  async function codeFileOptions(selected) {
+    const { files } = await api('/code/files');
+    const by = new Map(files.map((f) => [f.path, f]));
+    const opt = (p) => by.has(p) ? '<option value="' + esc(p) + '" ' + (p === selected ? 'selected' : '') + '>' + esc(p) + (by.get(p).customised ? ' ✎' : '') + ' (' + Math.round(by.get(p).size / 1024) + ' KB)</option>' : '';
+    const listed = new Set(Object.values(APP_FILES).flatMap((g) => g.files));
+    const rest = files.filter((f) => !listed.has(f.path)).map((f) => f.path);
+    return Object.values(APP_FILES).map((g) => '<optgroup label="' + esc(g.label) + '">' + g.files.map(opt).join('') + '</optgroup>').join('') + (rest.length ? '<optgroup label="Other">' + rest.map(opt).join('') + '</optgroup>' : '');
+  }
 
-    async function loadList() {
-      const { files } = await api('/code/files');
-      const q = $('ce-search').value.trim().toLowerCase();
-      $('ce-filelist').innerHTML = files.filter((f) => f.path.toLowerCase().includes(q)).map((f) => '<div class="ce-file ' + (current && current.path === f.path ? 'on' : '') + '" data-path="' + esc(f.path) + '"><span>' + esc(f.path) + '</span><span class="small">' + (f.hasDraft ? '<span class="pill warn">draft</span>' : '') + (f.customised ? '<span class="pill ok">edited</span>' : '') + '</span></div>').join('');
-      $('ce-filelist').querySelectorAll('.ce-file').forEach((el) => el.addEventListener('click', async () => {
-        if (dirty && !confirm('You have unsaved typing. Switch file anyway?')) return;
-        openFile(el.dataset.path);
+  // ----- Code Editor: find a snippet, see it in context, replace it -----
+  async function renderCodeEditor() {
+    view.innerHTML = '<div class="view-head"><div><h1>Code Editor</h1><div class="muted">Edit the live front-end source. Changes save immediately — no separate deploy step. Search for an exact snippet, check it is the right spot, then replace it. Every change keeps a backup you can undo below.</div></div></div>' +
+      '<h3>Jump to a known feature</h3><p class="muted small">Pick a screen to fill in the search for its code — or type your own search below.</p><div id="ce-features" class="chips"></div>' +
+      '<div class="toolbar"><select id="ce-file"></select><input id="ce-search" placeholder="Text to find (exact match)…" style="flex:1;min-width:260px"><button class="btn-gold" id="ce-go">Search</button></div>' +
+      '<div id="ce-results"></div>' +
+      '<div id="ce-replace" class="panel hidden"><h3>Replace</h3><label>Replace with</label><textarea id="ce-with" rows="5" style="font-family:monospace;font-size:12.5px"></textarea>' +
+      '<div style="margin-top:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap"><label style="margin:0;font-weight:500"><input type="checkbox" id="ce-all" style="width:auto"> Replace all occurrences</label><button class="btn-gold" id="ce-apply">Apply &amp; save</button><span id="ce-status" class="small"></span></div></div>' +
+      '<h3 style="margin-top:24px">Backups (undo)</h3><div id="ce-backups"></div>';
+    $('ce-file').innerHTML = await codeFileOptions('app.js');
+    let chosen = null; // which match the owner picked when there are several
+
+    async function loadFeatures() {
+      const { features } = await api('/code/features?file=' + encodeURIComponent($('ce-file').value));
+      if (!$('ce-features')) return;
+      $('ce-features').innerHTML = features.length ? features.map((f, i) => '<span class="chip" data-i="' + i + '">' + esc(f.label) + '</span>').join('') : '<span class="muted small">No screen index for this kind of file — use the search box.</span>';
+      $('ce-features').querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { $('ce-search').value = features[c.dataset.i].search; search(); }));
+    }
+    async function search() {
+      const query = $('ce-search').value;
+      if (!query) return toast('Type the text to look for');
+      chosen = null;
+      $('ce-replace').classList.add('hidden');
+      try {
+        const r = await api('/code/search', { method: 'POST', body: { file: $('ce-file').value, query } });
+        if (!$('ce-results')) return;
+        if (!r.totalMatches) { $('ce-results').innerHTML = '<p class="muted">No match for that exact text in ' + esc(r.file) + '.</p>'; return; }
+        $('ce-results').innerHTML = '<p class="muted small">' + r.totalMatches + (r.truncated ? '+' : '') + ' match' + (r.totalMatches === 1 ? '' : 'es') + ' in ' + esc(r.file) + '. ' + (r.totalMatches > 1 ? 'Pick the one to change, or replace all.' : '') + '</p>' +
+          r.matches.map((m, i) => '<label class="ce-match"><input type="radio" name="ce-pick" value="' + i + '" ' + (r.totalMatches === 1 ? 'checked' : '') + '> <span class="small muted">line ' + m.line + '</span><pre>' + esc(m.before) + '<mark>' + esc(m.match) + '</mark>' + esc(m.after) + '</pre></label>').join('');
+        $('ce-results').querySelectorAll('input[name=ce-pick]').forEach((r2) => r2.addEventListener('change', () => { chosen = Number(r2.value); }));
+        if (r.totalMatches === 1) chosen = 0;
+        $('ce-with').value = query;
+        $('ce-replace').classList.remove('hidden');
+      } catch (err) { toast(err.message); }
+    }
+    async function backups() {
+      const { backups } = await api('/code/backups');
+      if (!$('ce-backups')) return;
+      $('ce-backups').innerHTML = table(['File', 'Saved over', 'By', 'Note', 'Size', ''], backups.map((b) => '<tr><td><strong>' + esc(b.path) + '</strong></td><td>' + fmtDateTime(b.createdAt) + '</td><td>' + esc(b.authorEmail || '—') + '</td><td style="white-space:normal;max-width:260px">' + esc(b.note || '') + '</td><td class="tabular">' + Math.round(b.size / 1024) + ' KB</td><td><button class="btn-ghost btn-sm" data-restore="' + b.id + '" data-file="' + esc(b.path) + '">Restore this</button></td></tr>').join(''), 'No backups yet — one is made each time you save.');
+      $('ce-backups').querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
+        if (!confirm('Put back this earlier version of ' + b.dataset.file + '? The current version is kept as a backup too.')) return;
+        try { await api('/code/restore', { method: 'POST', body: { backupId: b.dataset.restore } }); toast('Restored'); backups(); } catch (err) { toast(err.message); }
       }));
     }
-    $('ce-search').addEventListener('input', debounce(loadList, 150));
+    $('ce-file').addEventListener('change', () => { $('ce-results').innerHTML = ''; $('ce-replace').classList.add('hidden'); loadFeatures(); });
+    $('ce-go').addEventListener('click', search);
+    $('ce-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
+    $('ce-apply').addEventListener('click', async () => {
+      const all = $('ce-all').checked;
+      const find = $('ce-search').value;
+      const body = { file: $('ce-file').value, find, replaceWith: $('ce-with').value, replaceAll: all };
+      if (!all && chosen != null) body.occurrenceIndex = chosen;
+      if (!confirm((all ? 'Replace every occurrence' : 'Apply this change') + ' in ' + body.file + '? It goes live immediately for all users (a backup is kept).')) return;
+      $('ce-status').textContent = 'Saving…';
+      try { const r = await api('/code/replace', { method: 'POST', body }); $('ce-status').textContent = 'Saved — ' + r.replaced + ' replaced.'; toast('Saved'); $('ce-results').innerHTML = ''; $('ce-replace').classList.add('hidden'); backups(); } catch (err) { $('ce-status').textContent = ''; toast(err.message); }
+    });
+    await Promise.all([loadFeatures(), backups()]);
+  }
 
-    async function token() {
-      if (!previewToken) previewToken = (await api('/code/preview-token', { method: 'POST' })).token;
-      return previewToken;
+  // ----- Live Preview: the real running app, with a jump-to-screen menu -----
+  async function renderPreview() {
+    view.innerHTML = '<div class="view-head"><div><h1>Live Preview</h1><div class="muted">The actual running app, exactly as users see it — not a mockup. Sign in inside the frame with any account, then use “Jump to screen” to go straight to a screen instead of clicking through.</div></div></div>' +
+      '<div class="toolbar"><select id="lp-app"><option value="/app">Learnza App (student)</option><option value="/schools">Learnza For Schools</option></select><select id="lp-screen"><option value="">— Jump to screen —</option></select><button class="btn-ghost" id="lp-refresh">Refresh screen list</button><button class="btn-ghost" id="lp-reload">↻ Reload</button></div>' +
+      '<iframe id="lp-frame" src="/app" title="Live preview" style="width:100%;height:75vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>';
+    const frame = $('lp-frame');
+    function screens() {
+      let doc;
+      try { doc = frame.contentDocument; } catch { return; }
+      if (!doc) return;
+      const items = [...doc.querySelectorAll('.nav-item[data-screen]')].map((b) => [b.dataset.screen, b.textContent.trim()]);
+      $('lp-screen').innerHTML = '<option value="">— Jump to screen' + (items.length ? '' : ' (sign in first)') + ' —</option>' + items.map(([k, l]) => '<option value="' + esc(k) + '">' + esc(l) + '</option>').join('');
     }
-    async function reloadPreview() {
-      if (!current) return;
-      const t = await token();
-      const ext = current.path.split('.').pop();
-      let page = $('ce-page').value;
-      if (current.path === 'schools.html') page = 'schools'; else if (current.path === 'app.html') page = 'app'; else if (current.path === 'legal.html') page = 'legal';
-      $('ce-page').value = page;
-      $('ce-frame').src = '/_preview/' + t + '/' + (['html', 'css', 'js'].includes(ext) ? page : current.path) + '?t=' + Date.now();
-    }
-    function setState(text, cls) { $('ce-state').textContent = text; $('ce-state').className = 'pill ' + (cls || ''); }
+    frame.addEventListener('load', () => { screens(); clearInterval(window.__lpTimer); window.__lpTimer = setInterval(() => { if (!$('lp-frame')) return clearInterval(window.__lpTimer); screens(); }, 4000); });
+    $('lp-app').addEventListener('change', () => { frame.src = $('lp-app').value; });
+    $('lp-reload').addEventListener('click', () => frame.contentWindow.location.reload());
+    $('lp-refresh').addEventListener('click', screens);
+    $('lp-screen').addEventListener('change', () => {
+      const key = $('lp-screen').value;
+      if (!key) return;
+      const btn = frame.contentDocument.querySelector('.nav-item[data-screen="' + key + '"]');
+      if (btn) btn.click(); else toast('That screen is not in the menu for this account.');
+    });
+  }
 
-    async function openFile(path) {
-      const f = await api('/code/file?path=' + encodeURIComponent(path));
-      current = { path: f.path, original: f.original, published: f.published, hasDraft: !!f.draft };
-      $('ce-empty').classList.add('hidden'); $('ce-work').classList.remove('hidden');
-      $('ce-name').textContent = f.path;
-      $('ce-text').value = f.draft ? f.draft.content : f.published ? f.published.content : f.original;
-      $('ce-err').textContent = '';
-      dirty = false;
-      setState(f.draft ? 'Draft saved' : f.published ? 'Edited & live' : 'Original', f.draft ? 'warn' : f.published ? 'ok' : '');
-      $('ce-publish').disabled = !f.draft; $('ce-discard').disabled = !f.draft; $('ce-revert').disabled = !f.published;
-      loadList();
-      reloadPreview();
-    }
+  // ----- Codes: the whole raw source of a file -----
+  async function renderCodes() {
+    view.innerHTML = '<div class="view-head"><div><h1>Codes</h1><div class="muted">The complete, raw source of either app — not a curated snippet. Load a file, edit it directly, and Save writes the whole file. Live immediately; a backup of the previous version is kept.</div></div></div>' +
+      '<div class="toolbar"><button class="btn-gold" id="cd-app">📱 Learnza App (student)</button><button class="btn-gold" id="cd-schools">🏫 Learnza For Schools</button><select id="cd-file"></select></div>' +
+      '<div id="cd-wrap" class="hidden"><div class="toolbar" style="justify-content:space-between"><div><strong id="cd-name"></strong> <span class="muted small" id="cd-meta"></span></div><div style="display:flex;gap:8px"><button class="btn-ghost" id="cd-reload">↻ Reload (discard edits)</button><button class="btn-gold" id="cd-save">💾 Save</button></div></div>' +
+      '<p id="cd-status" class="small" style="min-height:1.2em"></p>' +
+      '<div class="toolbar"><input id="cd-find" placeholder="Search for a feature name, function, or any text…" style="flex:1;min-width:260px"><button class="btn-ghost" id="cd-next">🔍 Find next</button><span class="muted small" id="cd-found"></span></div>' +
+      '<textarea id="cd-text" spellcheck="false" wrap="off" style="width:100%;height:65vh;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.5;white-space:pre;tab-size:2"></textarea></div>';
+    $('cd-file').innerHTML = '<option value="">— or pick any file —</option>' + (await codeFileOptions(''));
+    let file = null;
+    let original = '';
+    const dirty = () => file && $('cd-text').value !== original;
 
-    async function saveDraft() {
-      if (!current) return;
+    async function load(path) {
+      if (dirty() && !confirm('You have unsaved changes. Discard them?')) { $('cd-file').value = file || ''; return; }
+      $('cd-status').textContent = 'Loading…';
       try {
-        await api('/code/draft', { method: 'PUT', body: { path: current.path, content: $('ce-text').value } });
-        $('ce-err').textContent = ''; dirty = false; current.hasDraft = true;
-        setState('Draft saved', 'warn'); $('ce-publish').disabled = false; $('ce-discard').disabled = false;
-        loadList(); reloadPreview();
-      } catch (err) { $('ce-err').textContent = err.message; setState('Not saved — fix the error', 'bad'); }
+        const r = await api('/code/content?path=' + encodeURIComponent(path));
+        file = r.path; original = r.content;
+        $('cd-wrap').classList.remove('hidden');
+        $('cd-text').value = r.content;
+        $('cd-name').textContent = r.path;
+        $('cd-meta').textContent = r.lines.toLocaleString() + ' lines · ' + Math.round(r.size / 1024) + ' KB' + (r.customised ? ' · edited' : '');
+        $('cd-file').value = r.path;
+        $('cd-status').textContent = '';
+        $('cd-found').textContent = '';
+      } catch (err) { $('cd-status').textContent = ''; toast(err.message); }
     }
-    const autosave = debounce(saveDraft, 1200);
-    $('ce-text').addEventListener('input', () => { dirty = true; setState('Typing…', ''); autosave(); });
-    $('ce-text').addEventListener('keydown', (e) => {
-      if (e.key === 'Tab') { e.preventDefault(); const t = e.target; const s = t.selectionStart; t.value = t.value.slice(0, s) + '  ' + t.value.slice(t.selectionEnd); t.selectionStart = t.selectionEnd = s + 2; t.dispatchEvent(new Event('input')); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveDraft(); }
-    });
-    $('ce-reload').addEventListener('click', reloadPreview);
-    $('ce-page').addEventListener('change', reloadPreview);
-
-    function askPassword(title, text, go) {
-      const m = modal('<div class="modal-head"><h3>' + esc(title) + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div><p class="muted">' + text + '</p><form id="pw-form"><label>Your password</label><input type="password" id="pw-input" required autocomplete="current-password"><div id="pw-err" class="error-msg"></div><div style="margin-top:12px"><button class="btn-gold" type="submit">Confirm</button></div></form>');
-      m.el.querySelector('#pw-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        try { await go(m.el.querySelector('#pw-input').value); m.close(); } catch (err) { m.el.querySelector('#pw-err').textContent = err.message; }
-      });
+    async function save() {
+      if (!file) return;
+      if (!dirty()) return toast('Nothing to save');
+      if (!confirm('Save ' + file + '? It goes live immediately for all users (a backup of the current version is kept).')) return;
+      $('cd-status').textContent = 'Saving…';
+      try {
+        await api('/code/save', { method: 'POST', body: { path: file, content: $('cd-text').value } });
+        original = $('cd-text').value;
+        $('cd-status').textContent = 'Saved ✓ — live now.';
+        $('cd-meta').textContent = $('cd-text').value.split('\n').length.toLocaleString() + ' lines · edited';
+        toast('Saved');
+      } catch (err) { $('cd-status').textContent = ''; $('cd-status').innerHTML = '<span class="error-msg">' + esc(err.message) + '</span>'; }
     }
-    $('ce-publish').addEventListener('click', async () => {
-      if (dirty) await saveDraft();
-      askPassword('Publish ' + current.path, 'This goes live for <strong>every user</strong> straight away. A broken file can stop the app loading — check the preview first. You can roll back from History.', async (password) => {
-        await api('/code/publish', { method: 'POST', body: { path: current.path, password } });
-        toast('Published'); openFile(current.path);
-      });
+    $('cd-app').addEventListener('click', () => load('app.js'));
+    $('cd-schools').addEventListener('click', () => load('schools.js'));
+    $('cd-file').addEventListener('change', () => { if ($('cd-file').value) load($('cd-file').value); });
+    $('cd-reload').addEventListener('click', () => { if (!file) return; original = ''; load(file); });
+    $('cd-save').addEventListener('click', save);
+    $('cd-text').addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
+      if (e.key === 'Tab') { e.preventDefault(); const t = e.target; const s = t.selectionStart; t.setRangeText('  ', s, t.selectionEnd, 'end'); }
     });
-    $('ce-discard').addEventListener('click', async () => {
-      if (!confirm('Throw away the draft and go back to the live version?')) return;
-      await api('/code/discard', { method: 'POST', body: { path: current.path } }); toast('Draft discarded'); openFile(current.path);
-    });
-    $('ce-revert').addEventListener('click', () => askPassword('Restore the original ' + current.path, 'All your published edits to this file are removed and users get the copy that shipped with the last deploy. History is kept.', async (password) => {
-      await api('/code/revert', { method: 'POST', body: { path: current.path, password } }); toast('Original restored'); openFile(current.path);
-    }));
-    $('ce-versions').addEventListener('click', async () => {
-      const { versions } = await api('/code/versions?path=' + encodeURIComponent(current.path));
-      const m = modal('<div class="modal-head"><h3>History · ' + esc(current.path) + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div>' + table(['When', 'By', 'Note', 'Size', ''], versions.map((v) => '<tr><td>' + fmtDateTime(v.publishedAt || v.createdAt) + '</td><td>' + esc(v.authorEmail || '—') + '</td><td style="white-space:normal;max-width:240px">' + esc(v.note || '') + '</td><td class="tabular">' + Math.round(v.size / 1024) + ' KB</td><td>' + (v.status === 'PUBLISHED' ? '<span class="pill ok">live</span>' : '<button class="btn-ghost btn-sm" data-roll="' + v.id + '">Roll back to this</button>') + '</td></tr>').join(''), 'No published versions yet.'));
-      m.el.querySelectorAll('[data-roll]').forEach((b) => b.addEventListener('click', () => { m.close(); askPassword('Roll back', 'This version becomes the live file for every user.', async (password) => { await api('/code/rollback', { method: 'POST', body: { versionId: b.dataset.roll, password } }); toast('Rolled back'); openFile(current.path); }); }));
-    });
-    await loadList();
+    function findNext() {
+      const q = $('cd-find').value;
+      const ta = $('cd-text');
+      if (!q) return;
+      let i = ta.value.indexOf(q, ta.selectionEnd);
+      let wrapped = false;
+      if (i === -1) { i = ta.value.indexOf(q); wrapped = true; }
+      if (i === -1) { $('cd-found').textContent = 'Not found'; return; }
+      ta.focus();
+      ta.setSelectionRange(i, i + q.length);
+      const line = ta.value.slice(0, i).split('\n').length;
+      ta.scrollTop = Math.max(0, (line - 6) * 18.75);
+      $('cd-found').textContent = 'Line ' + line + (wrapped ? ' (from the top)' : '');
+    }
+    $('cd-next').addEventListener('click', findNext);
+    $('cd-find').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); findNext(); } });
+    window.onbeforeunload = () => (dirty() ? 'You have unsaved changes.' : undefined);
   }
 
   // ---------------- boot ----------------

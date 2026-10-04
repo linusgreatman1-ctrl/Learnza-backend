@@ -8,13 +8,13 @@ const prisma = require('./db');
 //
 // Safety rails, because a bad front-end file can lock every user out:
 //   - only text files inside public/ with an allowed extension;
-//   - JavaScript must parse, JSON must be valid, before a draft is even saved;
+//   - JavaScript must parse, JSON must be valid, before anything is saved;
 //   - the admin panel itself (admin-panel/) is not editable, so it can always roll a change back;
 //   - the service worker is not editable (a broken one is very hard to recover from).
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const ALLOWED = new Set(['.html', '.css', '.js', '.json', '.svg', '.webmanifest', '.txt']);
 const BLOCKED = new Set(['sw.js']);
-const MAX_BYTES = 600 * 1024;
+const MAX_BYTES = 1400 * 1024; // the request body limit (2 MB, JSON-escaped) is the real ceiling
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -39,7 +39,7 @@ function normalise(p) {
 
 function validate(file, content) {
   if (typeof content !== 'string') return 'The file content is missing.';
-  if (Buffer.byteLength(content) > MAX_BYTES) return 'That file is too large (limit 600 KB).';
+  if (Buffer.byteLength(content) > MAX_BYTES) return 'That file is too large (limit 1.4 MB).';
   const ext = path.extname(file).toLowerCase();
   if (ext === '.js') {
     try { new (require('vm').Script)(content, { filename: file }); } catch (e) { return 'JavaScript error: ' + e.message; }
