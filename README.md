@@ -20,7 +20,9 @@ Schools **cannot register themselves**. The platform owner onboards a school fro
 
 ### Super-admin panel
 
-Dashboard · Schools (onboard, join codes, renew, suspend, delete empty) · Users · Announcements (in-app, optional email/SMS) · Support (tickets + live chat) · Reviews · Payments & Subscriptions (revenue, manual grant/revoke, coin purchases and grants) · AI Activity (student questions and answers, AI Teacher sessions) · Live Classes · Gamification · e-Library (platform-wide resources) · Settings (paywall override, maintenance mode, sign-up open/closed, AI kill switch, daily AI question limit) · Platform Admins · Audit Log.
+Dashboard · Analytics · Questions (practice question bank) · Lessons · Courses · AI Conversations · AI Teacher · Demonstrations (digital lab) · Payments · Coins · Gamification · Attendance · Results · Academic Records · Users · Teachers · Schools (onboarding, join codes, renew/suspend) · Subscriptions · Announcements · Bulk Email · Bulk SMS · Support Tickets · App Reviews · Live Chat · Live Classes · e-Library · Codes (school join codes and people's access codes) · **Code Editor** · App Settings (paywall override, maintenance mode, sign-up open/closed, AI switch, daily AI question limit) · Platform Admins · Audit Log · System Logs.
+
+**Code Editor.** Edit the apps' front-end files (`public/*`) from the panel with a live preview. Edits autosave as a *draft* that only the preview shows; publishing needs your password, goes live for everyone immediately, and every version is kept for one-click rollback. Published edits live in the database, so a redeploy does not wipe them. Guard rails: JavaScript must parse and JSON must be valid before a draft saves, the service worker and the admin panel itself are not editable (so you can always roll back), and every publish/rollback/restore is in the Audit Log. A bad logic change can still break the apps for users — check the preview, and use History → Roll back if it happens.
 
 ## Security model
 
@@ -54,6 +56,7 @@ SUPER_EMAIL=… SUPER_PASSWORD=… LOG_FILE=server.log node tests/e2e.js        
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/isolation.js                         # two-school isolation + add lecturer/student flows
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/platform.js                          # announcements, payments, settings, library…
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/support-coins.js                     # tickets, chat, reviews, coins, polls
+SUPER_EMAIL=… SUPER_PASSWORD=… node tests/oversight.js                         # oversight views, question bank, logs, codes, Code Editor
 ```
 
 `e2e.js` finishes by tripping the sign-in rate limiter, so restart the server between runs.

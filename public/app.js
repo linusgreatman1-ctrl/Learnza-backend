@@ -467,6 +467,7 @@
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
       ['research', 'AI Research Assistant'],
+      ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['digital-id', 'Digital ID'],
@@ -740,6 +741,7 @@
         case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
         case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
         case 'wallet': return LZX.wallet(view, { api, esc, toast });
+        case 'practice': return LZX.practice(view, { api, esc, toast });
         case 'settings-profile': return renderSettingsProfile();
         case 'settings-password': return renderSettingsPassword();
         case 'lab': return renderLab();

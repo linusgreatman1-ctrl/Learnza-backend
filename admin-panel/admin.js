@@ -21,12 +21,13 @@
   function fmtDateTime(d) { return d ? new Date(d).toLocaleString() : '—'; }
   function naira(kobo) { return '₦' + (Number(kobo || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 0 }); }
   function clip(text, n) { const t = String(text == null ? '' : text); return t.length > n ? t.slice(0, n) + '…' : t; }
-  function tabs(host, names, onPick) {
-    host.innerHTML = '<div class="tabs">' + names.map(([k, label], i) => '<button class="tab' + (i === 0 ? ' on' : '') + '" data-tab="' + k + '">' + esc(label) + '</button>').join('') + '</div><div class="tab-body"></div>';
+  function tabs(host, names, onPick, initial) {
+    const first = names.some(([k]) => k === initial) ? initial : names[0][0];
+    host.innerHTML = '<div class="tabs">' + names.map(([k, label]) => '<button class="tab' + (k === first ? ' on' : '') + '" data-tab="' + k + '">' + esc(label) + '</button>').join('') + '</div><div class="tab-body"></div>';
     const body = host.querySelector('.tab-body');
     const pick = (k) => { host.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === k)); onPick(k, body); };
     host.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => pick(t.dataset.tab)));
-    pick(names[0][0]);
+    pick(first);
   }
 
   let toastTimer;
@@ -172,19 +173,29 @@
 
   // ---------------- navigation ----------------
   const views = {
-    dashboard: renderDashboard, schools: renderSchools, users: renderUsers,
-    announcements: renderAnnouncements, support: renderSupport, reviews: renderReviews, payments: renderPayments, ai: renderAi, live: renderLive,
-    gamification: renderGamification, library: renderLibrary, settings: renderSettings,
-    admins: renderAdmins, audit: renderAudit,
+    dashboard: renderDashboard, analytics: renderAnalytics, questions: renderQuestions,
+    lessons: renderLessons, courses: renderCourses,
+    conversations: () => renderAi('logs'), teacher: () => renderAi('sessions'), demonstrations: renderDemonstrations,
+    payments: () => renderPayments('payments'), coins: () => renderPayments('coins'), subscriptions: () => renderPayments('subs'),
+    gamification: renderGamification, attendance: renderAttendance, results: renderResults, records: renderRecords,
+    users: renderUsers, teachers: renderTeachers, schools: renderSchools,
+    announcements: renderAnnouncements, 'bulk-email': () => renderBulk('EMAIL'), 'bulk-sms': () => renderBulk('SMS'),
+    tickets: () => renderSupport('tickets'), reviews: renderReviews, chat: () => renderSupport('chat'),
+    live: renderLive, library: renderLibrary, codes: renderCodes, editor: renderCodeEditor,
+    settings: renderSettings, admins: renderAdmins, audit: renderAudit, logs: renderSystemLogs,
   };
 
+  let navigationId = 0;
   function go(name) {
     if (!views[name]) name = 'dashboard';
     location.hash = name;
     document.querySelectorAll('#nav li').forEach((li) => li.classList.toggle('active', li.dataset.view === name));
     if (typeof chatTimer !== 'undefined') clearInterval(chatTimer);
     view.innerHTML = '<p class="muted">Loading…</p>';
-    views[name]().catch((err) => { view.innerHTML = `<p class="error-msg">${esc(err.message)}</p>`; });
+    // A view that was still loading when the user clicked elsewhere must not draw into (or put an
+    // error over) the page they are now on.
+    const mine = ++navigationId;
+    views[name]().catch((err) => { if (mine === navigationId) view.innerHTML = `<p class="error-msg">${esc(err.message)}</p>`; });
   }
   $('nav').addEventListener('click', (e) => {
     const li = e.target.closest('li[data-view]');
@@ -466,7 +477,7 @@
   }
 
   // ---------------- payments & subscriptions ----------------
-  async function renderPayments() {
+  async function renderPayments(initial) {
     view.innerHTML = '<div class="view-head"><div><h1>Payments &amp; Subscriptions</h1><div class="muted">Student subscriptions paid through Paystack or Flutterwave, and manual grants.</div></div></div><div id="pay-host"></div>';
     tabs($('pay-host'), [['payments', 'Payments'], ['subs', 'Subscriptions'], ['coins', 'Coins'], ['grant', 'Grant access']], async (tab, body) => {
       if (tab === 'grant') return renderGrant(body);
@@ -501,7 +512,7 @@
         }
       }
       await load();
-    });
+    }, initial);
   }
 
   function renderGrant(body) {
@@ -527,7 +538,7 @@
   }
 
   // ---------------- AI activity ----------------
-  async function renderAi() {
+  async function renderAi(initial) {
     view.innerHTML = '<div class="view-head"><div><h1>AI Activity</h1><div class="muted">What students ask the AI and how it answers, and AI Teacher lessons in progress. Review for quality and misuse.</div></div></div><div id="ai-host"></div>';
     tabs($('ai-host'), [['logs', 'Questions & answers'], ['sessions', 'AI Teacher sessions']], async (tab, body) => {
       let page = 1;
@@ -553,7 +564,7 @@
         }
       }
       await load();
-    });
+    }, initial);
   }
 
   // ---------------- live classes ----------------
@@ -662,12 +673,12 @@
   }
 
   // ---------------- support: tickets + live chat ----------------
-  async function renderSupport() {
+  async function renderSupport(initial) {
     view.innerHTML = '<div class="view-head"><div><h1>Support</h1><div class="muted">Tickets and live chats from students, lecturers and school admins. A chat is answered by the AI assistant until you reply — then it stays quiet.</div></div></div><div id="sp-host"></div>';
     tabs($('sp-host'), [['tickets', 'Tickets'], ['chat', 'Live chat']], async (tab, body) => {
       if (tab === 'tickets') return supportTickets(body);
       return supportChat(body);
-    });
+    }, initial);
   }
 
   async function supportTickets(body) {
@@ -770,6 +781,413 @@
       });
     }
     await load();
+  }
+
+  // ---------------- small helpers shared by the oversight views ----------------
+  function searchBar(id, placeholder, onChange, extra) {
+    return '<div class="toolbar"><input id="' + id + '" placeholder="' + esc(placeholder) + '">' + (extra || '') + '</div>';
+  }
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms || 300); }; }
+  function table(headers, rowsHtml, empty) {
+    return '<div class="table-wrap"><table><thead><tr>' + headers.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' + (rowsHtml || '<tr><td colspan="' + headers.length + '" class="muted">' + esc(empty || 'Nothing here yet.') + '</td></tr>') + '</tbody></table></div>';
+  }
+  function cardStat(n, l) { return '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; }
+  async function schoolOptions(selectedId) {
+    const { schools } = await api('/schools');
+    return '<option value="">All schools</option>' + schools.map((s) => '<option value="' + s.id + '" ' + (s.id === selectedId ? 'selected' : '') + '>' + esc(s.name) + '</option>').join('');
+  }
+  // A paged list view: draws `render(data)` into `box` and re-fetches on page/filter change.
+  function listView(box, fetchUrl, render) {
+    let page = 1;
+    async function load() {
+      const d = await api(fetchUrl(page));
+      if (!box.isConnected) return;
+      box.innerHTML = '';
+      const inner = document.createElement('div');
+      inner.innerHTML = render(d);
+      box.appendChild(inner);
+      if (d.total != null && d.pageSize) box.appendChild(pager(page, d.total, d.pageSize, (p) => { page = p; load(); }));
+      box.dispatchEvent(new CustomEvent('drawn', { detail: d }));
+    }
+    box.reload = (resetPage) => { if (resetPage) page = 1; return load(); };
+    return load();
+  }
+
+  // ---------------- analytics ----------------
+  function barChart(values, labels, color, fmt) {
+    const max = Math.max(1, ...values);
+    const w = 600, h = 120, gap = 2;
+    const bw = Math.max(2, (w - gap * values.length) / values.length);
+    return '<svg viewBox="0 0 ' + w + ' ' + (h + 18) + '" style="width:100%;height:auto" role="img">' +
+      values.map((v, i) => {
+        const bh = Math.round((v / max) * h);
+        return '<rect x="' + (i * (bw + gap)) + '" y="' + (h - bh) + '" width="' + bw + '" height="' + Math.max(bh, v ? 2 : 0) + '" rx="1.5" fill="' + color + '"><title>' + esc(labels[i]) + ': ' + esc(fmt ? fmt(v) : v) + '</title></rect>';
+      }).join('') +
+      '<text x="0" y="' + (h + 14) + '" font-size="10" fill="#6b7588">' + esc(labels[0].slice(5)) + '</text><text x="' + w + '" y="' + (h + 14) + '" font-size="10" text-anchor="end" fill="#6b7588">' + esc(labels[labels.length - 1].slice(5)) + '</text></svg>';
+  }
+
+  async function renderAnalytics() {
+    let days = 30;
+    view.innerHTML = '<div class="view-head"><div><h1>Analytics</h1><div class="muted">How the platform is growing and being used.</div></div><select id="an-days"><option value="14">Last 14 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select></div><div id="an-body"></div>';
+    async function load() {
+      const d = await api('/analytics?days=' + days);
+      if (!$('an-body')) return;
+      const sum = (a) => a.reduce((x, y) => x + y, 0);
+      const chart = (title, key, color, fmt, total) => '<div class="panel"><div style="display:flex;justify-content:space-between"><h3>' + title + '</h3><strong>' + (total != null ? total : sum(d.series[key])) + '</strong></div>' + barChart(d.series[key], d.labels, color, fmt) + '</div>';
+      const roles = d.usersByRole;
+      $('an-body').innerHTML =
+        '<div class="cards">' + cardStat(sum(d.series.schoolSignups) + sum(d.series.independentSignups), 'New accounts') + cardStat(naira(sum(d.series.revenueKobo)), 'Revenue') + cardStat(sum(d.series.aiQuestions), 'AI questions') + cardStat(sum(d.series.testsSubmitted), 'Tests submitted') + cardStat(sum(d.series.liveClasses), 'Live classes') + '</div>' +
+        '<div class="grid2">' +
+        chart('Daily active users', 'activeUsers', '#1e3a5f', null, Math.max(0, ...d.series.activeUsers) + ' peak') +
+        chart('School sign-ups', 'schoolSignups', '#e3ac4c') +
+        chart('Independent sign-ups', 'independentSignups', '#1f8a5b') +
+        chart('Revenue', 'revenueKobo', '#c1861f', (v) => naira(v), naira(sum(d.series.revenueKobo))) +
+        chart('AI questions', 'aiQuestions', '#7b5ea7') +
+        chart('Tests submitted', 'testsSubmitted', '#2f80c0') +
+        '</div>' +
+        '<div class="grid2"><div class="panel"><h3>People by role</h3>' + table(['Role', 'People'], Object.entries(roles).map(([r, n]) => '<tr><td>' + esc(r) + '</td><td class="tabular">' + n + '</td></tr>').join('')) + '</div>' +
+        '<div class="panel"><h3>Biggest schools</h3>' + table(['School', 'People'], d.topSchools.map((s) => '<tr><td>' + esc(s.name) + '</td><td class="tabular">' + s.users + '</td></tr>').join(''), 'No schools yet.') + '</div></div>';
+    }
+    $('an-days').addEventListener('change', () => { days = Number($('an-days').value); load(); });
+    await load();
+  }
+
+  // ---------------- questions (platform question bank) ----------------
+  async function renderQuestions() {
+    view.innerHTML = '<div class="view-head"><div><h1>Questions</h1><div class="muted">The practice question bank students and lecturers draw from in both apps. Answers are checked on the server.</div></div><div style="display:flex;gap:8px"><button class="btn-ghost" id="q-import">Import…</button><button class="btn-gold" id="q-add">+ Add question</button></div></div>' +
+      '<div class="toolbar"><input id="q-search" placeholder="Search question text…"><select id="q-subject"><option value="">All subjects</option></select><select id="q-active"><option value="">Active &amp; hidden</option><option value="true">Active only</option><option value="false">Hidden only</option></select></div><div id="q-list"></div>';
+    const box = $('q-list');
+    let subjects = [];
+    const url = (p) => '/questions?page=' + p + '&search=' + encodeURIComponent($('q-search').value.trim()) + '&subject=' + encodeURIComponent($('q-subject').value) + '&active=' + $('q-active').value;
+    box.addEventListener('drawn', (e) => {
+      subjects = e.detail.subjects;
+      const sel = $('q-subject'); const cur = sel.value;
+      sel.innerHTML = '<option value="">All subjects</option>' + subjects.map((s) => '<option value="' + esc(s.subject) + '">' + esc(s.subject) + ' (' + s.count + ')</option>').join('');
+      sel.value = cur;
+      box.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => questionForm(e.detail.questions.find((q) => q.id === b.dataset.edit))));
+      box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+        if (!confirm('Delete this question?')) return;
+        try { await api('/questions/' + b.dataset.del, { method: 'DELETE' }); toast('Deleted'); box.reload(); } catch (err) { toast(err.message); }
+      }));
+    });
+    await listView(box, url, (d) => table(['Subject', 'Question', 'Answer', 'Source', ''], d.questions.map((q) =>
+      '<tr><td><strong>' + esc(q.subject) + '</strong><div class="small muted">' + esc([q.topic, q.level].filter(Boolean).join(' · ')) + '</div></td><td style="white-space:normal;max-width:420px">' + esc(clip(q.text, 160)) + (q.active ? '' : ' <span class="pill bad">hidden</span>') + '</td><td>' + 'ABCDEF'[q.correctIndex] + '. ' + esc(clip(q.options[q.correctIndex], 40)) + '</td><td class="small">' + esc([q.source, q.year].filter(Boolean).join(' · ')) + '</td><td style="white-space:nowrap"><button class="btn-ghost btn-sm" data-edit="' + q.id + '">Edit</button> <button class="btn-ghost btn-sm" data-del="' + q.id + '">Delete</button></td></tr>').join(''), 'No questions yet — add one or import a batch.'));
+    const reload = debounce(() => box.reload(true), 300);
+    ['q-search', 'q-subject', 'q-active'].forEach((id) => $(id).addEventListener(id === 'q-search' ? 'input' : 'change', reload));
+    $('q-add').addEventListener('click', () => questionForm(null));
+    $('q-import').addEventListener('click', importQuestions);
+
+    function questionForm(q) {
+      const opts = q ? q.options : ['', '', '', ''];
+      const m = modal('<div class="modal-head"><h3>' + (q ? 'Edit question' : 'Add a question') + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+        '<form id="qf"><div class="row"><div><label>Subject *</label><input id="qf-subject" list="qf-subjects" required value="' + esc(q ? q.subject : '') + '"><datalist id="qf-subjects">' + subjects.map((s) => '<option value="' + esc(s.subject) + '">').join('') + '</datalist></div><div><label>Topic</label><input id="qf-topic" value="' + esc(q && q.topic || '') + '"></div></div>' +
+        '<div class="row"><div><label>Level</label><input id="qf-level" placeholder="100L, ND1…" value="' + esc(q && q.level || '') + '"></div><div><label>Source</label><input id="qf-source" placeholder="e.g. UNILAG 2022 exam" value="' + esc(q && q.source || '') + '"></div><div><label>Year</label><input id="qf-year" type="number" value="' + esc(q && q.year || '') + '"></div></div>' +
+        '<label>Question *</label><textarea id="qf-text" rows="3" required>' + esc(q ? q.text : '') + '</textarea>' +
+        '<label>Options (2–6, one per line) *</label><textarea id="qf-options" rows="5" required>' + esc(opts.join('\n')) + '</textarea>' +
+        '<div class="row"><div><label>Correct option *</label><select id="qf-correct">' + [0, 1, 2, 3, 4, 5].map((i) => '<option value="' + i + '" ' + (q && q.correctIndex === i ? 'selected' : '') + '>' + 'ABCDEF'[i] + '</option>').join('') + '</select></div><div><label>Show to students</label><select id="qf-active"><option value="true">Yes</option><option value="false" ' + (q && !q.active ? 'selected' : '') + '>Hidden</option></select></div></div>' +
+        '<label>Explanation (shown after answering)</label><textarea id="qf-expl" rows="2">' + esc(q && q.explanation || '') + '</textarea>' +
+        '<div style="margin-top:14px"><button type="submit" class="btn-gold">Save</button></div></form>');
+      m.el.querySelector('#qf').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const g = (id) => m.el.querySelector(id).value;
+        const body = { subject: g('#qf-subject').trim(), topic: g('#qf-topic'), level: g('#qf-level'), source: g('#qf-source'), year: g('#qf-year'), text: g('#qf-text'), options: g('#qf-options').split('\n').map((x) => x.trim()).filter(Boolean), correctIndex: g('#qf-correct'), active: g('#qf-active') === 'true', explanation: g('#qf-expl') };
+        try { await api(q ? '/questions/' + q.id : '/questions', { method: q ? 'PUT' : 'POST', body }); toast('Saved'); m.close(); box.reload(); } catch (err) { toast(err.message); }
+      });
+    }
+
+    function importQuestions() {
+      const sample = JSON.stringify([{ text: 'What is 2 + 2?', options: ['3', '4', '5'], correctIndex: 1, explanation: 'Basic addition.', topic: 'Arithmetic', year: 2022 }], null, 2);
+      const m = modal('<div class="modal-head"><h3>Import questions</h3><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+        '<p class="muted small">Paste a JSON list. Each item needs <code>text</code>, <code>options</code> (2–6) and <code>correctIndex</code> (0 = first option). Optional: <code>subject</code>, <code>topic</code>, <code>level</code>, <code>source</code>, <code>year</code>, <code>explanation</code>. Nothing is added if any item has a problem.</p>' +
+        '<label>Subject for items without one</label><input id="im-subject" placeholder="e.g. Use of English">' +
+        '<label>Questions (JSON)</label><textarea id="im-json" rows="12" style="font-family:monospace;font-size:12px">' + esc(sample) + '</textarea><div id="im-err" class="error-msg"></div>' +
+        '<div style="margin-top:12px"><button class="btn-gold" id="im-go">Import</button></div>');
+      m.el.querySelector('#im-go').addEventListener('click', async () => {
+        let list;
+        try { list = JSON.parse(m.el.querySelector('#im-json').value); } catch { m.el.querySelector('#im-err').textContent = 'That is not valid JSON.'; return; }
+        try { const r = await api('/questions/bulk', { method: 'POST', body: { subject: m.el.querySelector('#im-subject').value.trim(), questions: list } }); toast(r.added + ' questions added'); m.close(); box.reload(true); } catch (err) { m.el.querySelector('#im-err').textContent = err.message; }
+      });
+    }
+  }
+
+  // ---------------- lessons ----------------
+  async function renderLessons() {
+    view.innerHTML = '<div class="view-head"><div><h1>Lessons</h1><div class="muted">Every lesson on the platform — lecturer-recorded, and AI Teacher lessons written for self-study courses.</div></div></div>' +
+      searchBar('ls-search', 'Search lesson titles…', null, '<select id="ls-kind"><option value="">All</option><option value="recorded">Lecturer lessons</option><option value="ai">AI Teacher lessons</option></select>') + '<div id="ls-list"></div>';
+    const box = $('ls-list');
+    box.addEventListener('drawn', () => box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Remove this lesson for everyone?')) return;
+      try { await api('/lessons/' + b.dataset.del, { method: 'DELETE' }); toast('Lesson removed'); box.reload(); } catch (err) { toast(err.message); }
+    })));
+    await listView(box, (p) => '/lessons?page=' + p + '&search=' + encodeURIComponent($('ls-search').value.trim()) + '&kind=' + $('ls-kind').value, (d) =>
+      table(['Lesson', 'Where', 'School', 'By', 'Type', 'Added', ''], d.lessons.map((l) => '<tr><td><strong>' + esc(l.title) + '</strong></td><td>' + esc(l.where) + '</td><td>' + esc(l.schoolName || '—') + '</td><td>' + esc(l.owner || '—') + '</td><td>' + (l.isAiTeacher ? '<span class="pill ok">AI Teacher</span>' : (l.videoUrl ? 'Video' : 'Script')) + '</td><td>' + fmtDate(l.createdAt) + '</td><td><button class="btn-ghost btn-sm" data-del="' + l.id + '">Remove</button></td></tr>').join(''), 'No lessons yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('ls-search').addEventListener('input', reload); $('ls-kind').addEventListener('change', reload);
+  }
+
+  // ---------------- courses ----------------
+  async function renderCourses() {
+    view.innerHTML = '<div class="view-head"><div><h1>Courses</h1><div class="muted">School courses across every institution, and learners\' own self-study courses.</div></div></div><div id="co-host"></div>';
+    tabs($('co-host'), [['school', 'School courses'], ['self', 'Self-study courses']], async (tab, body) => {
+      body.innerHTML = searchBar('co-search', 'Search…', null, tab === 'school' ? '<select id="co-school"></select>' : '') + '<div id="co-list"></div>';
+      if (tab === 'school') $('co-school').innerHTML = await schoolOptions();
+      const box = $('co-list');
+      await listView(box, (p) => '/courses?kind=' + tab + '&page=' + p + '&search=' + encodeURIComponent($('co-search').value.trim()) + (tab === 'school' ? '&schoolId=' + $('co-school').value : ''), (d) => tab === 'school'
+        ? table(['Course', 'School', 'Department', 'Level', 'Students', 'Lecturers', 'Lessons', 'Tests'], d.courses.map((c) => '<tr><td><strong>' + esc(c.code) + '</strong> ' + esc(c.title) + '</td><td>' + esc(c.schoolName || '—') + '</td><td>' + esc(c.department) + '</td><td>' + esc(c.level) + '</td><td class="tabular">' + c.students + '</td><td>' + esc(c.lecturers.join(', ') || '—') + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td></tr>').join(''), 'No courses yet.')
+        : table(['Course', 'Learner', 'Lessons', 'Tests', 'Created'], d.courses.map((c) => '<tr><td><strong>' + esc(c.title) + '</strong></td><td>' + esc(c.owner) + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td>' + fmtDate(c.createdAt) + '</td></tr>').join(''), 'No self-study courses yet.'));
+      const reload = debounce(() => box.reload(true));
+      $('co-search').addEventListener('input', reload);
+      if ($('co-school')) $('co-school').addEventListener('change', () => box.reload(true));
+    });
+  }
+
+  // ---------------- demonstrations (digital lab) ----------------
+  async function renderDemonstrations() {
+    view.innerHTML = '<div class="view-head"><div><h1>Demonstrations</h1><div class="muted">Digital Lab practicals — lecturer-written and AI-generated. Hide one to stop students seeing it.</div></div></div>' +
+      '<div class="toolbar"><select id="dm-source"><option value="">All sources</option><option value="CURATED">Lecturer-written</option><option value="AI_GENERATED">AI-generated</option></select><select id="dm-status"><option value="">All</option><option value="APPROVED">Visible</option><option value="REJECTED">Hidden</option></select></div><div id="dm-list"></div>';
+    const box = $('dm-list');
+    box.addEventListener('drawn', (e) => {
+      box.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', async () => {
+        const d = await api('/demonstrations/' + b.dataset.view);
+        modal('<div class="modal-head"><h3>' + esc(d.title) + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div><p class="muted">' + esc(d.description) + '</p><ol>' + d.steps.map((s) => '<li style="margin-bottom:8px"><strong>' + esc(s.title) + '</strong><div>' + esc(s.instruction) + '</div>' + (s.expectedResult ? '<div class="small muted">Expected: ' + esc(s.expectedResult) + '</div>' : '') + '</li>').join('') + '</ol>');
+      }));
+      box.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', async () => { try { await api('/demonstrations/' + b.dataset.id, { method: 'PATCH', body: { status: b.dataset.set } }); box.reload(); } catch (err) { toast(err.message); } }));
+      box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Delete this demonstration and its attempts?')) return; try { await api('/demonstrations/' + b.dataset.del, { method: 'DELETE' }); box.reload(); } catch (err) { toast(err.message); } }));
+    });
+    await listView(box, (p) => '/demonstrations?page=' + p + '&source=' + $('dm-source').value + '&status=' + $('dm-status').value, (d) =>
+      table(['Practical', 'Where', 'Source', 'Steps', 'Done by', 'Status', ''], d.demonstrations.map((x) => '<tr><td><strong>' + esc(x.title) + '</strong><div class="small muted">' + esc(x.author || '') + '</div></td><td>' + esc(x.where) + '<div class="small muted">' + esc(x.schoolName || '') + '</div></td><td>' + (x.source === 'AI_GENERATED' ? 'AI' : 'Lecturer') + '</td><td class="tabular">' + x.steps + '</td><td class="tabular">' + x.attempts + '</td><td><span class="pill ' + (x.status === 'APPROVED' ? 'ok' : 'bad') + '">' + (x.status === 'APPROVED' ? 'Visible' : 'Hidden') + '</span></td><td style="white-space:nowrap"><button class="btn-ghost btn-sm" data-view="' + x.id + '">View</button> <button class="btn-ghost btn-sm" data-id="' + x.id + '" data-set="' + (x.status === 'APPROVED' ? 'REJECTED' : 'APPROVED') + '">' + (x.status === 'APPROVED' ? 'Hide' : 'Show') + '</button> <button class="btn-ghost btn-sm" data-del="' + x.id + '">Delete</button></td></tr>').join(''), 'No demonstrations yet.'));
+    $('dm-source').addEventListener('change', () => box.reload(true)); $('dm-status').addEventListener('change', () => box.reload(true));
+  }
+
+  // ---------------- attendance ----------------
+  async function renderAttendance() {
+    view.innerHTML = '<div class="view-head"><div><h1>Attendance</h1><div class="muted">Class attendance by course and staff check-ins, last 30 days.</div></div></div><div id="at-host"></div>';
+    tabs($('at-host'), [['class', 'Classes'], ['staff', 'Staff']], async (tab, body) => {
+      body.innerHTML = '<div id="at-list"></div>';
+      await listView($('at-list'), (p) => '/attendance?kind=' + tab + '&page=' + p, (d) => tab === 'class'
+        ? table(['Course', 'School', 'Present', 'Absent', 'Rate'], d.courses.map((c) => '<tr><td><strong>' + esc(c.code) + '</strong> ' + esc(c.title) + '</td><td>' + esc(c.schoolName || '—') + '</td><td class="tabular">' + c.present + '</td><td class="tabular">' + c.absent + '</td><td><span class="pill ' + (c.rate == null ? '' : c.rate >= 75 ? 'ok' : c.rate >= 50 ? 'warn' : 'bad') + '">' + (c.rate == null ? '—' : c.rate + '%') + '</span></td></tr>').join(''), 'No class attendance recorded in the last 30 days.')
+        : '<div class="muted" style="margin-bottom:8px">' + d.today + ' staff checked in today</div>' + table(['Date', 'Name', 'Role', 'School', 'Status'], d.records.map((r) => '<tr><td>' + fmtDate(r.date) + '</td><td><strong>' + esc(r.name) + '</strong></td><td>' + esc(r.role) + '</td><td>' + esc(r.schoolName || '—') + '</td><td><span class="pill ' + (r.status === 'PRESENT' ? 'ok' : 'warn') + '">' + esc(r.status) + '</span></td></tr>').join(''), 'No staff check-ins in the last 30 days.'));
+    });
+  }
+
+  // ---------------- results ----------------
+  async function renderResults() {
+    view.innerHTML = '<div class="view-head"><div><h1>Results</h1><div class="muted">Formal results lecturers have recorded, across all schools.</div></div></div>' +
+      searchBar('rs-search', 'Search student name or matric number…', null, '<select id="rs-school"></select><select id="rs-sent"><option value="">Drafts &amp; published</option><option value="sent">Published</option><option value="draft">Drafts</option></select>') + '<div id="rs-list"></div>';
+    $('rs-school').innerHTML = await schoolOptions();
+    const box = $('rs-list');
+    await listView(box, (p) => '/results?page=' + p + '&search=' + encodeURIComponent($('rs-search').value.trim()) + '&schoolId=' + $('rs-school').value + '&sent=' + $('rs-sent').value, (d) =>
+      '<div class="muted" style="margin-bottom:8px">' + d.sent + ' of ' + d.total + ' published to students</div>' + table(['Student', 'Course', 'School', 'Term', 'Score', 'Grade', 'By', 'Status'], d.results.map((r) => '<tr><td><strong>' + esc(r.student) + '</strong><div class="small muted">' + esc(r.matric || '') + '</div></td><td>' + esc(r.course) + '</td><td>' + esc(r.schoolName || '—') + '</td><td>' + esc(r.term) + '</td><td class="tabular">' + r.score + '</td><td>' + esc(r.grade || '—') + '</td><td>' + esc(r.by) + '</td><td><span class="pill ' + (r.sentAt ? 'ok' : 'warn') + '">' + (r.sentAt ? 'Published' : 'Draft') + '</span></td></tr>').join(''), 'No results recorded yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('rs-search').addEventListener('input', reload); $('rs-school').addEventListener('change', () => box.reload(true)); $('rs-sent').addEventListener('change', () => box.reload(true));
+  }
+
+  // ---------------- teachers ----------------
+  async function renderTeachers() {
+    view.innerHTML = '<div class="view-head"><div><h1>Teachers</h1><div class="muted">Lecturers and non-academic staff at every school.</div></div></div>' +
+      searchBar('te-search', 'Search name or staff ID…', null, '<select id="te-school"></select><select id="te-role"><option value="">Lecturers &amp; staff</option><option value="LECTURER">Lecturers</option><option value="STAFF">Non-academic staff</option></select>') + '<div id="te-list"></div>';
+    $('te-school').innerHTML = await schoolOptions();
+    const box = $('te-list');
+    await listView(box, (p) => '/teachers?page=' + p + '&search=' + encodeURIComponent($('te-search').value.trim()) + '&schoolId=' + $('te-school').value + '&role=' + $('te-role').value, (d) =>
+      table(['Name', 'School', 'Department', 'Role', 'Courses', 'Lessons', 'Tests', 'Status'], d.teachers.map((t) => '<tr><td><strong>' + esc(t.fullName) + '</strong><div class="small muted">' + esc(t.staffId || t.email || '') + '</div></td><td>' + esc(t.school ? t.school.name : '—') + '</td><td>' + esc(t.department || t.position || '—') + '</td><td>' + (t.role === 'LECTURER' ? 'Lecturer' : 'Staff') + '</td><td class="tabular">' + t.courses + '</td><td class="tabular">' + t.lessons + '</td><td class="tabular">' + t.tests + '</td><td><span class="pill ' + (t.status === 'ACTIVE' ? 'ok' : 'bad') + '">' + esc(t.status) + '</span></td></tr>').join(''), 'No teachers yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('te-search').addEventListener('input', reload); $('te-school').addEventListener('change', () => box.reload(true)); $('te-role').addEventListener('change', () => box.reload(true));
+  }
+
+  // ---------------- academic records ----------------
+  async function renderRecords() {
+    view.innerHTML = '<div class="view-head"><div><h1>Academic Records</h1><div class="muted">Each school student\'s level, CGPA, results and conduct record. Click a student for the full record.</div></div></div>' +
+      searchBar('ar-search', 'Search name or matric number…', null, '<select id="ar-school"></select>') + '<div id="ar-list"></div>';
+    $('ar-school').innerHTML = await schoolOptions();
+    const box = $('ar-list');
+    box.addEventListener('drawn', () => box.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', async () => {
+      const d = await api('/academic-records/' + tr.dataset.id);
+      const r = d.record;
+      modal('<div class="modal-head"><div><h3 style="margin:0">' + esc(r.fullName) + '</h3><div class="muted small">' + esc(d.schoolName) + ' · ' + esc(r.matricNumber || '') + '</div></div><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+        '<div class="kv"><div class="k">Department</div><div>' + esc(r.department || '—') + '</div><div class="k">Level</div><div>' + esc(r.level || '—') + '</div><div class="k">CGPA</div><div>' + (r.cgpa == null ? '—' : r.cgpa + ' / 5.00') + '</div><div class="k">Admitted</div><div>' + esc(r.yearOfAdmission || '—') + '</div><div class="k">Expected graduation</div><div>' + esc(r.expectedGraduationYear || '—') + '</div><div class="k">Class position</div><div>' + esc(r.classPosition || '—') + '</div><div class="k">Status</div><div>' + esc(r.status) + '</div>' +
+        '<div class="k">Exams</div><div class="tabular">' + r.exams.done + ' done · ' + r.exams.missed + ' missed</div><div class="k">Tests</div><div class="tabular">' + r.tests.done + ' done · ' + r.tests.missed + ' missed</div><div class="k">Assignments</div><div class="tabular">' + r.assignments.done + ' done · ' + r.assignments.missed + ' missed</div><div class="k">Conduct</div><div>' + (r.disciplinaryIssueCount ? r.disciplinaryIssueCount + ' record(s) on file' : 'Clean') + '</div></div>' +
+        '<h3>Published results</h3>' + table(['Course', 'Term', 'Score', 'Grade'], d.results.map((x) => '<tr><td>' + esc(x.course) + '</td><td>' + esc(x.term) + '</td><td class="tabular">' + x.score + '</td><td>' + esc(x.grade || '—') + '</td></tr>').join(''), 'No published results.') +
+        (r.disciplinaryRecords.length ? '<h3 style="margin-top:16px">Disciplinary records</h3>' + table(['Title', 'Status', 'Date'], r.disciplinaryRecords.map((x) => '<tr><td>' + esc(x.title) + '</td><td>' + esc(x.status) + '</td><td>' + fmtDate(x.createdAt) + '</td></tr>').join('')) : ''));
+    })));
+    await listView(box, (p) => '/academic-records?page=' + p + '&search=' + encodeURIComponent($('ar-search').value.trim()) + '&schoolId=' + $('ar-school').value, (d) =>
+      table(['Student', 'School', 'Department', 'Level', 'CGPA', 'Graduates', 'Status'], d.students.map((s) => '<tr class="clickable" data-id="' + s.id + '"><td><strong>' + esc(s.fullName) + '</strong><div class="small muted">' + esc(s.matricNumber || '') + '</div></td><td>' + esc(s.school ? s.school.name : '—') + '</td><td>' + esc(s.department || '—') + '</td><td>' + esc(s.level || '—') + '</td><td class="tabular">' + (s.cgpa == null ? '—' : s.cgpa) + '</td><td>' + esc(s.graduates || '—') + '</td><td><span class="pill ' + (s.status === 'ACTIVE' ? 'ok' : 'bad') + '">' + esc(s.status) + '</span></td></tr>').join(''), 'No school students yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('ar-search').addEventListener('input', reload); $('ar-school').addEventListener('change', () => box.reload(true));
+  }
+
+  // ---------------- bulk email / SMS ----------------
+  async function renderBulk(channel) {
+    const isEmail = channel === 'EMAIL';
+    const schools = await schoolOptions();
+    view.innerHTML = '<div class="view-head"><div><h1>' + (isEmail ? 'Bulk Email' : 'Bulk SMS') + '</h1><div class="muted">' + (isEmail ? 'Email a group of people at once.' : 'Text a group of people at once (160 characters per message part).') + ' Only active accounts with ' + (isEmail ? 'a real email address' : 'a phone number') + ' receive it.</div></div></div>' +
+      '<div class="panel" style="max-width:720px"><form id="bk-form"><div class="row"><div><label>Send to</label><select id="bk-aud"><option value="EVERYONE">Everyone</option><option value="STUDENTS">Students</option><option value="LECTURERS">Lecturers</option><option value="STAFF">Non-academic staff</option><option value="ADMINS">School admins</option><option value="INDEPENDENT">Independent students</option></select></div><div style="flex:2"><label>School (optional)</label><select id="bk-school">' + schools + '</select></div></div>' +
+      (isEmail ? '<label>Subject</label><input id="bk-subject" maxlength="120" required>' : '') +
+      '<label>Message</label><textarea id="bk-body" rows="6" maxlength="1500" required></textarea>' + (isEmail ? '' : '<div class="small muted" id="bk-count">0 characters</div>') +
+      '<div style="margin-top:14px"><button class="btn-gold" type="submit" id="bk-btn">Send ' + (isEmail ? 'email' : 'SMS') + '</button></div></form><div id="bk-result"></div></div>';
+    if (!isEmail) $('bk-body').addEventListener('input', () => { $('bk-count').textContent = $('bk-body').value.length + ' characters'; });
+    $('bk-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!confirm('Send this ' + (isEmail ? 'email' : 'SMS') + ' now? It cannot be recalled.')) return;
+      $('bk-btn').disabled = true;
+      try {
+        const r = await api('/bulk', { method: 'POST', body: { channel, audience: $('bk-aud').value, schoolId: $('bk-school').value || undefined, subject: isEmail ? $('bk-subject').value : undefined, body: $('bk-body').value } });
+        $('bk-result').innerHTML = '<div class="result-box">Sending to <strong>' + r.deliverable + '</strong> of ' + r.recipients + ' people' + (r.deliverable < r.recipients ? ' (the rest have no ' + (isEmail ? 'email address' : 'phone number') + ')' : '') + '. It continues in the background.</div>';
+        $('bk-form').reset();
+      } catch (err) { toast(err.message); } finally { $('bk-btn').disabled = false; }
+    });
+  }
+
+  // ---------------- codes ----------------
+  async function renderCodes() {
+    view.innerHTML = '<div class="view-head"><div><h1>Codes</h1><div class="muted">Join codes for schools and access codes for the people they add. Treat these like passwords.</div></div></div><div id="cd-host"></div>';
+    tabs($('cd-host'), [['users', 'Access codes'], ['schools', 'School join codes']], async (tab, body) => {
+      if (tab === 'schools') {
+        const { schools } = await api('/schools');
+        body.innerHTML = table(['School', 'Join code', 'Licence', ''], schools.map((s) => '<tr><td><strong>' + esc(s.name) + '</strong></td><td class="code">' + esc(s.joinCode) + '</td><td>' + licencePill(s.licence) + '</td><td style="white-space:nowrap"><button class="btn-ghost btn-sm" data-copy="' + esc(s.joinCode) + '">Copy</button> <button class="btn-ghost btn-sm" data-regen="' + s.id + '">Issue new</button></td></tr>').join(''), 'No schools yet.');
+        body.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copy(b.dataset.copy)));
+        body.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', async () => {
+          if (!confirm('Issue a new join code? The old one stops working immediately and the school admin must be given the new one.')) return;
+          try { const r = await api('/schools/' + b.dataset.regen + '/regenerate-join-code', { method: 'POST' }); toast('New code: ' + r.joinCode); go('codes'); } catch (err) { toast(err.message); }
+        }));
+        return;
+      }
+      body.innerHTML = searchBar('cd-search', 'Search name, matric number or staff ID…', null, '<select id="cd-school"></select>') + '<div id="cd-list"></div>';
+      $('cd-school').innerHTML = await schoolOptions();
+      const box = $('cd-list');
+      box.addEventListener('drawn', () => {
+        box.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copy(b.dataset.copy)));
+        box.querySelectorAll('[data-regen]').forEach((b) => b.addEventListener('click', async () => {
+          if (!confirm('Issue a new access code for ' + b.dataset.name + '? Their old code stops working immediately.')) return;
+          try { const r = await api('/codes/users/' + b.dataset.regen + '/regenerate', { method: 'POST' }); toast('New code: ' + r.accessCode); box.reload(); } catch (err) { toast(err.message); }
+        }));
+      });
+      await listView(box, (p) => '/codes/users?page=' + p + '&search=' + encodeURIComponent($('cd-search').value.trim()) + '&schoolId=' + $('cd-school').value, (d) =>
+        table(['Person', 'School', 'Role', 'Access code', ''], d.users.map((u) => '<tr><td><strong>' + esc(u.fullName) + '</strong></td><td>' + esc(u.school ? u.school.name : '—') + '</td><td>' + esc(u.role) + '</td><td class="code">' + esc(u.accessCode) + '</td><td style="white-space:nowrap"><button class="btn-ghost btn-sm" data-copy="' + esc(u.accessCode) + '">Copy</button> <button class="btn-ghost btn-sm" data-regen="' + u.id + '" data-name="' + esc(u.fullName) + '">Issue new</button></td></tr>').join(''), 'No access codes found.'));
+      const reload = debounce(() => box.reload(true));
+      $('cd-search').addEventListener('input', reload); $('cd-school').addEventListener('change', () => box.reload(true));
+    });
+  }
+
+  // ---------------- system logs ----------------
+  async function renderSystemLogs() {
+    view.innerHTML = '<div class="view-head"><div><h1>System Logs</h1><div class="muted">Errors and warnings from the server. A spike here usually means something is wrong before users tell you.</div></div><button class="btn-ghost" id="sl-clear">Clear old logs…</button></div>' +
+      searchBar('sl-search', 'Search message or path…', null, '<select id="sl-level"><option value="">All levels</option><option>ERROR</option><option>WARN</option><option>INFO</option></select>') + '<div id="sl-list"></div>';
+    const box = $('sl-list');
+    box.addEventListener('drawn', (e) => { box.lastDrawn = e.detail; });
+    box.addEventListener('drawn', () => box.querySelectorAll('[data-detail]').forEach((b) => b.addEventListener('click', () => {
+      const row = box.lastDrawn.logs.find((l) => l.id === b.dataset.detail);
+      modal('<div class="modal-head"><h3>' + esc(row.message) + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div><div class="muted small">' + fmtDateTime(row.createdAt) + ' · ' + esc(row.source) + (row.method ? ' · ' + esc(row.method) + ' ' + esc(row.path || '') : '') + '</div><pre style="white-space:pre-wrap;font-size:12px;max-height:50vh;overflow:auto">' + esc(row.detail || 'No further detail.') + '</pre>');
+    })));
+    await listView(box, (p) => '/system-logs?page=' + p + '&level=' + $('sl-level').value + '&search=' + encodeURIComponent($('sl-search').value.trim()), (d) =>
+      '<div class="muted" style="margin-bottom:8px">' + d.errors24h + ' error' + (d.errors24h === 1 ? '' : 's') + ' in the last 24 hours</div>' + table(['When', 'Level', 'Source', 'Message', 'Where', ''], d.logs.map((l) => '<tr><td>' + fmtDateTime(l.createdAt) + '</td><td><span class="pill ' + (l.level === 'ERROR' ? 'bad' : l.level === 'WARN' ? 'warn' : 'ok') + '">' + esc(l.level) + '</span></td><td>' + esc(l.source) + '</td><td style="white-space:normal;max-width:380px">' + esc(clip(l.message, 160)) + '</td><td class="small">' + esc((l.method || '') + ' ' + (l.path || '')) + '</td><td>' + (l.detail ? '<button class="btn-ghost btn-sm" data-detail="' + l.id + '">Details</button>' : '') + '</td></tr>').join(''), 'No logs — all quiet.'));
+    const reload = debounce(() => box.reload(true));
+    $('sl-search').addEventListener('input', reload); $('sl-level').addEventListener('change', () => box.reload(true));
+    $('sl-clear').addEventListener('click', async () => {
+      const days = prompt('Delete logs older than how many days? (0 deletes everything)', '30');
+      if (days == null) return;
+      try { const r = await api('/system-logs?olderThanDays=' + encodeURIComponent(days), { method: 'DELETE' }); toast(r.deleted + ' deleted'); box.reload(true); } catch (err) { toast(err.message); }
+    });
+  }
+
+  // ---------------- code editor ----------------
+  let editorTimers = [];
+  async function renderCodeEditor() {
+    view.innerHTML = '<div class="view-head"><div><h1>Code Editor</h1><div class="muted">Edit the apps\' front-end files. Changes are saved as a draft that only the live preview shows — nothing reaches users until you publish (with your password). Every version is kept and can be rolled back.</div></div></div>' +
+      '<div class="ce-layout"><div class="ce-files"><input id="ce-search" placeholder="Find a file…"><div id="ce-filelist"></div></div>' +
+      '<div class="ce-main"><div id="ce-empty" class="muted" style="padding:30px">Pick a file on the left.</div><div id="ce-work" class="hidden">' +
+      '<div class="ce-bar"><strong id="ce-name"></strong><span id="ce-state" class="pill"></span><span style="flex:1"></span>' +
+      '<button class="btn-ghost btn-sm" id="ce-versions">History</button><button class="btn-ghost btn-sm" id="ce-discard">Discard draft</button><button class="btn-ghost btn-sm" id="ce-revert">Restore original</button><button class="btn-gold btn-sm" id="ce-publish">Publish…</button></div>' +
+      '<div id="ce-err" class="error-msg"></div><div class="ce-split"><textarea id="ce-text" spellcheck="false" wrap="off"></textarea><div class="ce-preview"><div class="ce-prevbar"><label style="margin:0">Preview</label><select id="ce-page"><option value="app">Student app</option><option value="schools">Schools app</option><option value="legal">Legal page</option></select><button class="btn-ghost btn-sm" id="ce-reload">Reload</button></div><iframe id="ce-frame" title="Live preview"></iframe></div></div></div></div></div>';
+    editorTimers.forEach(clearTimeout); editorTimers = [];
+    let current = null;      // { path, published, hasDraft }
+    let previewToken = null;
+    let dirty = false;
+
+    async function loadList() {
+      const { files } = await api('/code/files');
+      const q = $('ce-search').value.trim().toLowerCase();
+      $('ce-filelist').innerHTML = files.filter((f) => f.path.toLowerCase().includes(q)).map((f) => '<div class="ce-file ' + (current && current.path === f.path ? 'on' : '') + '" data-path="' + esc(f.path) + '"><span>' + esc(f.path) + '</span><span class="small">' + (f.hasDraft ? '<span class="pill warn">draft</span>' : '') + (f.customised ? '<span class="pill ok">edited</span>' : '') + '</span></div>').join('');
+      $('ce-filelist').querySelectorAll('.ce-file').forEach((el) => el.addEventListener('click', async () => {
+        if (dirty && !confirm('You have unsaved typing. Switch file anyway?')) return;
+        openFile(el.dataset.path);
+      }));
+    }
+    $('ce-search').addEventListener('input', debounce(loadList, 150));
+
+    async function token() {
+      if (!previewToken) previewToken = (await api('/code/preview-token', { method: 'POST' })).token;
+      return previewToken;
+    }
+    async function reloadPreview() {
+      if (!current) return;
+      const t = await token();
+      const ext = current.path.split('.').pop();
+      let page = $('ce-page').value;
+      if (current.path === 'schools.html') page = 'schools'; else if (current.path === 'app.html') page = 'app'; else if (current.path === 'legal.html') page = 'legal';
+      $('ce-page').value = page;
+      $('ce-frame').src = '/_preview/' + t + '/' + (['html', 'css', 'js'].includes(ext) ? page : current.path) + '?t=' + Date.now();
+    }
+    function setState(text, cls) { $('ce-state').textContent = text; $('ce-state').className = 'pill ' + (cls || ''); }
+
+    async function openFile(path) {
+      const f = await api('/code/file?path=' + encodeURIComponent(path));
+      current = { path: f.path, original: f.original, published: f.published, hasDraft: !!f.draft };
+      $('ce-empty').classList.add('hidden'); $('ce-work').classList.remove('hidden');
+      $('ce-name').textContent = f.path;
+      $('ce-text').value = f.draft ? f.draft.content : f.published ? f.published.content : f.original;
+      $('ce-err').textContent = '';
+      dirty = false;
+      setState(f.draft ? 'Draft saved' : f.published ? 'Edited & live' : 'Original', f.draft ? 'warn' : f.published ? 'ok' : '');
+      $('ce-publish').disabled = !f.draft; $('ce-discard').disabled = !f.draft; $('ce-revert').disabled = !f.published;
+      loadList();
+      reloadPreview();
+    }
+
+    async function saveDraft() {
+      if (!current) return;
+      try {
+        await api('/code/draft', { method: 'PUT', body: { path: current.path, content: $('ce-text').value } });
+        $('ce-err').textContent = ''; dirty = false; current.hasDraft = true;
+        setState('Draft saved', 'warn'); $('ce-publish').disabled = false; $('ce-discard').disabled = false;
+        loadList(); reloadPreview();
+      } catch (err) { $('ce-err').textContent = err.message; setState('Not saved — fix the error', 'bad'); }
+    }
+    const autosave = debounce(saveDraft, 1200);
+    $('ce-text').addEventListener('input', () => { dirty = true; setState('Typing…', ''); autosave(); });
+    $('ce-text').addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') { e.preventDefault(); const t = e.target; const s = t.selectionStart; t.value = t.value.slice(0, s) + '  ' + t.value.slice(t.selectionEnd); t.selectionStart = t.selectionEnd = s + 2; t.dispatchEvent(new Event('input')); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveDraft(); }
+    });
+    $('ce-reload').addEventListener('click', reloadPreview);
+    $('ce-page').addEventListener('change', reloadPreview);
+
+    function askPassword(title, text, go) {
+      const m = modal('<div class="modal-head"><h3>' + esc(title) + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div><p class="muted">' + text + '</p><form id="pw-form"><label>Your password</label><input type="password" id="pw-input" required autocomplete="current-password"><div id="pw-err" class="error-msg"></div><div style="margin-top:12px"><button class="btn-gold" type="submit">Confirm</button></div></form>');
+      m.el.querySelector('#pw-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await go(m.el.querySelector('#pw-input').value); m.close(); } catch (err) { m.el.querySelector('#pw-err').textContent = err.message; }
+      });
+    }
+    $('ce-publish').addEventListener('click', async () => {
+      if (dirty) await saveDraft();
+      askPassword('Publish ' + current.path, 'This goes live for <strong>every user</strong> straight away. A broken file can stop the app loading — check the preview first. You can roll back from History.', async (password) => {
+        await api('/code/publish', { method: 'POST', body: { path: current.path, password } });
+        toast('Published'); openFile(current.path);
+      });
+    });
+    $('ce-discard').addEventListener('click', async () => {
+      if (!confirm('Throw away the draft and go back to the live version?')) return;
+      await api('/code/discard', { method: 'POST', body: { path: current.path } }); toast('Draft discarded'); openFile(current.path);
+    });
+    $('ce-revert').addEventListener('click', () => askPassword('Restore the original ' + current.path, 'All your published edits to this file are removed and users get the copy that shipped with the last deploy. History is kept.', async (password) => {
+      await api('/code/revert', { method: 'POST', body: { path: current.path, password } }); toast('Original restored'); openFile(current.path);
+    }));
+    $('ce-versions').addEventListener('click', async () => {
+      const { versions } = await api('/code/versions?path=' + encodeURIComponent(current.path));
+      const m = modal('<div class="modal-head"><h3>History · ' + esc(current.path) + '</h3><button class="btn-ghost btn-sm" data-close>✕</button></div>' + table(['When', 'By', 'Note', 'Size', ''], versions.map((v) => '<tr><td>' + fmtDateTime(v.publishedAt || v.createdAt) + '</td><td>' + esc(v.authorEmail || '—') + '</td><td style="white-space:normal;max-width:240px">' + esc(v.note || '') + '</td><td class="tabular">' + Math.round(v.size / 1024) + ' KB</td><td>' + (v.status === 'PUBLISHED' ? '<span class="pill ok">live</span>' : '<button class="btn-ghost btn-sm" data-roll="' + v.id + '">Roll back to this</button>') + '</td></tr>').join(''), 'No published versions yet.'));
+      m.el.querySelectorAll('[data-roll]').forEach((b) => b.addEventListener('click', () => { m.close(); askPassword('Roll back', 'This version becomes the live file for every user.', async (password) => { await api('/code/rollback', { method: 'POST', body: { versionId: b.dataset.roll, password } }); toast('Rolled back'); openFile(current.path); }); }));
+    });
+    await loadList();
   }
 
   // ---------------- boot ----------------

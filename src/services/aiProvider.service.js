@@ -1,3 +1,4 @@
+const syslog = require('../syslog');
 // Provider-agnostic AI layer: picks Gemini or Claude based on whichever API key is
 // present (Gemini first, matching the sibling PassNow project), and throws a clear,
 // catchable error when neither is configured yet -- callers turn that into a friendly
@@ -135,7 +136,13 @@ function requireProvider() {
 // model to reply with JSON only.
 async function askForJson(systemPrompt, userPrompt) {
   const provider = requireProvider();
-  const raw = provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: true }) : await callAnthropic(systemPrompt, userPrompt);
+  let raw;
+  try {
+    raw = provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: true }) : await callAnthropic(systemPrompt, userPrompt);
+  } catch (e) {
+    syslog.warn('ai', 'AI provider call failed: ' + e.message, { detail: provider });
+    throw e;
+  }
   const jsonText = extractJson(raw);
   try {
     return JSON.parse(jsonText);
@@ -148,7 +155,12 @@ async function askForJson(systemPrompt, userPrompt) {
 // answers (e.g. the research assistant) where forcing a JSON shape would be wrong.
 async function askForText(systemPrompt, userPrompt) {
   const provider = requireProvider();
-  return provider === 'gemini' ? callGemini(systemPrompt, userPrompt, { json: false }) : callAnthropic(systemPrompt, userPrompt);
+  try {
+    return provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: false }) : await callAnthropic(systemPrompt, userPrompt);
+  } catch (e) {
+    syslog.warn('ai', 'AI provider call failed: ' + e.message, { detail: provider });
+    throw e;
+  }
 }
 
 function extractJson(text) {

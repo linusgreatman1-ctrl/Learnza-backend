@@ -940,3 +940,59 @@ model GroupMessageRead {
 
   @@unique([messageId, readerId])
 }
+
+// ---- Platform question bank --------------------------------------------------------
+// Practice questions the platform owner curates (past questions by subject/course, any
+// institution). Students practise from them in either app; grading happens on the server so
+// the answer never reaches the browser before it is submitted.
+model PlatformQuestion {
+  id           String   @id @default(cuid())
+  subject      String
+  topic        String?
+  level        String?  // e.g. 100L, 200L, ND1
+  source       String?  // e.g. "UNILAG 2022 exam", "NUC past question"
+  year         Int?
+  text         String
+  options      String   // JSON array of option texts
+  correctIndex Int
+  explanation  String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([subject, active])
+}
+
+// ---- System log ----------------------------------------------------------------------
+// Server-side errors and warnings, kept so the owner can see what is going wrong without
+// shell access to the host.
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   // ERROR | WARN | INFO
+  source    String   // http | process | ai | payment | ...
+  message   String
+  detail    String?
+  method    String?
+  path      String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+}
+
+// ---- Site files (code editor) ---------------------------------------------------------
+// Edits to the public front-end files (public/*) made from the admin panel. They live in the
+// database so a redeploy does not wipe them. The active version of a file is its newest
+// PUBLISHED row; a DRAFT is a saved-but-unpublished edit that only the live preview shows.
+model SiteFileVersion {
+  id          String    @id @default(cuid())
+  path        String    // relative to public/, forward slashes
+  content     String
+  status      String    // DRAFT | PUBLISHED | SUPERSEDED
+  note        String?
+  authorEmail String?
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  @@index([path, createdAt])
+}

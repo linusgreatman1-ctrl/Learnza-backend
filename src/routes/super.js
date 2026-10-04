@@ -352,5 +352,9 @@ router.get('/audit-logs', async (req, res) => {
 router.use(require('./superPlatform'));
 // Support tickets, live chat, reviews, coins.
 router.use(require('./superSupport'));
+// Analytics, lessons, courses, labs, attendance, results, teachers, records, logs, codes, question bank.
+router.use(require('./superInsights'));
+// The Code Editor.
+router.use(require('./superCode'));
 
 module.exports = router;

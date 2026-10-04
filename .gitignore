@@ -9,3 +9,4 @@ uploads/*
 _*.log
 _testenv.sh
 _*.js
+_*.out

@@ -17,6 +17,10 @@ const groupsRoutes = require('./routes/groups');
 const settings = require('./settings');
 const coinsRoutes = require('./routes/coins');
 const supportRoutes = require('./routes/support');
+const questionsRoutes = require('./routes/questions');
+const siteFiles = require('./siteFiles');
+const syslog = require('./syslog');
+const { previewHandler } = require('./routes/superCode');
 const assessmentsRoutes = require('./routes/assessments');
 const adminRoutes = require('./routes/admin');
 const billingRoutes = require('./routes/billing');
@@ -126,6 +130,7 @@ app.use('/api/admin', adminRoutes); // a school admin's API (the Schools app)
 app.use('/api/billing', billingRoutes);
 app.use('/api/coins', coinsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/questions', questionsRoutes);
 app.use('/api', aiTeacherRoutes);
 app.use('/api', liveRoutes);
 app.use('/api', researchAssistantRoutes);
@@ -145,6 +150,12 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 //   /app      the Student app    (independent learners)
 //   /schools  the Schools app    (school admin, lecturers, school students)
 //   /admin    the Super-admin panel (platform owner; onboards schools)
+// Front-end files edited in the admin panel's Code Editor win over the copies on disk, and the
+// live preview serves unpublished drafts under a short-lived token.
+app.get('/_preview/:token/*', previewHandler);
+app.get('/_preview/:token', previewHandler);
+app.use(siteFiles.middleware);
+
 // The apps poll this to notice a new deploy and offer a refresh. The commit id changes on
 // every Railway deploy; locally it is just the boot time.
 const BUILD_ID = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || String(Date.now());
@@ -168,6 +179,7 @@ app.use((err, req, res, next) => {
   if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'That file is too large.' });
   console.error(err);
   const clientError = err && err.status >= 400 && err.status < 500;
+  if (!clientError) syslog.error('http', err && err.message ? err.message : 'Unknown error', { detail: err && err.stack, method: req.method, path: req.originalUrl.split('?')[0], userId: req.user && req.user.id });
   res.status(clientError ? err.status : 500).json({ error: clientError ? err.message : 'Something went wrong. Please try again.' });
 });
 
@@ -177,6 +189,8 @@ attachLiveNamespace(io);
 attachNotificationsNamespace(io);
 
 settings.start();
+siteFiles.start();
+syslog.installProcessHandlers();
 
 const PORT = process.env.PORT || 4100;
 server.listen(PORT, () => console.log(`Learnza API listening on port ${PORT}`));

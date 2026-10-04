@@ -247,6 +247,76 @@
     await draw();
   }
 
+  // ---------------------------------------------------------------- practice questions
+  // Questions the platform owner curates in the admin panel. Pick a subject, answer a set,
+  // then see the correct answers and explanations (grading happens on the server).
+  async function practice(view, { api, esc, toast }) {
+    const { subjects } = await api('/questions/subjects');
+    view.innerHTML = `
+      <div class="page-head"><h1>Practice Questions</h1></div>
+      <div class="card">
+        ${subjects.length ? `
+        <div class="field"><label>Subject</label><select id="pq-subject">${subjects.map((x) => `<option value="${esc(x.subject)}">${esc(x.subject)} (${x.count})</option>`).join('')}</select></div>
+        <div class="field"><label>How many questions?</label><select id="pq-count"><option>10</option><option>20</option><option>30</option></select></div>
+        <button class="btn btn-primary" id="pq-start">Start practising</button>` : '<p class="muted">No practice questions have been added yet. Check back soon.</p>'}
+      </div>`;
+    const start = view.querySelector('#pq-start');
+    if (!start) return;
+    start.addEventListener('click', async () => {
+      start.disabled = true;
+      try {
+        const subject = view.querySelector('#pq-subject').value;
+        const { questions } = await api('/questions/practice?subject=' + encodeURIComponent(subject) + '&count=' + view.querySelector('#pq-count').value);
+        quiz(subject, questions);
+      } catch (err) { toast(err.message); start.disabled = false; }
+    });
+
+    function quiz(subject, questions) {
+      const chosen = {};
+      view.innerHTML = `
+        <div class="page-head"><h1>${esc(subject)}</h1><button class="btn btn-ghost btn-sm" id="pq-quit">Quit</button></div>
+        ${questions.map((q, i) => `
+          <div class="card" style="margin-bottom:14px;">
+            <div class="meta">Question ${i + 1} of ${questions.length}${q.year ? ' · ' + q.year : ''}${q.source ? ' · ' + esc(q.source) : ''}</div>
+            <div style="font-weight:600;margin:6px 0 10px;white-space:pre-wrap;">${esc(q.text)}</div>
+            ${q.options.map((o, k) => `<button class="lzx-optionbtn" data-q="${i}" data-k="${k}"><span>${'ABCDEF'[k]}. ${esc(o)}</span></button>`).join('')}
+          </div>`).join('')}
+        <button class="btn btn-primary" id="pq-submit">Submit answers</button>`;
+      view.querySelector('#pq-quit').addEventListener('click', () => practice(view, { api, esc, toast }));
+      view.querySelectorAll('.lzx-optionbtn').forEach((b) => b.addEventListener('click', () => {
+        const qi = b.dataset.q;
+        chosen[qi] = Number(b.dataset.k);
+        view.querySelectorAll('.lzx-optionbtn[data-q="' + qi + '"]').forEach((x) => x.classList.toggle('mine', x === b));
+      }));
+      view.querySelector('#pq-submit').addEventListener('click', async () => {
+        const unanswered = questions.length - Object.keys(chosen).length;
+        if (unanswered && !confirm(unanswered + ' question' + (unanswered === 1 ? ' is' : 's are') + ' unanswered. Submit anyway?')) return;
+        try {
+          const r = await api('/questions/check', { method: 'POST', body: { answers: questions.map((q, i) => ({ id: q.id, choice: chosen[i] == null ? null : chosen[i] })) } });
+          results(subject, r);
+        } catch (err) { toast(err.message); }
+      });
+    }
+
+    function results(subject, r) {
+      view.innerHTML = `
+        <div class="page-head"><h1>Your result</h1></div>
+        <div class="card" style="margin-bottom:14px;text-align:center;">
+          <div style="font-size:2.4rem;font-weight:800;">${r.score} / ${r.total}</div>
+          <div class="meta">${Math.round((r.score / r.total) * 100)}% in ${esc(subject)}${r.points ? ' · +' + r.points + ' points' : ''}</div>
+          <button class="btn btn-primary" id="pq-again" style="margin-top:12px;">Practise again</button>
+        </div>
+        ${r.review.map((q, i) => `
+          <div class="card" style="margin-bottom:12px;border-left:4px solid ${q.correct ? '#1f8a5b' : '#c0392b'};">
+            <div style="font-weight:600;white-space:pre-wrap;">${i + 1}. ${esc(q.text)}</div>
+            ${q.options.map((o, k) => `<div style="margin-top:4px;${k === q.correctIndex ? 'font-weight:700;color:#1f8a5b;' : k === q.choice ? 'color:#c0392b;' : 'opacity:.75;'}">${'ABCDEF'[k]}. ${esc(o)}${k === q.correctIndex ? ' ✓' : k === q.choice ? ' ✗ (your answer)' : ''}</div>`).join('')}
+            ${q.choice == null ? '<div class="meta" style="margin-top:6px;">You skipped this one.</div>' : ''}
+            ${q.explanation ? `<div class="meta" style="margin-top:8px;">💡 ${esc(q.explanation)}</div>` : ''}
+          </div>`).join('')}`;
+      view.querySelector('#pq-again').addEventListener('click', () => practice(view, { api, esc, toast }));
+    }
+  }
+
   // ---------------------------------------------------------------- installable app (PWA)
   // Registers the service worker, shows a ribbon while offline, and — by checking
   // /version.json — offers a refresh when a new version has been deployed.
@@ -297,5 +367,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice };
 })();
