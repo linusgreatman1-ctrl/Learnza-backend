@@ -74,7 +74,7 @@ model User {
   attendedSchoolName String? // individual learners only: their real institution (not a Learnza School row)
   attendedDepartment String? // individual learners only
   courseOfStudy      String? // individual learners only: their real degree programme
-  institutionType    String? // individual learners only: UNIVERSITY | POLYTECHNIC | COLLEGE_OF_EDUCATION | OTHER
+  institutionType    String? // individual learners only: UNIVERSITY | POLYTECHNIC | MONOTECHNIC | COLLEGE_OF_EDUCATION | OTHER
   programmeYears     Int?      // school students: length of their programme in years (drives expected graduation year); null = assume 4
   loginAttempts      Int       @default(0) // consecutive failed password logins -- reset on success
   lockedUntil        DateTime? // set after 5 failed password logins; blocks password login until it passes
@@ -124,6 +124,15 @@ model User {
   notifications  Notification[]
   refreshTokens  RefreshToken[]
   aiConversationLogs AiConversationLog[]
+  supportTickets     SupportTicket[]
+  appReview          AppReview?
+  chatThread         ChatThread?
+  coinWallet         CoinWallet?
+  coinLedger         CoinLedger[]
+  coinPurchases      CoinPurchase[]
+  pollsCreated       GroupPoll[]
+  pollVotes          GroupPollVote[]
+  messageReads       GroupMessageRead[]
   passwordResets PasswordReset[]
   coursesAssigned CourseLecturer[]
   labAttempts    LabAttempt[]
@@ -309,6 +318,7 @@ model StudyGroup {
   createdAt   DateTime @default(now())
   members     GroupMembership[]
   messages    GroupMessage[]
+  polls       GroupPoll[]
 }
 
 model GroupMembership {
@@ -338,6 +348,7 @@ model GroupMessage {
   // hides it from the deleting member's own view via this per-user id list.
   deletedForEveryone Boolean  @default(false)
   deletedForIds      String[] @default([])
+  reads              GroupMessageRead[]
 }
 
 // courseId/individualCourseId are mutually exclusive, mirroring AiTeacherSession's
@@ -781,4 +792,151 @@ model AiConversationLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// ---- Help & support ----------------------------------------------------------------
+// A ticket is a written conversation with the platform team: the user opens it, staff
+// answer from the admin panel, either side can add messages until it is closed.
+model SupportTicket {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  subject   String
+  category  String   @default("GENERAL") // GENERAL | BILLING | ACCOUNT | BUG | OTHER
+  status    String   @default("OPEN")    // OPEN (waiting on us) | ANSWERED (waiting on the user) | CLOSED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  SupportMessage[]
+
+  @@index([status, updatedAt])
+  @@index([userId])
+}
+
+model SupportMessage {
+  id        String        @id @default(cuid())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String
+  fromStaff Boolean       @default(false)
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// Live chat: one running thread per user. An AI assistant answers first; the moment a
+// staff member replies, adminTookOver flips and the AI stays quiet from then on.
+model ChatThread {
+  id              String        @id @default(cuid())
+  user            User          @relation(fields: [userId], references: [id])
+  userId          String        @unique
+  adminTookOver   Boolean       @default(false)
+  unreadForAdmin  Int           @default(0)
+  unreadForUser   Int           @default(0)
+  lastMessageAt   DateTime      @default(now())
+  messages        ChatMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  threadId  String
+  sender    String     // USER | ADMIN | AI
+  body      String
+  createdAt DateTime   @default(now())
+
+  @@index([threadId, createdAt])
+}
+
+// One review per user (editing replaces it): 1-5 stars and an optional comment.
+model AppReview {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String   @unique
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---- Coins: pay-as-you-go top-up for live AI Teacher time ---------------------------
+// A subscription includes AI minutes each cycle. Once those run out a student can spend
+// coins instead: 1 coin = 5 minutes. balance is whole coins; aiSecondsCredit is the unused
+// remainder of the coin currently being spent. Every change is mirrored in CoinLedger,
+// which is append-only.
+model CoinWallet {
+  id              String   @id @default(cuid())
+  user            User     @relation(fields: [userId], references: [id])
+  userId          String   @unique
+  balance         Int      @default(0)
+  aiSecondsCredit Int      @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+model CoinLedger {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  delta        Int      // + credited, - spent
+  balanceAfter Int
+  reason       String   // PURCHASE | AI_USAGE | GRANT | ADJUSTMENT
+  note         String?
+  reference    String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model CoinPurchase {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  coins      Int
+  amountKobo Int
+  provider   String   // PAYSTACK | FLUTTERWAVE | MANUAL
+  reference  String   @unique
+  status     String   // PENDING | SUCCESS | FAILED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+// ---- Study-group polls and read receipts --------------------------------------------
+model GroupPoll {
+  id        String          @id @default(cuid())
+  group     StudyGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId   String
+  creator   User            @relation(fields: [creatorId], references: [id])
+  creatorId String
+  question  String
+  options   String          // JSON array of option labels
+  closed    Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  votes     GroupPollVote[]
+
+  @@index([groupId, createdAt])
+}
+
+model GroupPollVote {
+  id        String    @id @default(cuid())
+  poll      GroupPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  pollId    String
+  voter     User      @relation(fields: [voterId], references: [id])
+  voterId   String
+  optionIdx Int
+
+  @@unique([pollId, voterId])
+}
+
+model GroupMessageRead {
+  id        String       @id @default(cuid())
+  message   GroupMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  reader    User         @relation(fields: [readerId], references: [id])
+  readerId  String
+  readAt    DateTime     @default(now())
+
+  @@unique([messageId, readerId])
 }

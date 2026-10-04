@@ -60,7 +60,7 @@ function checkSchoolAccess(res, school) {
 // and deliberately no link to one at all. attendedSchoolName/attendedDepartment/
 // courseOfStudy describe their real institution for display purposes only. They get
 // their own self-directed courses (see /individual-courses) taught by the AI Teacher.
-const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
+const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'MONOTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
 
 router.post('/register-individual', async (req, res) => {
   if (!settings.get('registrationOpen')) return res.status(403).json({ error: 'New sign-ups are closed right now. Please check back soon.', code: 'REGISTRATION_CLOSED' });

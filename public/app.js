@@ -471,6 +471,7 @@
       ['leaderboard', 'Leaderboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
+      ['wallet', 'AI Minutes & Coins'],
       ['settings', 'Settings'],
     ],
   };
@@ -478,7 +479,7 @@
   // Builds the "name / school / department" identity lines shown as a profile card
   // on the homepage (My Dashboard, or the admin/lecturer landing screen) instead of
   // the sidebar -- the sidebar stays nav-only.
-  const INSTITUTION_TYPE_LABELS = { UNIVERSITY: 'University', POLYTECHNIC: 'Polytechnic', COLLEGE_OF_EDUCATION: 'College of Education', OTHER: 'Other institution' };
+  const INSTITUTION_TYPE_LABELS = { UNIVERSITY: 'University', POLYTECHNIC: 'Polytechnic', MONOTECHNIC: 'Monotechnic', COLLEGE_OF_EDUCATION: 'College of Education', OTHER: 'Other institution' };
 
   function profileLines() {
     const u = state.user;
@@ -736,6 +737,9 @@
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
         case 'settings': return renderSettings();
+        case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
+        case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
+        case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'settings-profile': return renderSettingsProfile();
         case 'settings-password': return renderSettingsPassword();
         case 'lab': return renderLab();
@@ -1883,6 +1887,15 @@
       ` : ''}
 
       <div class="settings-section">
+        <div class="settings-section-label">Help</div>
+        <div class="card">
+          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Teacher time', action: 'nav:wallet' }) : ''}
+          ${settingsArrowRowHtml({ icon: '🎧', label: 'Help & Support', sub: 'Tickets and live chat', action: 'nav:support' })}
+          ${settingsArrowRowHtml({ icon: '⭐', label: 'Rate Learnza', action: 'nav:support-review' })}
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-label">Account</div>
         <div class="card">
           ${settingsArrowRowHtml({ icon: '👤', label: 'Edit Profile', sub: 'Name and phone number', action: 'nav:settings-profile' })}
@@ -3011,11 +3024,16 @@
     if (!reference || !location.hash.includes('billing-callback')) return;
     localStorage.removeItem('vp_pending_payment_ref');
     try {
-      await api(`/billing/verify/${reference}`);
+      const r = await api(`/billing/verify/${reference}`);
+      if (r.kind === 'coins') {
+        toast(r.status === 'SUCCESS' ? 'Payment confirmed — coins added!' : 'Payment received — your coins will appear shortly.');
+        return 'coins';
+      }
       toast('Payment confirmed — subscription activated!');
     } catch {
       // Webhook may still be catching up; the billing page will reflect status shortly either way.
     }
+    return 'billing';
   }
 
   function libraryTypeIcon(type) {
@@ -3273,12 +3291,13 @@
   }
 
   async function renderGroupChat() {
-    const { messages } = await api(`/groups/${state.view.groupId}/messages`);
+    const { messages, memberCount } = await api(`/groups/${state.view.groupId}/messages`);
+    const bubble = (m) => groupMessageBubbleHtml(m).replace(/<\/div>$/, LZX.seenLabel(m, memberCount, state.user.id) + '</div>');
     view.innerHTML = `
       <div class="page-head"><h1>Study group</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to groups</button></div>
       <div class="card chat-box">
         <div class="chat-messages" id="chat-messages">
-          ${messages.map(groupMessageBubbleHtml).join('') || '<p class="muted">No messages yet — say hello.</p>'}
+          ${messages.map(bubble).join('') || '<p class="muted">No messages yet — say hello.</p>'}
         </div>
         <form class="chat-input-row" id="chat-form">
           <input type="file" id="chat-file" hidden>
@@ -3292,6 +3311,7 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('groups'));
     const box = document.getElementById('chat-messages');
     box.scrollTop = box.scrollHeight;
+    LZX.groupExtras({ api, esc, toast, groupId: state.view.groupId, view }).catch(() => {});
     view.querySelectorAll('[data-toggle-delete-menu]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -3625,7 +3645,7 @@
     loadHeaderContext().then(() => {
       buildSidebar();
       if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
-        checkPendingPayment().then(() => navigate('billing'));
+        checkPendingPayment().then((where) => navigate(where === 'coins' ? 'wallet' : 'billing'));
       } else {
         navigate(defaultScreenFor(state.user.role));
       }

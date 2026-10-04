@@ -1,5 +1,6 @@
 const prisma = require('./db');
 const settings = require('./settings');
+const coins = require('./services/coins.service');
 
 // Testing-phase switch: while the platform is still being tested, nothing should be
 // paywalled. Set REQUIRE_SUBSCRIPTION=true (as a Render env var) to flip enforcement
@@ -40,11 +41,15 @@ async function requireActiveSubscription(req, res, next) {
 // from the plain time-based active/expired check above -- so a student can be
 // time-active but still have run out of AI minutes for this cycle, and vice versa
 // while credits are simply untracked (no subscription row yet, e.g. during testing).
+// Coins (src/services/coins.service.js) top this up: when the cycle's minutes run out, the
+// student's coin wallet keeps the avatar going.
 async function getAiCreditStatus(userId) {
   const sub = await prisma.subscription.findUnique({ where: { userId } });
-  if (!sub) return { tracked: false, secondsGranted: 0, secondsUsed: 0, secondsRemaining: Infinity, exhausted: false };
-  const secondsRemaining = Math.max(0, sub.aiSecondsGranted - sub.aiSecondsUsed);
-  return { tracked: true, secondsGranted: sub.aiSecondsGranted, secondsUsed: sub.aiSecondsUsed, secondsRemaining, exhausted: secondsRemaining <= 0 };
+  if (!sub) return { tracked: false, secondsGranted: 0, secondsUsed: 0, secondsRemaining: Infinity, coinSeconds: 0, exhausted: false };
+  const wallet = await coins.getWallet(userId);
+  const coinSeconds = coins.walletSeconds(wallet);
+  const secondsRemaining = Math.max(0, sub.aiSecondsGranted - sub.aiSecondsUsed) + coinSeconds;
+  return { tracked: true, secondsGranted: sub.aiSecondsGranted, secondsUsed: sub.aiSecondsUsed, secondsRemaining, coinSeconds, exhausted: secondsRemaining <= 0 };
 }
 
 async function requireAiCredits(req, res, next) {
@@ -63,15 +68,18 @@ async function requireAiCredits(req, res, next) {
 // Called after AI-generated speech is actually produced, so credit usage tracks real
 // audio duration rather than request count -- a 5-second answer costs less than a
 // 2-minute lesson section. No-ops when there's no subscription row to track against.
+// The cycle's included minutes are spent first; whatever is left over comes out of coins.
 async function recordAiUsage(userId, seconds) {
   if (!seconds || seconds <= 0) return;
+  const total = Math.round(seconds);
   try {
-    await prisma.subscription.update({
-      where: { userId },
-      data: { aiSecondsUsed: { increment: Math.round(seconds) } },
-    });
-  } catch {
-    // No subscription row (free/testing user) -- nothing to track against.
+    const sub = await prisma.subscription.findUnique({ where: { userId } });
+    if (!sub) return; // free/testing user -- nothing to track against
+    const fromPlan = Math.min(total, Math.max(0, sub.aiSecondsGranted - sub.aiSecondsUsed));
+    if (fromPlan > 0) await prisma.subscription.update({ where: { userId }, data: { aiSecondsUsed: { increment: fromPlan } } });
+    if (total > fromPlan) await coins.spendSeconds(userId, total - fromPlan);
+  } catch (e) {
+    console.error('Could not record AI usage:', e.message);
   }
 }
 

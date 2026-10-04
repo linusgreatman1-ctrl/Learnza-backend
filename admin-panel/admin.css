@@ -118,3 +118,20 @@ textarea { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var
 .switch { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin: 0; }
 .switch input { width: auto; }
 @media (max-width: 720px) { .setting { flex-direction: column; align-items: stretch; gap: 10px; } .setting > div:last-child { min-width: 0; } }
+
+/* support: ticket thread + live chat */
+.thread { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; margin: 14px 0; padding-right: 4px; }
+.bubble { max-width: 82%; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+.bubble.user { background: var(--bg); align-self: flex-start; border: 1px solid var(--line); }
+.bubble.staff { background: var(--navy); color: #fff; align-self: flex-end; }
+.bubble.staff .muted { color: rgba(255, 255, 255, .6); }
+.ch-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; min-height: 480px; }
+.ch-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow-y: auto; max-height: 560px; }
+.ch-item { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.ch-item:hover, .ch-item.on { background: var(--bg); }
+.ch-pane { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; }
+.ch-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.ch-pane .thread { flex: 1; max-height: 400px; }
+.ch-form { display: flex; gap: 8px; }
+.ch-form input { flex: 1; }
+@media (max-width: 760px) { .ch-layout { grid-template-columns: 1fr; } }

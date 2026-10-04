@@ -4,3 +4,8 @@ dev.db
 dev.db-journal
 uploads/*
 !uploads/.gitkeep
+
+# local test scratch (contains a database password)
+_*.log
+_testenv.sh
+_*.js

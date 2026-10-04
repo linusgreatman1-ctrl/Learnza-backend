@@ -61,7 +61,9 @@ router.get('/dashboard', async (req, res) => {
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const [money, activeSubs, aiToday, liveNow, newToday] = await Promise.all([
+  const [openTickets, unreadChats, money, activeSubs, aiToday, liveNow, newToday] = await Promise.all([
+    prisma.supportTicket.count({ where: { status: 'OPEN' } }),
+    prisma.chatThread.count({ where: { unreadForAdmin: { gt: 0 } } }),
     prisma.payment.aggregate({ where: { status: 'SUCCESS', createdAt: { gte: monthStart } }, _sum: { amountKobo: true } }),
     prisma.subscription.count({ where: { status: 'ACTIVE', expiresAt: { gt: now } } }),
     prisma.aiConversationLog.count({ where: { createdAt: { gte: startOfDay } } }),
@@ -82,7 +84,7 @@ router.get('/dashboard', async (req, res) => {
     schools: { total: schools, active, suspended, expired },
     schoolUsers: { students: byRole.STUDENT || 0, lecturers: byRole.LECTURER || 0, staff: byRole.STAFF || 0, admins: byRole.ADMIN || 0 },
     independentStudents: independent,
-    activity: { revenueThisMonthKobo: money._sum.amountKobo || 0, activeSubscriptions: activeSubs, aiQuestionsToday: aiToday, liveNow, newUsersToday: newToday },
+    activity: { openTickets, unreadChats, revenueThisMonthKobo: money._sum.amountKobo || 0, activeSubscriptions: activeSubs, aiQuestionsToday: aiToday, liveNow, newUsersToday: newToday },
     recentSchools,
   });
 });
@@ -348,5 +350,7 @@ router.get('/audit-logs', async (req, res) => {
 
 // Announcements, payments, AI activity, live classes, gamification, e-Library, settings.
 router.use(require('./superPlatform'));
+// Support tickets, live chat, reviews, coins.
+router.use(require('./superSupport'));
 
 module.exports = router;

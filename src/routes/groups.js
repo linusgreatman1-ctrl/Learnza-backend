@@ -68,7 +68,93 @@ router.get('/groups/:id/messages', requireAuth, requireRole('STUDENT'), groupGat
     include: { sender: { select: { fullName: true } } },
     orderBy: { createdAt: 'asc' },
   });
-  res.json({ messages });
+  // "Seen by N": how many other members have opened each message. memberCount - 1 is the
+  // most it can reach for anyone's own message.
+  const [reads, memberCount] = await Promise.all([
+    messages.length
+      ? prisma.groupMessageRead.groupBy({ by: ['messageId'], where: { messageId: { in: messages.map((m) => m.id) } }, _count: { _all: true } })
+      : [],
+    prisma.groupMembership.count({ where: { groupId: req.group.id } }),
+  ]);
+  const seen = new Map(reads.map((r) => [r.messageId, r._count._all]));
+  res.json({ messages: messages.map((m) => ({ ...m, seenBy: seen.get(m.id) || 0 })), memberCount });
+});
+
+// Opening the chat marks everyone else's messages as seen by this member.
+router.post('/groups/:id/read', requireAuth, requireRole('STUDENT'), groupGate({ member: true }), async (req, res) => {
+  const unread = await prisma.groupMessage.findMany({
+    where: { groupId: req.group.id, senderId: { not: req.user.id }, reads: { none: { readerId: req.user.id } } },
+    select: { id: true },
+    take: 500,
+  });
+  if (unread.length) await prisma.groupMessageRead.createMany({ data: unread.map((m) => ({ messageId: m.id, readerId: req.user.id })), skipDuplicates: true });
+  res.json({ marked: unread.length });
+});
+
+// ---- Polls: a quick vote inside the group (e.g. "Which day for the revision session?") ----
+function pollShape(poll, userId) {
+  const options = JSON.parse(poll.options);
+  const counts = options.map(() => 0);
+  let mine = null;
+  for (const v of poll.votes) {
+    if (counts[v.optionIdx] !== undefined) counts[v.optionIdx] += 1;
+    if (v.voterId === userId) mine = v.optionIdx;
+  }
+  return {
+    id: poll.id, question: poll.question, closed: poll.closed, createdAt: poll.createdAt,
+    creator: poll.creator ? poll.creator.fullName : null, mine: poll.creatorId === userId,
+    options: options.map((label, i) => ({ label, votes: counts[i] })), myVote: mine, totalVotes: poll.votes.length,
+  };
+}
+
+router.get('/groups/:id/polls', requireAuth, requireRole('STUDENT'), groupGate({ member: true }), async (req, res) => {
+  const polls = await prisma.groupPoll.findMany({
+    where: { groupId: req.group.id }, orderBy: { createdAt: 'desc' }, take: 30,
+    include: { votes: true, creator: { select: { fullName: true } } },
+  });
+  res.json({ polls: polls.map((p) => pollShape(p, req.user.id)) });
+});
+
+router.post('/groups/:id/polls', requireAuth, requireRole('STUDENT'), groupGate({ member: true }), async (req, res) => {
+  const question = String(req.body.question || '').trim().slice(0, 200);
+  const options = (Array.isArray(req.body.options) ? req.body.options : []).map((o) => String(o || '').trim().slice(0, 80)).filter(Boolean);
+  if (!question) return res.status(400).json({ error: 'Ask a question.' });
+  if (options.length < 2 || options.length > 6) return res.status(400).json({ error: 'Give between 2 and 6 options.' });
+  if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) return res.status(400).json({ error: 'Each option must be different.' });
+  const poll = await prisma.groupPoll.create({
+    data: { groupId: req.group.id, creatorId: req.user.id, question, options: JSON.stringify(options) },
+    include: { votes: true, creator: { select: { fullName: true } } },
+  });
+  res.json({ poll: pollShape(poll, req.user.id) });
+});
+
+// Voting and closing look the poll up first, then apply the same group check.
+async function loadPoll(req, res, next) {
+  const poll = await prisma.groupPoll.findUnique({ where: { id: req.params.pollId }, include: { votes: true, creator: { select: { fullName: true } } } });
+  if (!poll) return res.status(404).json({ error: 'Poll not found' });
+  req.params.id = poll.groupId;
+  req.poll = poll;
+  next();
+}
+
+router.post('/polls/:pollId/vote', requireAuth, requireRole('STUDENT'), loadPoll, groupGate({ member: true }), async (req, res) => {
+  const idx = parseInt(req.body.optionIdx, 10);
+  const options = JSON.parse(req.poll.options);
+  if (req.poll.closed) return res.status(409).json({ error: 'This poll is closed.' });
+  if (!(idx >= 0 && idx < options.length)) return res.status(400).json({ error: 'Pick one of the options.' });
+  await prisma.groupPollVote.upsert({
+    where: { pollId_voterId: { pollId: req.poll.id, voterId: req.user.id } },
+    create: { pollId: req.poll.id, voterId: req.user.id, optionIdx: idx },
+    update: { optionIdx: idx },
+  });
+  const fresh = await prisma.groupPoll.findUnique({ where: { id: req.poll.id }, include: { votes: true, creator: { select: { fullName: true } } } });
+  res.json({ poll: pollShape(fresh, req.user.id) });
+});
+
+router.post('/polls/:pollId/close', requireAuth, requireRole('STUDENT'), loadPoll, groupGate({ member: true }), async (req, res) => {
+  if (req.poll.creatorId !== req.user.id) return res.status(403).json({ error: 'Only the person who started the poll can close it.' });
+  const updated = await prisma.groupPoll.update({ where: { id: req.poll.id }, data: { closed: true }, include: { votes: true, creator: { select: { fullName: true } } } });
+  res.json({ poll: pollShape(updated, req.user.id) });
 });
 
 router.post('/groups/:id/messages', requireAuth, requireRole('STUDENT'), groupGate({ member: true }), async (req, res) => {

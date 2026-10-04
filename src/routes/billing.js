@@ -5,6 +5,7 @@ const { getSubscriptionStatus, isEnforced } = require('../subscription');
 const { getPlan } = require('../config/plans');
 const paystack = require('../services/paystack.service');
 const flutterwave = require('../services/flutterwave.service');
+const coins = require('../services/coins.service');
 
 const router = express.Router();
 
@@ -71,6 +72,8 @@ router.post('/checkout', requireAuth, requireRole('STUDENT'), async (req, res) =
 // Fallback verification the frontend can call right after redirect, in case the
 // async webhook hasn't landed yet.
 router.get('/verify/:reference', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const coinPurchase = await prisma.coinPurchase.findUnique({ where: { reference: req.params.reference } });
+  if (coinPurchase) return verifyCoinPurchase(req, res, coinPurchase);
   const payment = await prisma.payment.findUnique({ where: { reference: req.params.reference } });
   if (!payment || payment.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found' });
   if (payment.status === 'SUCCESS') return res.json({ status: 'SUCCESS' });
@@ -89,6 +92,24 @@ router.get('/verify/:reference', requireAuth, requireRole('STUDENT'), async (req
     res.status(503).json({ error: err.message });
   }
 });
+
+async function verifyCoinPurchase(req, res, purchase) {
+  if (purchase.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found' });
+  if (purchase.status === 'SUCCESS') return res.json({ status: 'SUCCESS', kind: 'coins' });
+  try {
+    if (purchase.provider === 'PAYSTACK') {
+      const data = await paystack.verifyTransaction(purchase.reference);
+      if (data.status === 'success') await coins.completePurchase(purchase);
+    } else {
+      const data = await flutterwave.verifyTransaction(req.query.transactionId || purchase.reference);
+      if (data.status === 'successful') await coins.completePurchase(purchase);
+    }
+    const fresh = await prisma.coinPurchase.findUnique({ where: { id: purchase.id } });
+    res.json({ status: fresh.status, kind: 'coins' });
+  } catch (err) {
+    res.status(503).json({ error: err.message });
+  }
+}
 
 async function activateSubscription(payment) {
   if (payment.status === 'SUCCESS') return;
@@ -122,6 +143,8 @@ router.post('/webhook/paystack', async (req, res) => {
   if (event.event === 'charge.success') {
     const payment = await prisma.payment.findUnique({ where: { reference: event.data.reference } });
     if (payment) await activateSubscription(payment);
+    const purchase = await prisma.coinPurchase.findUnique({ where: { reference: event.data.reference } });
+    if (purchase) await coins.completePurchase(purchase);
   }
   res.status(200).end();
 });
@@ -134,6 +157,8 @@ router.post('/webhook/flutterwave', async (req, res) => {
   if (event.event === 'charge.completed' && event.data?.status === 'successful') {
     const payment = await prisma.payment.findUnique({ where: { reference: event.data.tx_ref } });
     if (payment) await activateSubscription(payment);
+    const purchase = await prisma.coinPurchase.findUnique({ where: { reference: event.data.tx_ref } });
+    if (purchase) await coins.completePurchase(purchase);
   }
   res.status(200).end();
 });

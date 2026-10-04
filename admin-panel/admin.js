@@ -173,7 +173,7 @@
   // ---------------- navigation ----------------
   const views = {
     dashboard: renderDashboard, schools: renderSchools, users: renderUsers,
-    announcements: renderAnnouncements, payments: renderPayments, ai: renderAi, live: renderLive,
+    announcements: renderAnnouncements, support: renderSupport, reviews: renderReviews, payments: renderPayments, ai: renderAi, live: renderLive,
     gamification: renderGamification, library: renderLibrary, settings: renderSettings,
     admins: renderAdmins, audit: renderAudit,
   };
@@ -182,6 +182,7 @@
     if (!views[name]) name = 'dashboard';
     location.hash = name;
     document.querySelectorAll('#nav li').forEach((li) => li.classList.toggle('active', li.dataset.view === name));
+    if (typeof chatTimer !== 'undefined') clearInterval(chatTimer);
     view.innerHTML = '<p class="muted">Loading…</p>';
     views[name]().catch((err) => { view.innerHTML = `<p class="error-msg">${esc(err.message)}</p>`; });
   }
@@ -216,6 +217,8 @@
       <div class="cards">${stat(d.schools.total, 'Schools onboarded')}${stat(d.schools.active, 'Active licences')}${stat(d.schools.expired, 'Expired licences')}${stat(d.schools.suspended, 'Suspended')}</div>
       <h3>People</h3>
       <div class="cards">${stat(d.schoolUsers.students, 'School students')}${stat(d.schoolUsers.lecturers, 'Lecturers')}${stat(d.schoolUsers.staff, 'Non-academic staff')}${stat(d.schoolUsers.admins, 'School admins')}${stat(d.independentStudents, 'Independent students')}</div>
+      <h3>Needs attention</h3>
+      <div class="cards">' + '${stat(d.activity.openTickets, 'Tickets waiting on you')}${stat(d.activity.unreadChats, 'Chats with unread messages')}' + '</div>
       <h3>This month</h3>
       <div class="cards">${stat(naira(d.activity.revenueThisMonthKobo), 'Subscription revenue')}${stat(d.activity.activeSubscriptions, 'Active subscriptions')}${stat(d.activity.aiQuestionsToday, 'AI questions today')}${stat(d.activity.liveNow, 'Live classes on now')}${stat(d.activity.newUsersToday, 'New users today')}</div>
       <h3>Recently onboarded</h3>
@@ -465,8 +468,9 @@
   // ---------------- payments & subscriptions ----------------
   async function renderPayments() {
     view.innerHTML = '<div class="view-head"><div><h1>Payments &amp; Subscriptions</h1><div class="muted">Student subscriptions paid through Paystack or Flutterwave, and manual grants.</div></div></div><div id="pay-host"></div>';
-    tabs($('pay-host'), [['payments', 'Payments'], ['subs', 'Subscriptions'], ['grant', 'Grant access']], async (tab, body) => {
+    tabs($('pay-host'), [['payments', 'Payments'], ['subs', 'Subscriptions'], ['coins', 'Coins'], ['grant', 'Grant access']], async (tab, body) => {
       if (tab === 'grant') return renderGrant(body);
+      if (tab === 'coins') return coinsTab(body);
       let page = 1;
       let filter = '';
       async function load() {
@@ -655,6 +659,117 @@
       if (out.maintenanceMode && !settings.find((s) => s.key === 'maintenanceMode').value && !confirm('Turn on maintenance mode? Every student, lecturer and school admin is locked out until you turn it off.')) return;
       try { await api('/settings', { method: 'PUT', body: { settings: out } }); toast('Settings saved'); renderSettings(); } catch (err) { toast(err.message); }
     });
+  }
+
+  // ---------------- support: tickets + live chat ----------------
+  async function renderSupport() {
+    view.innerHTML = '<div class="view-head"><div><h1>Support</h1><div class="muted">Tickets and live chats from students, lecturers and school admins. A chat is answered by the AI assistant until you reply — then it stays quiet.</div></div></div><div id="sp-host"></div>';
+    tabs($('sp-host'), [['tickets', 'Tickets'], ['chat', 'Live chat']], async (tab, body) => {
+      if (tab === 'tickets') return supportTickets(body);
+      return supportChat(body);
+    });
+  }
+
+  async function supportTickets(body) {
+    let page = 1;
+    let status = 'OPEN';
+    async function load() {
+      const d = await api('/tickets?page=' + page + (status ? '&status=' + status : ''));
+      if (!body.isConnected) return;
+      body.innerHTML = '<div class="toolbar"><select id="tk-f"><option value="OPEN">Waiting on us (' + d.open + ')</option><option value="ANSWERED">Answered</option><option value="CLOSED">Closed</option><option value="">All</option></select></div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Updated</th><th>From</th><th>Subject</th><th>Category</th><th>Msgs</th><th>Status</th></tr></thead><tbody>' +
+        (d.tickets.map((t) => '<tr class="clickable" data-id="' + t.id + '"><td>' + fmtDateTime(t.updatedAt) + '</td><td><strong>' + esc(t.user.fullName) + '</strong><div class="small muted">' + esc(t.user.school ? t.user.school.name : t.user.role) + '</div></td><td>' + esc(t.subject) + '</td><td>' + esc(t.category) + '</td><td class="tabular">' + t._count.messages + '</td><td><span class="pill ' + (t.status === 'OPEN' ? 'warn' : t.status === 'ANSWERED' ? 'ok' : '') + '">' + esc(t.status) + '</span></td></tr>').join('') || '<tr><td colspan="6" class="muted">Nothing here.</td></tr>') + '</tbody></table></div>';
+      $('tk-f').value = status;
+      $('tk-f').addEventListener('change', () => { status = $('tk-f').value; page = 1; load(); });
+      body.appendChild(pager(page, d.total, d.pageSize, (p) => { page = p; load(); }));
+      body.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', () => openTicket(tr.dataset.id, load)));
+    }
+    await load();
+  }
+
+  async function openTicket(id, refresh) {
+    const { ticket } = await api('/tickets/' + id);
+    const m = modal('<div class="modal-head"><div><h3 style="margin:0">' + esc(ticket.subject) + '</h3><div class="muted small">' + esc(ticket.user.fullName) + ' · ' + esc(ticket.user.email) + ' · ' + esc(ticket.user.school ? ticket.user.school.name : ticket.user.role) + ' · ' + esc(ticket.category) + '</div></div><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+      '<div class="thread">' + ticket.messages.map((x) => '<div class="bubble ' + (x.fromStaff ? 'staff' : 'user') + '"><div class="small muted">' + (x.fromStaff ? 'Learnza' : esc(ticket.user.fullName)) + ' · ' + fmtDateTime(x.createdAt) + '</div>' + esc(x.body) + '</div>').join('') + '</div>' +
+      (ticket.status === 'CLOSED' ? '<p class="muted">This ticket is closed.</p><button class="btn-ghost btn-sm" id="tk-reopen">Reopen</button>' :
+        '<form id="tk-form"><label>Reply</label><textarea id="tk-body" rows="4" required></textarea><div style="margin-top:12px;display:flex;gap:8px"><button type="submit" class="btn-gold">Send reply</button><button type="button" class="btn-ghost" id="tk-close">Reply &amp; close</button></div></form>'));
+    const q = (sel) => m.el.querySelector(sel);
+    const send = async (close) => {
+      try { await api('/tickets/' + id + '/reply', { method: 'POST', body: { body: q('#tk-body').value.trim(), close } }); toast('Reply sent'); m.close(); refresh(); } catch (err) { toast(err.message); }
+    };
+    if (q('#tk-form')) {
+      q('#tk-form').addEventListener('submit', (e) => { e.preventDefault(); send(false); });
+      q('#tk-close').addEventListener('click', () => { if (q('#tk-body').value.trim()) send(true); else toast('Write a reply first'); });
+    }
+    if (q('#tk-reopen')) q('#tk-reopen').addEventListener('click', async () => { try { await api('/tickets/' + id + '/status', { method: 'POST', body: { status: 'OPEN' } }); m.close(); refresh(); } catch (err) { toast(err.message); } });
+  }
+
+  let chatTimer = null;
+  async function supportChat(body) {
+    clearInterval(chatTimer);
+    let active = null;
+    async function drawList() {
+      const d = await api('/chat/threads');
+      if (!body.isConnected) { clearInterval(chatTimer); return; }
+      const list = $('ch-list');
+      if (!list) return;
+      list.innerHTML = d.threads.map((t) => '<div class="ch-item ' + (t.id === active ? 'on' : '') + '" data-id="' + t.id + '"><div><strong>' + esc(t.user.fullName) + '</strong>' + (t.unreadForAdmin ? ' <span class="pill bad">' + t.unreadForAdmin + '</span>' : '') + '</div><div class="small muted">' + esc(t.user.school ? t.user.school.name : t.user.role) + (t.adminTookOver ? ' · with team' : ' · AI') + '</div><div class="small">' + esc(t.lastMessage ? clip(t.lastMessage.body, 60) : '') + '</div></div>').join('') || '<p class="muted" style="padding:12px">No chats yet.</p>';
+      list.querySelectorAll('.ch-item').forEach((el) => el.addEventListener('click', () => { active = el.dataset.id; drawThread(); drawList(); }));
+    }
+    async function drawThread() {
+      if (!active) return;
+      const { thread } = await api('/chat/threads/' + active);
+      const pane = $('ch-pane');
+      if (!pane) return;
+      const typing = $('ch-text') ? $('ch-text').value : '';
+      pane.innerHTML = '<div class="ch-head"><div><strong>' + esc(thread.user.fullName) + '</strong><div class="small muted">' + esc(thread.user.email) + ' · ' + esc(thread.user.school ? thread.user.school.name : thread.user.role) + '</div></div>' + (thread.adminTookOver ? '<button class="btn-ghost btn-sm" id="ch-release">Hand back to AI</button>' : '<span class="pill">AI is answering</span>') + '</div>' +
+        '<div class="thread" id="ch-thread">' + thread.messages.map((x) => '<div class="bubble ' + (x.sender === 'USER' ? 'user' : 'staff') + '"><div class="small muted">' + (x.sender === 'USER' ? esc(thread.user.fullName) : x.sender === 'AI' ? 'AI assistant' : 'You') + ' · ' + fmtDateTime(x.createdAt) + '</div>' + esc(x.body) + '</div>').join('') + '</div>' +
+        '<form id="ch-form" class="ch-form"><input id="ch-text" placeholder="Reply as the Learnza team…" required autocomplete="off"><button class="btn-gold" type="submit">Send</button></form>';
+      $('ch-text').value = typing;
+      const th = $('ch-thread'); th.scrollTop = th.scrollHeight;
+      $('ch-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await api('/chat/threads/' + active + '/reply', { method: 'POST', body: { body: $('ch-text').value.trim() } }); $('ch-text').value = ''; drawThread(); drawList(); } catch (err) { toast(err.message); }
+      });
+      if ($('ch-release')) $('ch-release').addEventListener('click', async () => { await api('/chat/threads/' + active + '/release', { method: 'POST' }); drawThread(); drawList(); });
+    }
+    body.innerHTML = '<div class="ch-layout"><div id="ch-list" class="ch-list"></div><div id="ch-pane" class="ch-pane"><p class="muted" style="padding:20px">Pick a chat.</p></div></div>';
+    await drawList();
+    // Light polling keeps the open chat and the list fresh without a socket.
+    chatTimer = setInterval(() => { if (!body.isConnected) return clearInterval(chatTimer); drawList().catch(() => {}); if (active && !(document.activeElement && document.activeElement.id === 'ch-text' && $('ch-text').value)) drawThread().catch(() => {}); }, 6000);
+  }
+
+  // ---------------- reviews ----------------
+  async function renderReviews() {
+    const d = await api('/reviews');
+    const max = Math.max(1, ...Object.values(d.distribution));
+    const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+    view.innerHTML = '<div class="view-head"><div><h1>App Reviews</h1><div class="muted">What people say about Learnza, one review each.</div></div></div>' +
+      '<div class="panel"><div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap"><div><div style="font-size:42px;font-weight:700">' + (d.average == null ? '—' : d.average) + '</div><div class="muted">' + d.total + ' review' + (d.total === 1 ? '' : 's') + '</div></div><div style="flex:1;min-width:220px">' +
+      [5, 4, 3, 2, 1].map((n) => '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span class="small" style="width:14px">' + n + '</span><div style="flex:1;background:var(--line);border-radius:4px;height:8px"><div style="width:' + (d.distribution[n] / max * 100) + '%;background:var(--gold);height:8px;border-radius:4px"></div></div><span class="small tabular" style="width:28px">' + d.distribution[n] + '</span></div>').join('') + '</div></div></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>From</th><th>Rating</th><th>Comment</th></tr></thead><tbody>' +
+      (d.reviews.map((r) => '<tr><td>' + fmtDate(r.updatedAt) + '</td><td><strong>' + esc(r.user.fullName) + '</strong><div class="small muted">' + esc(r.user.school ? r.user.school.name : r.user.role) + '</div></td><td style="color:#c1861f;white-space:nowrap">' + stars(r.rating) + '</td><td style="white-space:normal;max-width:420px">' + esc(r.comment || '') + '</td></tr>').join('') || '<tr><td colspan="4" class="muted">No reviews yet.</td></tr>') + '</tbody></table></div>';
+    view.appendChild(pager(d.page, d.total, d.pageSize, () => {}));
+  }
+
+  // ---------------- coins (a tab inside Payments & Subscriptions) ----------------
+  async function coinsTab(body) {
+    let page = 1;
+    async function load() {
+      const d = await api('/coins/purchases?page=' + page);
+      if (!body.isConnected) return;
+      const stat = (n, l) => '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>';
+      body.innerHTML = '<div class="cards">' + stat(naira(d.summary.revenueKobo), 'Coin revenue') + stat(d.summary.coinsSold, 'Coins sold') + stat(d.summary.paid, 'Paid purchases') + '</div>' +
+        '<div class="panel" style="max-width:640px"><h3>Add coins to a student</h3><form id="cg-form"><div class="row"><div style="flex:2"><label>Student email</label><input id="cg-email" type="email" required></div><div><label>Coins</label><input id="cg-n" type="number" min="1" max="10000" required></div></div><label>Note (shown in their history)</label><input id="cg-note" placeholder="e.g. Scholarship top-up"><div style="margin-top:12px"><button class="btn-gold" type="submit">Add coins</button></div></form></div>' +
+        '<h3 style="margin-top:20px">Purchases</h3><div class="table-wrap"><table><thead><tr><th>When</th><th>Student</th><th>Coins</th><th>Amount</th><th>Provider</th><th>Status</th></tr></thead><tbody>' +
+        (d.purchases.map((p) => '<tr><td>' + fmtDateTime(p.createdAt) + '</td><td><strong>' + esc(p.user.fullName) + '</strong></td><td class="tabular">' + p.coins + '</td><td class="tabular">' + naira(p.amountKobo) + '</td><td>' + esc(p.provider) + '</td><td><span class="pill ' + (p.status === 'SUCCESS' ? 'ok' : p.status === 'PENDING' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></td></tr>').join('') || '<tr><td colspan="6" class="muted">No purchases yet.</td></tr>') + '</tbody></table></div>';
+      body.appendChild(pager(page, d.total, d.pageSize, (p) => { page = p; load(); }));
+      $('cg-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await api('/coins/grant', { method: 'POST', body: { email: $('cg-email').value.trim(), coins: $('cg-n').value, note: $('cg-note').value.trim() } }); toast('Coins added'); load(); } catch (err) { toast(err.message); }
+      });
+    }
+    await load();
   }
 
   // ---------------- boot ----------------

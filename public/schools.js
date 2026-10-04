@@ -430,6 +430,7 @@
       ['academic-record', 'Academic Record'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
+      ['wallet', 'AI Minutes & Coins'],
       ['settings', 'Settings'],
     ],
     STUDENT_INDIVIDUAL: [
@@ -447,6 +448,7 @@
       ['leaderboard', 'Leaderboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
+      ['wallet', 'AI Minutes & Coins'],
       ['settings', 'Settings'],
     ],
     LECTURER: [
@@ -490,7 +492,7 @@
   // Builds the "name / school / department" identity lines shown as a profile card
   // on the homepage (My Dashboard, or the admin/lecturer landing screen) instead of
   // the sidebar -- the sidebar stays nav-only.
-  const INSTITUTION_TYPE_LABELS = { UNIVERSITY: 'University', POLYTECHNIC: 'Polytechnic', COLLEGE_OF_EDUCATION: 'College of Education', OTHER: 'Other institution' };
+  const INSTITUTION_TYPE_LABELS = { UNIVERSITY: 'University', POLYTECHNIC: 'Polytechnic', MONOTECHNIC: 'Monotechnic', COLLEGE_OF_EDUCATION: 'College of Education', OTHER: 'Other institution' };
 
   function profileLines() {
     const u = state.user;
@@ -769,6 +771,9 @@
         case 'lect-dashboard': return renderLecturerDashboard();
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
+        case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
+        case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
+        case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'lect-library': return renderLibrary(true);
         case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM', 'PAST_QUESTION'], allowedTypes: ['CA', 'Test', 'Mock'] });
         case 'lect-assessments': return renderAssessments(true, { heading: 'Assessments', typeFilter: ['PAST_QUESTION'], defaultType: 'PAST_QUESTION', allowedTypes: ['PAST_QUESTION'] });
@@ -2940,6 +2945,15 @@
           saveSession(state.token, state.user, state.refreshToken);
         }
         toast('Password updated');
+      <div class="settings-section">
+        <div class="settings-section-label">Help</div>
+        <div class="card">
+          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Teacher time', action: 'nav:wallet' }) : ''}
+          ${settingsArrowRowHtml({ icon: '🎧', label: 'Help & Support', sub: 'Tickets and live chat', action: 'nav:support' })}
+          ${settingsArrowRowHtml({ icon: '⭐', label: 'Rate Learnza', action: 'nav:support-review' })}
+        </div>
+      </div>
+
         navigate('settings');
       } catch (err) { toast(err.message); }
     });
@@ -4029,7 +4043,11 @@
     if (!reference || !location.hash.includes('billing-callback')) return;
     localStorage.removeItem('vp_pending_payment_ref');
     try {
-      await api(`/billing/verify/${reference}`);
+      const r = await api(`/billing/verify/${reference}`);
+      if (r.kind === 'coins') {
+        toast(r.status === 'SUCCESS' ? 'Payment confirmed — coins added!' : 'Payment received — your coins will appear shortly.');
+        return 'coins';
+      }
       toast('Payment confirmed — subscription activated!');
     } catch {
       // Webhook may still be catching up; the billing page will reflect status shortly either way.
@@ -4174,6 +4192,7 @@
     view.querySelectorAll('[data-open-pdf]').forEach((btn) => {
       btn.addEventListener('click', () => navigate('pdf-viewer', { url: btn.dataset.openPdf, title: btn.dataset.pdfTitle, backTo: isLecturer ? 'lect-library' : 'library' }));
     });
+    return 'billing';
   }
 
   async function renderGroups() {
@@ -4291,12 +4310,13 @@
   }
 
   async function renderGroupChat() {
-    const { messages } = await api(`/groups/${state.view.groupId}/messages`);
+    const { messages, memberCount } = await api(`/groups/${state.view.groupId}/messages`);
+    const bubble = (m) => groupMessageBubbleHtml(m).replace(/<\/div>$/, LZX.seenLabel(m, memberCount, state.user.id) + '</div>');
     view.innerHTML = `
       <div class="page-head"><h1>Study group</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to groups</button></div>
       <div class="card chat-box">
         <div class="chat-messages" id="chat-messages">
-          ${messages.map(groupMessageBubbleHtml).join('') || '<p class="muted">No messages yet — say hello.</p>'}
+          ${messages.map(bubble).join('') || '<p class="muted">No messages yet — say hello.</p>'}
         </div>
         <form class="chat-input-row" id="chat-form">
           <input type="file" id="chat-file" hidden>
@@ -4450,6 +4470,7 @@
       }).join('') || '<p class="muted">No courses yet.</p>'}
     `;
     view.querySelectorAll('[data-take]').forEach((btn) => {
+    LZX.groupExtras({ api, esc, toast, groupId: state.view.groupId, view }).catch(() => {});
       btn.addEventListener('click', () => navigate('take-assessment', { assessmentId: btn.dataset.take, backTo: state.view.screen }));
     });
     view.querySelectorAll('[data-results]').forEach((btn) => {
@@ -7181,7 +7202,7 @@
     loadHeaderContext().then(() => {
       buildSidebar();
       if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
-        checkPendingPayment().then(() => navigate('billing'));
+        checkPendingPayment().then((where) => navigate(where === 'coins' ? 'wallet' : 'billing'));
       } else {
         navigate(defaultScreenFor(state.user.role));
       }

@@ -7,6 +7,12 @@
 <title>Learnza — Student App</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="manifest" href="manifest-app.webmanifest">
+<meta name="theme-color" content="#0f1b2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon.svg">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="auth.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
@@ -337,6 +343,7 @@
           <option value="">Select…</option>
           <option value="UNIVERSITY">University</option>
           <option value="POLYTECHNIC">Polytechnic</option>
+          <option value="MONOTECHNIC">Monotechnic</option>
           <option value="COLLEGE_OF_EDUCATION">College of Education</option>
           <option value="OTHER">Other</option>
         </select></div>
@@ -423,6 +430,7 @@
 </div>
 
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script src="extras.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
