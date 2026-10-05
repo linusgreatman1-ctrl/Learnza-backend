@@ -44,6 +44,8 @@ model Semester {
   assignments Assignment[]
   attendance  ClassAttendanceRecord[]
   results     Result[]
+
+  @@index([schoolId])
 }
 
 // A named hostel building, e.g. "Daws Hostel", "Mammy Hostel" -- lets admin
@@ -54,6 +56,8 @@ model Hostel {
   schoolId     String
   name         String
   applications HostelApplication[]
+
+  @@index([schoolId])
 }
 
 model User {
@@ -136,6 +140,10 @@ model User {
   passwordResets PasswordReset[]
   coursesAssigned CourseLecturer[]
   labAttempts    LabAttempt[]
+
+  @@index([schoolId, role])
+  @@index([departmentId])
+  @@index([schoolId, status])
 }
 
 // Lightweight gamification: points + a daily streak, no leaderboard/ranking by design
@@ -199,6 +207,8 @@ model Payment {
   status         String        // PENDING | SUCCESS | FAILED
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  @@index([userId])
 }
 
 model Department {
@@ -252,6 +262,8 @@ model CourseLecturer {
   createdAt  DateTime @default(now())
 
   @@unique([courseId, lecturerId])
+
+  @@index([lecturerId])
 }
 
 model Enrollment {
@@ -263,6 +275,8 @@ model Enrollment {
   createdAt DateTime @default(now())
 
   @@unique([studentId, courseId])
+
+  @@index([courseId])
 }
 
 model Lesson {
@@ -283,6 +297,10 @@ model Lesson {
   authorId    String?
   isAiTeacher Boolean  @default(true)
   createdAt   DateTime @default(now())
+
+  @@index([courseId])
+  @@index([individualCourseId])
+  @@index([authorId])
 }
 
 model LibraryResource {
@@ -301,6 +319,9 @@ model LibraryResource {
   school       School?    @relation(fields: [schoolId], references: [id])
   schoolId     String?
   createdAt    DateTime   @default(now())
+
+  @@index([schoolId])
+  @@index([courseId])
 }
 
 // courseId/individualCourseId are mutually exclusive, mirroring Assessment's split --
@@ -319,6 +340,9 @@ model StudyGroup {
   members     GroupMembership[]
   messages    GroupMessage[]
   polls       GroupPoll[]
+
+  @@index([courseId])
+  @@index([individualCourseId])
 }
 
 model GroupMembership {
@@ -330,6 +354,8 @@ model GroupMembership {
   joinedAt  DateTime   @default(now())
 
   @@unique([groupId, studentId])
+
+  @@index([studentId])
 }
 
 model GroupMessage {
@@ -349,6 +375,8 @@ model GroupMessage {
   deletedForEveryone Boolean  @default(false)
   deletedForIds      String[] @default([])
   reads              GroupMessageRead[]
+
+  @@index([groupId, createdAt])
 }
 
 // courseId/individualCourseId are mutually exclusive, mirroring AiTeacherSession's
@@ -376,6 +404,10 @@ model Assessment {
   // lecturer's own create/edit dialog ever explicitly passes null, to hold a test/exam
   // back as a draft until deliberately sent.
   sentAt      DateTime?    @default(now())
+
+  @@index([courseId])
+  @@index([individualCourseId])
+  @@index([authorId])
 }
 
 model Question {
@@ -389,6 +421,8 @@ model Question {
   modelAnswer  String?    // THEORY only -- shown back to the student for self-review, never auto-graded
   explanation  String?    // OBJECTIVE only -- brief "why" shown under the correct answer during review
   order        Int        @default(0)
+
+  @@index([assessmentId])
 }
 
 model Submission {
@@ -407,6 +441,8 @@ model Submission {
   markedAt       DateTime? // set once a lecturer has reviewed the theory answers (or there were none to review)
 
   @@unique([assessmentId, studentId])
+
+  @@index([studentId])
 }
 
 model ActivityLog {
@@ -416,6 +452,8 @@ model ActivityLog {
   action    String
   detail    String?
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // Interactive AI Teacher: an LLM-generated lesson plan (sections with narration +
@@ -436,6 +474,8 @@ model AiTeacherSession {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   turns       AiTeacherTurn[]
+
+  @@index([studentId])
 }
 
 model AiTeacherTurn {
@@ -467,6 +507,8 @@ model LiveClass {
   // "Live class recordings" dashboard banner, distinct from lecturer-uploaded lecture
   // videos even though both ultimately use the same upload pipeline.
   recordingUrl String?
+
+  @@index([courseId, status])
 }
 
 // Digital lab: a practical/demonstration walkthrough (steps with instructions and
@@ -492,6 +534,9 @@ model LabDemonstration {
   authorId    String?
   createdAt   DateTime @default(now())
   attempts    LabAttempt[]
+
+  @@index([courseId])
+  @@index([individualCourseId])
 }
 
 // Which students actually did a practical, and when -- one row per student per demo
@@ -507,6 +552,8 @@ model LabAttempt {
   startedAt DateTime         @default(now())
 
   @@unique([demoId, studentId])
+
+  @@index([studentId])
 }
 
 // Staff records: attendance (lecturer self-check-in), CPD, and publications. Workload
@@ -533,6 +580,8 @@ model CpdRecord {
   hours       Int
   completedAt DateTime
   createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Publication {
@@ -544,6 +593,8 @@ model Publication {
   year      Int
   url       String?
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // A student requests a transcript; admin "issues" it once ready. The transcript
@@ -556,6 +607,9 @@ model TranscriptRequest {
   status      String    @default("PENDING") // PENDING | ISSUED
   requestedAt DateTime  @default(now())
   issuedAt    DateTime?
+
+  @@index([studentId])
+  @@index([status])
 }
 
 model ClearanceRequest {
@@ -566,6 +620,9 @@ model ClearanceRequest {
   note        String?
   requestedAt DateTime  @default(now())
   decidedAt   DateTime?
+
+  @@index([studentId])
+  @@index([status])
 }
 
 // Admin-recorded disciplinary issues, shown on a student's Admission Status page
@@ -580,6 +637,8 @@ model DisciplinaryRecord {
   recordedBy   User?    @relation("DisciplinaryRecorder", fields: [recordedById], references: [id])
   recordedById String?
   createdAt    DateTime @default(now())
+
+  @@index([studentId])
 }
 
 // A digital credential (e.g. a graduation certificate) with a public verification
@@ -592,6 +651,8 @@ model Credential {
   title      String
   verifyCode String   @unique
   issuedAt   DateTime @default(now())
+
+  @@index([studentId])
 }
 
 model HostelApplication {
@@ -605,6 +666,10 @@ model HostelApplication {
   roomAssigned   String?
   requestedAt    DateTime  @default(now())
   decidedAt      DateTime?
+
+  @@index([studentId])
+  @@index([status])
+  @@index([hostelId])
 }
 
 // A self-directed course an individual (non-school) learner creates for themselves --
@@ -624,6 +689,8 @@ model IndividualCourse {
   labDemonstrations LabDemonstration[]
   studyGroups StudyGroup[]
   lessons     Lesson[]
+
+  @@index([studentId])
 }
 
 // Per-class daily attendance, marked by the lecturer teaching that course (distinct
@@ -643,6 +710,8 @@ model ClassAttendanceRecord {
   createdAt  DateTime @default(now())
 
   @@unique([courseId, studentId, date])
+
+  @@index([studentId])
 }
 
 // Free-response assignment: lecturer posts it, student answers in text, lecturer
@@ -663,6 +732,8 @@ model Assignment {
   createdAt    DateTime @default(now())
   submissions  AssignmentSubmission[]
   sentAt       DateTime? @default(now()) // see Assessment.sentAt -- same draft/send pattern
+
+  @@index([courseId])
 }
 
 model AssignmentSubmission {
@@ -679,6 +750,8 @@ model AssignmentSubmission {
   markedAt     DateTime?
 
   @@unique([assignmentId, studentId])
+
+  @@index([studentId])
 }
 
 // A lecturer-compiled formal result (distinct from raw CBT/assignment scores) --
@@ -700,6 +773,9 @@ model Result {
   remark      String?
   publishedAt DateTime @default(now())
   sentAt      DateTime? // null = saved as a draft, not yet visible to the student; set once sent/published
+
+  @@index([courseId])
+  @@index([studentId])
 }
 
 model Notification {
@@ -711,6 +787,9 @@ model Notification {
   link      String?  // a frontend screen name to navigate to on click
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 // Rotating refresh tokens: only the SHA-256 hash is stored. A just-revoked token stays
@@ -792,6 +871,8 @@ model AiConversationLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+
+  @@index([userId, createdAt])
 }
 
 // ---- Help & support ----------------------------------------------------------------

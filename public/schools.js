@@ -351,8 +351,10 @@
   // header strip and semester switcher. Best-effort: a stale/expired token shouldn't
   // block the rest of boot, since navigate() will surface the real auth error anyway.
   async function loadHeaderContext() {
+    let meSemesters;
     try {
-      const { user, school, department } = await api('/auth/me');
+      const { user, school, department, semesters } = await api('/auth/me');
+      meSemesters = semesters;
       // Refresh state.user (and its saved copies) too, not just school/department --
       // otherwise a server-side change to the student's own record (level, admission
       // details, etc.) never reaches an already-logged-in browser until they log out and
@@ -362,7 +364,9 @@
       state.department = department;
     } catch { state.school = null; state.department = null; }
     if (state.school) {
-      try { state.semesters = (await api('/semesters')).semesters; } catch { state.semesters = []; }
+      // /auth/me already carries the semester list; only an older server needs the extra request
+      if (Array.isArray(meSemesters)) state.semesters = meSemesters;
+      else { try { state.semesters = (await api('/semesters')).semesters; } catch { state.semesters = []; } }
     } else {
       state.semesters = [];
     }
@@ -749,6 +753,15 @@
   // No loading placeholder: the previous screen just stays on-screen (instead of
   // blanking to "Loading…") until the next one's data is ready and replaces it.
   async function render() {
+    LZX.progress(true);
+    try {
+      await renderScreen();
+    } finally {
+      LZX.progress(false);
+    }
+  }
+
+  async function renderScreen() {
     try {
       await dispatch();
     } catch (err) {
@@ -1279,17 +1292,21 @@
     (actions || []).forEach((a, i) => {
       const el = containerEl.querySelector(`[data-idx="${i}"]`);
       if (!el) return;
-      if (a.type === 'EQUATION' && window.katex) {
-        try { window.katex.render(a.content, el, { throwOnError: false }); } catch { el.textContent = a.content; }
-      } else if (a.type === 'GRAPH' && window.Chart) {
-        try {
-          const spec = JSON.parse(a.content);
-          new window.Chart(el.querySelector('canvas'), {
-            type: spec.type === 'bar' ? 'bar' : 'line',
-            data: { labels: spec.labels || [], datasets: [{ data: spec.values || [], backgroundColor: '#e3ac4c', borderColor: '#e3ac4c' }] },
-            options: { responsive: true, plugins: { legend: { display: false } } },
-          });
-        } catch { /* malformed graph spec -- leave the empty canvas rather than crash the board */ }
+      if (a.type === 'EQUATION') {
+        LZX.lib('katex').then(() => {
+          try { window.katex.render(a.content, el, { throwOnError: false }); } catch { el.textContent = a.content; }
+        }).catch(() => { el.textContent = a.content; });
+      } else if (a.type === 'GRAPH') {
+        LZX.lib('chart').then(() => {
+          try {
+            const spec = JSON.parse(a.content);
+            new window.Chart(el.querySelector('canvas'), {
+              type: spec.type === 'bar' ? 'bar' : 'line',
+              data: { labels: spec.labels || [], datasets: [{ data: spec.values || [], backgroundColor: '#e3ac4c', borderColor: '#e3ac4c' }] },
+              options: { responsive: true, plugins: { legend: { display: false } } },
+            });
+          } catch { /* malformed graph spec -- leave the empty canvas rather than crash the board */ }
+        }).catch(() => {});
       }
     });
   }
@@ -4565,10 +4582,28 @@
     document.getElementById('chat-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const input = document.getElementById('chat-input');
-      if (!input.value.trim()) return;
-      await api(`/groups/${state.view.groupId}/messages`, { method: 'POST', body: { body: input.value } });
+      const text = input.value.trim();
+      if (!text) return;
       input.value = '';
-      renderGroupChat();
+      // Show the message straight away and save it in the background — no full reload of the
+      // chat, so it does not wait on (or repeat) three server round trips.
+      const list = document.getElementById('chat-messages');
+      const empty = list.querySelector('p.muted');
+      if (empty) empty.remove();
+      const pending = document.createElement('div');
+      pending.innerHTML = groupMessageBubbleHtml({ id: 'pending', senderId: state.user.id, sender: { fullName: state.user.fullName }, body: text, deletedForEveryone: false })
+        .replace(/<span style="position:relative[\s\S]*?<\/span>/, '<span class="muted" style="font-size:0.72rem;">sending…</span>');
+      const bubble = pending.firstElementChild;
+      list.appendChild(bubble);
+      list.scrollTop = list.scrollHeight;
+      try {
+        await api(`/groups/${state.view.groupId}/messages`, { method: 'POST', body: { body: text } });
+        bubble.querySelector('.muted') && (bubble.querySelector('.muted').textContent = '✓ Sent');
+      } catch (err) {
+        bubble.remove();
+        input.value = text;
+        toast(err.message);
+      }
     });
     document.getElementById('chat-attach-btn').addEventListener('click', () => document.getElementById('chat-file').click());
     document.getElementById('chat-file').addEventListener('change', async (e) => {

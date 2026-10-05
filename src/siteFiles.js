@@ -12,6 +12,8 @@ const prisma = require('./db');
 //   - the admin panel itself (admin-panel/) is not editable, so it can always roll a change back;
 //   - the service worker is not editable (a broken one is very hard to recover from).
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// The pages the server serves at clean URLs.
+const PAGE_FILES = { app: 'app.html', schools: 'schools.html', legal: 'legal.html' };
 const ALLOWED = new Set(['.html', '.css', '.js', '.json', '.svg', '.webmanifest', '.txt']);
 const BLOCKED = new Set(['sw.js']);
 const MAX_BYTES = 1400 * 1024; // the request body limit (2 MB, JSON-escaped) is the real ceiling
@@ -26,6 +28,51 @@ const TYPES = {
 };
 
 let overrides = new Map(); // path -> { content, type }
+
+// ---- Fast loading --------------------------------------------------------------------
+// The app's own scripts and stylesheets are requested with ?v=<version>, and anything carrying
+// a version is cached by the browser for a year ("immutable"). The version changes on every
+// deploy and every Code Editor save, so users never see stale code — but a returning visitor
+// loads the whole app from their device with no round trips to the server at all, which is the
+// difference between instant and several seconds on a slow or distant connection.
+// Scripts are also deferred (they no longer stop the page from appearing) and the hosts the page
+// will fetch from are pre-connected.
+const BUILD_ID = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || Date.now()).slice(0, 8);
+let overridesStamp = '0';
+// Also folds in the newest modified-time of the files themselves, so editing a file without
+// restarting the server (local development) still produces a new version and defeats the cache.
+let diskStamp = { at: 0, v: '0' };
+function filesStamp() {
+  if (Date.now() - diskStamp.at < 2000) return diskStamp.v;
+  let newest = 0;
+  for (const f of ['app.js', 'schools.js', 'extras.js', 'style.css', 'auth.css', 'icon.svg']) {
+    try { newest = Math.max(newest, fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs); } catch { /* missing file: ignore */ }
+  }
+  diskStamp = { at: Date.now(), v: Math.round(newest / 1000).toString(36) };
+  return diskStamp.v;
+}
+const assetVersion = () => BUILD_ID + '-' + overridesStamp + '-' + filesStamp();
+const LOCAL_ASSETS = /^(?:app|schools|extras)\.js$|^(?:style|auth)\.css$|^icon\.svg$/;
+const HINTS = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net', 'https://cdn.socket.io'];
+
+function optimisePage(html) {
+  if (typeof html !== 'string') return html;
+  const v = assetVersion();
+  let out = html.replace(/(<(?:script|link)\b[^>]*?\b(?:src|href)=")([^"?#]+)(")/g, (m, pre, url, post) => (LOCAL_ASSETS.test(url) ? pre + url + '?v=' + v + post : m));
+  // defer every <script src>: they run in document order after the page is parsed
+  out = out.replace(/<script\b(?![^>]*\bdefer\b)([^>]*\bsrc="[^"]+"[^>]*)>/g, '<script defer$1>');
+  const hints = HINTS.map((h) => '<link rel="preconnect" href="' + h + '"' + (h.includes('gstatic') ? ' crossorigin' : '') + '>').join('');
+  return out.replace(/<head([^>]*)>/i, '<head$1>' + hints);
+}
+
+// The page the clean URLs (/app, /schools, /legal) serve: an edited copy if there is one.
+function pageHtml(name) {
+  const file = PAGE_FILES[name];
+  if (!file) return null;
+  const o = overrides.get(file);
+  const html = o ? o.content : readDisk(file);
+  return html == null ? null : optimisePage(html);
+}
 
 function normalise(p) {
   const clean = String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
@@ -55,6 +102,8 @@ async function load() {
   const next = new Map();
   for (const r of rows) next.set(r.path, { content: r.content, type: TYPES[path.extname(r.path).toLowerCase()] || 'text/plain' });
   overrides = next;
+  const stamps = rows.map((r) => (r.publishedAt ? r.publishedAt.getTime() : 0));
+  overridesStamp = stamps.length ? Math.max(...stamps).toString(36) : '0';
 }
 
 // Disk files the editor can list.
@@ -76,7 +125,7 @@ function readDisk(file) {
 }
 
 // The pages the server serves at clean URLs.
-const PAGE_FILES = { app: 'app.html', schools: 'schools.html', legal: 'legal.html' };
+
 
 function getOverride(file) {
   return overrides.get(file) || null;
@@ -91,13 +140,14 @@ function start() {
 // handler sees it. Clean page URLs (/app, /schools, /legal) map to their html files.
 function middleware(req, res, next) {
   if (req.method !== 'GET' || !overrides.size) return next();
-  let rel = decodeURIComponent(req.path).replace(/^\/+/, '');
-  if (PAGE_FILES[rel]) rel = PAGE_FILES[rel];
+  const rel = decodeURIComponent(req.path).replace(/^\/+/, '');
+  if (PAGE_FILES[rel]) return next(); // pages are rendered (with overrides applied) by the page route
   const hit = overrides.get(rel);
   if (!hit) return next();
   res.setHeader('Content-Type', hit.type);
-  res.setHeader('Cache-Control', 'no-cache');
+  // A versioned request (?v=...) can be cached for good: the version changes when the file does.
+  res.setHeader('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
   res.send(hit.content);
 }
 
-module.exports = { PUBLIC_DIR, PAGE_FILES, normalise, validate, load, start, listDiskFiles, readDisk, getOverride, middleware, MAX_BYTES, TYPES };
+module.exports = { assetVersion, pageHtml, optimisePage, PUBLIC_DIR, PAGE_FILES, normalise, validate, load, start, listDiskFiles, readDisk, getOverride, middleware, MAX_BYTES, TYPES };

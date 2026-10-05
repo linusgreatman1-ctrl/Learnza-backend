@@ -244,11 +244,15 @@ router.post('/password/reset', async (req, res) => {
 // only carries IDs, and the login response is deliberately lean, so this is a small
 // separate fetch made once after auth rather than joining it onto every login.
 router.get('/me', requireAuth, async (req, res) => {
-  let school = null;
-  let department = null;
-  if (req.user.schoolId) school = await prisma.school.findUnique({ where: { id: req.user.schoolId } });
-  if (req.user.departmentId) department = await prisma.department.findUnique({ where: { id: req.user.departmentId } });
-  res.json({ user: publicUser(req.user), school: publicSchool(school, req.user.role), department });
+  // Everything the app needs to draw its first screen, in one round trip: the school, the
+  // department and the school's semester list (the app used to ask for the semesters in a second
+  // request, after waiting for this one).
+  const [school, department, semesters] = await Promise.all([
+    req.user.schoolId ? prisma.school.findUnique({ where: { id: req.user.schoolId } }) : null,
+    req.user.departmentId ? prisma.department.findUnique({ where: { id: req.user.departmentId } }) : null,
+    req.user.schoolId ? prisma.semester.findMany({ where: { schoolId: req.user.schoolId }, orderBy: { createdAt: 'asc' } }) : [],
+  ]);
+  res.json({ user: publicUser(req.user), school: publicSchool(school, req.user.role), department, semesters });
 });
 
 // ---- Settings: shared by every role (student, lecturer, admin, staff) ----

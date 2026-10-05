@@ -161,3 +161,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lzx-id-qr svg { width: 100%; height: 100%; display: block; }
 .lzx-id-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 24px; max-width: 440px; }
 .lzx-id-foot small { opacity: .6; font-size: 11.5px; flex-basis: 100%; }
+
+/* loading bar (extras.js) */
+.lzx-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 9999; overflow: hidden; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.lzx-progress.on { opacity: 1; }
+.lzx-progress::after { content: ''; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, #e3ac4c, transparent); animation: lzx-slide 1s ease-in-out infinite; }
+@keyframes lzx-slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }

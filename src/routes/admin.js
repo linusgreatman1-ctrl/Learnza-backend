@@ -119,16 +119,39 @@ async function coursesEnrolledBy(studentId) {
   return enrollments.map((e) => e.course);
 }
 
+// One query for everybody's courses, not one per person (a school of 2,000 students would
+// otherwise run 2,000 queries to draw the directory).
+async function coursesEnrolledByMany(studentIds) {
+  const byStudent = new Map(studentIds.map((id) => [id, []]));
+  if (!studentIds.length) return byStudent;
+  const rows = await prisma.enrollment.findMany({
+    where: { studentId: { in: studentIds } },
+    select: { studentId: true, course: { select: { id: true, code: true, title: true } } },
+  });
+  for (const r of rows) byStudent.get(r.studentId).push(r.course);
+  return byStudent;
+}
+
+async function coursesTaughtByMany(lecturerIds) {
+  const byLecturer = new Map(lecturerIds.map((id) => [id, new Map()]));
+  if (!lecturerIds.length) return new Map(lecturerIds.map((id) => [id, []]));
+  const [assigned, lessons] = await Promise.all([
+    prisma.courseLecturer.findMany({ where: { lecturerId: { in: lecturerIds } }, select: { lecturerId: true, course: { select: { id: true, code: true, title: true } } } }),
+    prisma.lesson.findMany({ where: { authorId: { in: lecturerIds }, courseId: { not: null } }, distinct: ['authorId', 'courseId'], select: { authorId: true, course: { select: { id: true, code: true, title: true } } } }),
+  ]);
+  for (const a of assigned) byLecturer.get(a.lecturerId).set(a.course.id, a.course);
+  for (const l of lessons) if (l.course) byLecturer.get(l.authorId).set(l.course.id, l.course);
+  return new Map([...byLecturer].map(([id, m]) => [id, Array.from(m.values())]));
+}
+
 router.get('/students', async (req, res) => {
   const students = await prisma.user.findMany({
     where: { schoolId: req.user.schoolId, role: 'STUDENT' },
     include: { department: true },
     orderBy: { fullName: 'asc' },
   });
-  const withCourses = await Promise.all(
-    students.map(async ({ passwordHash, ...s }) => ({ ...s, courses: await coursesEnrolledBy(s.id) }))
-  );
-  res.json({ students: withCourses });
+  const courses = await coursesEnrolledByMany(students.map((s) => s.id));
+  res.json({ students: students.map(({ passwordHash, ...s }) => ({ ...s, courses: courses.get(s.id) })) });
 });
 
 router.get('/students/:id', async (req, res) => {
@@ -147,10 +170,8 @@ router.get('/lecturers', async (req, res) => {
     include: { department: true },
     orderBy: { fullName: 'asc' },
   });
-  const withCourses = await Promise.all(
-    lecturers.map(async ({ passwordHash, ...l }) => ({ ...l, courses: await coursesTaughtBy(l.id) }))
-  );
-  res.json({ lecturers: withCourses });
+  const courses = await coursesTaughtByMany(lecturers.map((l) => l.id));
+  res.json({ lecturers: lecturers.map(({ passwordHash, ...l }) => ({ ...l, courses: courses.get(l.id) })) });
 });
 
 router.get('/lecturers/:id', async (req, res) => {

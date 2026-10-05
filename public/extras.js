@@ -145,9 +145,21 @@
       body.querySelector('#lzx-chat-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const input = body.querySelector('#lzx-chat-text');
-        const text = input.value;
+        const text = input.value.trim();
+        if (!text) return;
         input.value = '';
-        try { await api('/support/chat', { method: 'POST', body: { body: text } }); await pull(); setTimeout(() => pull().catch(() => {}), 2500); } catch (err) { input.value = text; toast(err.message); }
+        // Show it at once; the server's copy replaces it on the next poll (pull() de-duplicates by id).
+        const mine = document.createElement('div');
+        mine.className = 'lzx-bubble me';
+        mine.innerHTML = '<small>You · sending…</small>' + esc(text);
+        box.appendChild(mine);
+        box.scrollTop = box.scrollHeight;
+        try {
+          await api('/support/chat', { method: 'POST', body: { body: text } });
+          mine.remove();                   // pull() draws the saved message in its place
+          await pull();
+          setTimeout(() => pull().catch(() => {}), 2500);
+        } catch (err) { mine.remove(); input.value = text; toast(err.message); }
       });
       await pull();
       timer = setInterval(() => pull().catch(() => {}), 5000);
@@ -219,11 +231,25 @@
     host.style.marginTop = '16px';
     view.appendChild(host);
 
-    async function draw() {
-      const { polls } = await api(`/groups/${groupId}/polls`);
+    // Everything the user does here shows on screen at once; the request follows in the
+    // background and the screen only changes again if the server disagrees. (A slow or distant
+    // connection should not make a tap feel like it did nothing.)
+    let polls = [];
+    let formOpen = false;
+    const clone = (x) => JSON.parse(JSON.stringify(x));
+
+    function applyVote(p, idx) {
+      if (p.closed || p.myVote === idx) return;
+      if (p.myVote == null) p.totalVotes += 1; else p.options[p.myVote].votes -= 1;
+      p.options[idx].votes += 1;
+      p.myVote = idx;
+    }
+
+    function paint() {
+      const draft = { q: (host.querySelector('#lzx-pq') || {}).value || '', o: (host.querySelector('#lzx-po') || {}).value || '' };
       host.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><h3>Polls</h3><button class="btn btn-ghost btn-sm" id="lzx-newpoll">+ New poll</button></div>
-        <div id="lzx-pollform" hidden>
+        <div id="lzx-pollform" ${formOpen ? '' : 'hidden'}>
           <div class="field"><label>Question</label><input id="lzx-pq" maxlength="200" placeholder="e.g. Which day should we meet?"></div>
           <div class="field"><label>Options (one per line, 2 to 6)</label><textarea id="lzx-po" rows="3" placeholder="Monday&#10;Tuesday"></textarea></div>
           <button class="btn btn-primary btn-sm" id="lzx-postpoll">Post poll</button>
@@ -235,21 +261,47 @@
             ${p.options.map((o, i) => `<button class="lzx-optionbtn ${p.myVote === i ? 'mine' : ''}" data-vote="${p.id}" data-idx="${i}" ${p.closed ? 'disabled' : ''}><div class="fill" style="width:${p.totalVotes ? Math.round(o.votes / p.totalVotes * 100) : 0}%"></div><span>${esc(o.label)} — ${o.votes}</span></button>`).join('')}
             ${p.mine && !p.closed ? `<button class="btn btn-ghost btn-sm" data-close-poll="${p.id}" style="margin-top:8px;">Close poll</button>` : ''}
           </div>`).join('') || '<p class="muted">No polls yet — start one to ask the group a quick question.</p>'}`;
-      host.querySelector('#lzx-newpoll').addEventListener('click', () => { const f = host.querySelector('#lzx-pollform'); f.hidden = !f.hidden; });
+      host.querySelector('#lzx-pq').value = draft.q;
+      host.querySelector('#lzx-po').value = draft.o;
+      host.querySelector('#lzx-newpoll').addEventListener('click', () => { formOpen = !formOpen; host.querySelector('#lzx-pollform').hidden = !formOpen; });
       host.querySelector('#lzx-postpoll').addEventListener('click', async () => {
+        const btn = host.querySelector('#lzx-postpoll');
+        btn.disabled = true;
         try {
-          await api(`/groups/${groupId}/polls`, { method: 'POST', body: { question: host.querySelector('#lzx-pq').value, options: host.querySelector('#lzx-po').value.split('\n') } });
-          draw();
-        } catch (err) { toast(err.message); }
+          const r = await api(`/groups/${groupId}/polls`, { method: 'POST', body: { question: host.querySelector('#lzx-pq').value, options: host.querySelector('#lzx-po').value.split('\n') } });
+          polls.unshift(r.poll);
+          formOpen = false;
+          host.querySelector('#lzx-pq').value = ''; host.querySelector('#lzx-po').value = '';
+          paint();
+        } catch (err) { toast(err.message); btn.disabled = false; }
       });
       host.querySelectorAll('[data-vote]').forEach((b) => b.addEventListener('click', async () => {
-        try { await api(`/polls/${b.dataset.vote}/vote`, { method: 'POST', body: { optionIdx: Number(b.dataset.idx) } }); draw(); } catch (err) { toast(err.message); }
+        const p = polls.find((x) => x.id === b.dataset.vote);
+        if (!p || p.closed) return;
+        const before = clone(p);
+        applyVote(p, Number(b.dataset.idx));
+        paint();                      // instant
+        try {
+          const r = await api(`/polls/${p.id}/vote`, { method: 'POST', body: { optionIdx: Number(b.dataset.idx) } });
+          Object.assign(p, r.poll);   // the server's numbers win (other people may have voted)
+        } catch (err) {
+          Object.assign(p, before);   // put it back
+          toast(err.message);
+        }
+        paint();
       }));
       host.querySelectorAll('[data-close-poll]').forEach((b) => b.addEventListener('click', async () => {
-        try { await api(`/polls/${b.dataset.closePoll}/close`, { method: 'POST' }); draw(); } catch (err) { toast(err.message); }
+        const p = polls.find((x) => x.id === b.dataset.closePoll);
+        if (!p) return;
+        p.closed = true;
+        paint();
+        try { Object.assign(p, (await api(`/polls/${p.id}/close`, { method: 'POST' })).poll); } catch (err) { p.closed = false; toast(err.message); }
+        paint();
       }));
     }
-    await draw();
+
+    polls = (await api(`/groups/${groupId}/polls`)).polls;
+    paint();
   }
 
   // ---------------------------------------------------------------- practice questions
@@ -484,6 +536,46 @@
     ctx.toast('⬇ ID saved');
   }
 
+  // ---------------------------------------------------------------- on-demand libraries
+  // KaTeX (maths) and Chart.js (graphs) are only used on the AI Teacher's board. They used to be
+  // downloaded on every visit to every screen (~450 KB); now they are fetched the first time a
+  // lesson actually draws an equation or a graph.
+  const LIBS = {
+    katex: { css: 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js', ready: () => window.katex },
+    chart: { js: 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js', ready: () => window.Chart },
+  };
+  const libLoads = {};
+  function lib(name) {
+    const def = LIBS[name];
+    if (!def) return Promise.reject(new Error('Unknown library ' + name));
+    if (def.ready()) return Promise.resolve();
+    if (!libLoads[name]) {
+      libLoads[name] = new Promise((resolve, reject) => {
+        if (def.css) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = def.css; document.head.appendChild(l); }
+        const sc = document.createElement('script');
+        sc.src = def.js; sc.onload = () => resolve(); sc.onerror = () => { delete libLoads[name]; reject(new Error('Could not load ' + name)); };
+        document.head.appendChild(sc);
+      });
+    }
+    return libLoads[name];
+  }
+
+  // ---------------------------------------------------------------- loading bar
+  // A thin bar across the top while a screen's data is on its way, so a tap always gets an
+  // immediate visible response even when the connection is slow. It only appears if the wait
+  // lasts longer than a blink, so quick screens do not flicker.
+  let barEl = null, barTimer = null, barDepth = 0;
+  function progress(on) {
+    barDepth = Math.max(0, barDepth + (on ? 1 : -1));
+    clearTimeout(barTimer);
+    if (barDepth > 0) {
+      barTimer = setTimeout(() => {
+        if (!barEl) { barEl = document.createElement('div'); barEl.className = 'lzx-progress'; document.body.appendChild(barEl); }
+        barEl.classList.add('on');
+      }, 120);
+    } else if (barEl) barEl.classList.remove('on');
+  }
+
   // ---------------------------------------------------------------- installable app (PWA)
   // Registers the service worker, shows a ribbon while offline, and — by checking
   // /version.json — offers a refresh when a new version has been deployed.
@@ -534,5 +626,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib };
 })();

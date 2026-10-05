@@ -64,18 +64,23 @@ router.get('/admin/staff/workload', requireAuth, requireRole('ADMIN'), async (re
     where: { schoolId: req.user.schoolId, role: 'LECTURER' },
     select: { id: true, fullName: true, department: { select: { name: true } } },
   });
-  const workload = await Promise.all(
-    lecturers.map(async (l) => {
-      const [lessons, assessments, liveClasses, labDemos, courseIds] = await Promise.all([
-        prisma.lesson.count({ where: { authorId: l.id } }),
-        prisma.assessment.count({ where: { authorId: l.id } }),
-        prisma.liveClass.count({ where: { hostId: l.id } }),
-        prisma.labDemonstration.count({ where: { authorId: l.id, source: 'CURATED' } }),
-        prisma.lesson.findMany({ where: { authorId: l.id }, distinct: ['courseId'], select: { courseId: true } }),
-      ]);
-      return { fullName: l.fullName, department: l.department?.name || null, courses: courseIds.length, lessons, assessments, liveClasses, labDemos };
-    })
-  );
+  // Five grouped queries for the whole staff list, not five per lecturer.
+  const ids = lecturers.map((l) => l.id);
+  const [lessons, assessments, liveClasses, labDemos, courseRows] = ids.length ? await Promise.all([
+    prisma.lesson.groupBy({ by: ['authorId'], where: { authorId: { in: ids } }, _count: { _all: true } }),
+    prisma.assessment.groupBy({ by: ['authorId'], where: { authorId: { in: ids } }, _count: { _all: true } }),
+    prisma.liveClass.groupBy({ by: ['hostId'], where: { hostId: { in: ids } }, _count: { _all: true } }),
+    prisma.labDemonstration.groupBy({ by: ['authorId'], where: { authorId: { in: ids }, source: 'CURATED' }, _count: { _all: true } }),
+    prisma.lesson.findMany({ where: { authorId: { in: ids } }, distinct: ['authorId', 'courseId'], select: { authorId: true } }),
+  ]) : [[], [], [], [], []];
+  const count = (rows, key) => new Map(rows.map((r) => [r[key], r._count._all]));
+  const L = count(lessons, 'authorId'), A = count(assessments, 'authorId'), C = count(liveClasses, 'hostId'), D = count(labDemos, 'authorId');
+  const courses = new Map();
+  courseRows.forEach((r) => courses.set(r.authorId, (courses.get(r.authorId) || 0) + 1));
+  const workload = lecturers.map((l) => ({
+    fullName: l.fullName, department: l.department?.name || null,
+    courses: courses.get(l.id) || 0, lessons: L.get(l.id) || 0, assessments: A.get(l.id) || 0, liveClasses: C.get(l.id) || 0, labDemos: D.get(l.id) || 0,
+  }));
   res.json({ workload });
 });
 

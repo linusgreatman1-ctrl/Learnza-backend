@@ -103,10 +103,39 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // serving an already-loaded copy across deploys. Forcing revalidation is cheap (a fast
 // 304 via ETag/Last-Modified when nothing changed) and guarantees a refresh always gets
 // whatever was just deployed.
-const noCache = { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') };
+// Versioned asset URLs (?v=...) are cacheable for a year; everything else must revalidate.
+const noCache = {
+  setHeaders: (res) => {
+    if (!/immutable/.test(String(res.getHeader('Cache-Control') || ''))) res.setHeader('Cache-Control', 'no-cache');
+  },
+};
+app.use((req, res, next) => {
+  if ((req.method === 'GET' || req.method === 'HEAD') && req.query.v && /\.(?:js|css|svg|png|webmanifest)$/.test(req.path)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  next();
+});
 
 // ---- API ----
 app.use('/api', apiOverall);
+// Timing. Any API request slower than 2 seconds is written to System Logs (admin panel) so slow
+// spots show up without anyone having to complain. With LZ_QUERY_COUNT=1 (tests only) the
+// response also reports how many database queries it ran.
+const db = require('./db');
+app.use('/api', (req, res, next) => {
+  const started = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - started;
+    if (ms > 2000) syslog.warn('http', `Slow request: ${ms} ms`, { method: req.method, path: req.originalUrl.split('?')[0], userId: req.user && req.user.id });
+  });
+  if (!db.counting) return next();
+  const stats = { queries: 0, ms: 0 };
+  const writeHead = res.writeHead;
+  res.writeHead = function (...args) {
+    res.setHeader('X-Query-Count', stats.queries);
+    res.setHeader('X-Query-Ms', Math.round(stats.ms));
+    return writeHead.apply(this, args);
+  };
+  db.requestStats.run(stats, next);
+});
 // Maintenance mode (admin panel > Settings): everything but the owner's own panel and the
 // bits that must keep working (token refresh/sign-out, payment webhooks) answers 503.
 app.use('/api', (req, res, next) => {
@@ -160,9 +189,18 @@ app.get('/version.json', (req, res) => {
   res.json({ version: BUILD_ID });
 });
 app.get('/', (req, res) => res.redirect('/app'));
-app.get('/app', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'app.html')));
-app.get('/schools', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'schools.html')));
-app.get('/legal', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'legal.html')));
+// The pages: HTML always revalidates (a 304 costs one tiny round trip), but the scripts and
+// styles they point to are versioned and cached for good — see siteFiles.optimisePage.
+const page = (name) => (req, res) => {
+  const html = siteFiles.pageHtml(name);
+  if (html == null) return res.status(404).end();
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.send(html);
+};
+app.get('/app', page('app'));
+app.get('/schools', page('schools'));
+app.get('/legal', page('legal'));
 app.use('/admin', express.static(ADMIN_PANEL_DIR, noCache));
 app.use(express.static(PUBLIC_DIR, noCache));
 

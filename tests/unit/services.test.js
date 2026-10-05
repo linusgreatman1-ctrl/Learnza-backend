@@ -80,3 +80,32 @@ test('both manifests point at real pages and an icon that exists', () => {
     for (const icon of m.icons) assert.ok(fs.existsSync(path.join(__dirname, '../../public', icon.src)));
   }
 });
+
+test('page optimisation: local assets get a version, scripts are deferred, hosts are pre-connected', () => {
+  const site = require('../../src/siteFiles');
+  const html = [
+    '<html><head><title>x</title>',
+    '<link rel="stylesheet" href="style.css">',
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora">',
+    '<link rel="manifest" href="manifest-app.webmanifest">',
+    '<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>',
+    '</head><body><script src="extras.js"></script><script src="app.js"></script></body></html>',
+  ].join('\n');
+  const out = site.optimisePage(html);
+  const v = site.assetVersion();
+  assert.ok(out.includes(`href="style.css?v=${v}"`), 'stylesheet versioned');
+  assert.ok(out.includes(`src="app.js?v=${v}"`) && out.includes(`src="extras.js?v=${v}"`), 'scripts versioned');
+  assert.ok(out.includes('href="https://fonts.googleapis.com/css2?family=Sora"'), 'third-party URLs untouched');
+  assert.ok(out.includes('href="manifest-app.webmanifest"'), 'files outside the asset list untouched');
+  assert.equal((out.match(/<script defer /g) || []).length, 3, 'every script is deferred');
+  assert.ok(out.includes('rel="preconnect" href="https://cdn.socket.io"'), 'hosts pre-connected');
+  assert.equal(site.optimisePage(out).match(/defer defer/), null, 'running it twice does not double up defer');
+});
+
+test('the real pages load their own scripts in dependency order (extras before app)', () => {
+  for (const [page, script] of [['app.html', 'app.js'], ['schools.html', 'schools.js']]) {
+    const html = fs.readFileSync(path.join(__dirname, '../../public', page), 'utf8');
+    assert.ok(html.indexOf('src="extras.js"') > -1 && html.indexOf('src="extras.js"') < html.indexOf(`src="${script}"`), page);
+    assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html), page + ' has an inline script, which the CSP forbids');
+  }
+});
