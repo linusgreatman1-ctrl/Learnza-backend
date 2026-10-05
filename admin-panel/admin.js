@@ -775,6 +775,16 @@
         '<h3 style="margin-top:20px">Purchases</h3><div class="table-wrap"><table><thead><tr><th>When</th><th>Student</th><th>Coins</th><th>Amount</th><th>Provider</th><th>Status</th></tr></thead><tbody>' +
         (d.purchases.map((p) => '<tr><td>' + fmtDateTime(p.createdAt) + '</td><td><strong>' + esc(p.user.fullName) + '</strong></td><td class="tabular">' + p.coins + '</td><td class="tabular">' + naira(p.amountKobo) + '</td><td>' + esc(p.provider) + '</td><td><span class="pill ' + (p.status === 'SUCCESS' ? 'ok' : p.status === 'PENDING' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></td></tr>').join('') || '<tr><td colspan="6" class="muted">No purchases yet.</td></tr>') + '</tbody></table></div>';
       body.appendChild(pager(page, d.total, d.pageSize, (p) => { page = p; load(); }));
+      // The append-only ledger: every coin that was credited, granted or spent.
+      const ledgerBox = document.createElement('div');
+      ledgerBox.innerHTML = '<h3 style="margin-top:24px">Ledger</h3><div id="cg-ledger"><p class="muted">Loading…</p></div>';
+      body.appendChild(ledgerBox);
+      api('/coins/ledger?page=1').then((l) => {
+        const box = ledgerBox.querySelector('#cg-ledger');
+        if (!box) return;
+        box.innerHTML = table(['When', 'Student', 'Change', 'Balance after', 'Reason', 'Note'], l.entries.map((e) => '<tr><td>' + fmtDateTime(e.createdAt) + '</td><td><strong>' + esc(e.user.fullName) + '</strong></td><td class="tabular" style="color:' + (e.delta > 0 ? 'var(--ok)' : 'var(--bad)') + '">' + (e.delta > 0 ? '+' : '') + e.delta + '</td><td class="tabular">' + e.balanceAfter + '</td><td>' + esc(e.reason) + '</td><td class="small muted" style="white-space:normal;max-width:260px">' + esc(e.note || '') + '</td></tr>').join(''), 'No coin movements yet.');
+        if (l.total > l.pageSize) box.insertAdjacentHTML('beforeend', '<p class="muted small">Showing the latest ' + l.pageSize + ' of ' + l.total + '.</p>');
+      }).catch(() => {});
       $('cg-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         try { await api('/coins/grant', { method: 'POST', body: { email: $('cg-email').value.trim(), coins: $('cg-n').value, note: $('cg-note').value.trim() } }); toast('Coins added'); load(); } catch (err) { toast(err.message); }
@@ -1110,7 +1120,7 @@
   async function renderCodeEditor() {
     view.innerHTML = '<div class="view-head"><div><h1>Code Editor</h1><div class="muted">Edit the live front-end source. Changes save immediately — no separate deploy step. Search for an exact snippet, check it is the right spot, then replace it. Every change keeps a backup you can undo below.</div></div></div>' +
       '<h3>Jump to a known feature</h3><p class="muted small">Pick a screen to fill in the search for its code — or type your own search below.</p><div id="ce-features" class="chips"></div>' +
-      '<div class="toolbar"><select id="ce-file"></select><input id="ce-search" placeholder="Text to find (exact match)…" style="flex:1;min-width:260px"><button class="btn-gold" id="ce-go">Search</button></div>' +
+      '<div class="toolbar"><select id="ce-file"></select><input id="ce-search" placeholder="Text to find (exact match)…" style="flex:1;min-width:260px"><button class="btn-gold" id="ce-go">Search</button><button class="btn-ghost" id="ce-original" title="Remove every edit of this file">Restore original…</button></div>' +
       '<div id="ce-results"></div>' +
       '<div id="ce-replace" class="panel hidden"><h3>Replace</h3><label>Replace with</label><textarea id="ce-with" rows="5" style="font-family:monospace;font-size:12.5px"></textarea>' +
       '<div style="margin-top:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap"><label style="margin:0;font-weight:500"><input type="checkbox" id="ce-all" style="width:auto"> Replace all occurrences</label><button class="btn-gold" id="ce-apply">Apply &amp; save</button><span id="ce-status" class="small"></span></div></div>' +
@@ -1152,6 +1162,11 @@
     }
     $('ce-file').addEventListener('change', () => { $('ce-results').innerHTML = ''; $('ce-replace').classList.add('hidden'); loadFeatures(); });
     $('ce-go').addEventListener('click', search);
+    $('ce-original').addEventListener('click', async () => {
+      const file = $('ce-file').value;
+      if (!confirm('Remove every edit of ' + file + ' and go back to the copy that shipped with the last deploy? It goes live immediately; your edits stay in Backups.')) return;
+      try { await api('/code/revert', { method: 'POST', body: { path: file } }); toast('Original restored'); $('ce-results').innerHTML = ''; $('ce-replace').classList.add('hidden'); backups(); } catch (err) { toast(err.message); }
+    });
     $('ce-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
     $('ce-apply').addEventListener('click', async () => {
       const all = $('ce-all').checked;
@@ -1194,7 +1209,7 @@
   async function renderCodes() {
     view.innerHTML = '<div class="view-head"><div><h1>Codes</h1><div class="muted">The complete, raw source of either app — not a curated snippet. Load a file, edit it directly, and Save writes the whole file. Live immediately; a backup of the previous version is kept.</div></div></div>' +
       '<div class="toolbar"><button class="btn-gold" id="cd-app">📱 Learnza App (student)</button><button class="btn-gold" id="cd-schools">🏫 Learnza For Schools</button><select id="cd-file"></select></div>' +
-      '<div id="cd-wrap" class="hidden"><div class="toolbar" style="justify-content:space-between"><div><strong id="cd-name"></strong> <span class="muted small" id="cd-meta"></span></div><div style="display:flex;gap:8px"><button class="btn-ghost" id="cd-reload">↻ Reload (discard edits)</button><button class="btn-gold" id="cd-save">💾 Save</button></div></div>' +
+      '<div id="cd-wrap" class="hidden"><div class="toolbar" style="justify-content:space-between"><div><strong id="cd-name"></strong> <span class="muted small" id="cd-meta"></span></div><div style="display:flex;gap:8px"><button class="btn-ghost" id="cd-original">Restore original…</button><button class="btn-ghost" id="cd-reload">↻ Reload (discard edits)</button><button class="btn-gold" id="cd-save">💾 Save</button></div></div>' +
       '<p id="cd-status" class="small" style="min-height:1.2em"></p>' +
       '<div class="toolbar"><input id="cd-find" placeholder="Search for a feature name, function, or any text…" style="flex:1;min-width:260px"><button class="btn-ghost" id="cd-next">🔍 Find next</button><span class="muted small" id="cd-found"></span></div>' +
       '<textarea id="cd-text" spellcheck="false" wrap="off" style="width:100%;height:65vh;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.5;white-space:pre;tab-size:2"></textarea></div>';
@@ -1236,6 +1251,11 @@
     $('cd-file').addEventListener('change', () => { if ($('cd-file').value) load($('cd-file').value); });
     $('cd-reload').addEventListener('click', () => { if (!file) return; original = ''; load(file); });
     $('cd-save').addEventListener('click', save);
+    $('cd-original').addEventListener('click', async () => {
+      if (!file) return;
+      if (!confirm('Remove every edit of ' + file + ' and go back to the copy that shipped with the last deploy? It goes live immediately; your edits stay in Backups.')) return;
+      try { await api('/code/revert', { method: 'POST', body: { path: file } }); toast('Original restored'); original = ''; load(file); } catch (err) { toast(err.message); }
+    });
     $('cd-text').addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
       if (e.key === 'Tab') { e.preventDefault(); const t = e.target; const s = t.selectionStart; t.setRangeText('  ', s, t.selectionEnd, 'end'); }

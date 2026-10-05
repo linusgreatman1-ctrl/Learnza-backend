@@ -60,6 +60,11 @@
       if (k === 'chat') return chatTab(body, alive);
       return reviewTab(body);
     });
+    // A badge on the Live chat tab when the team (or the assistant) has replied and it has not been read yet.
+    api('/support/chat/unread').then(({ unread }) => {
+      const t = view.querySelector('.lzx-tab[data-tab="chat"]');
+      if (t && unread > 0 && !t.classList.contains('on')) t.textContent = 'Live chat (' + unread + ' new)';
+    }).catch(() => {});
 
     async function ticketsTab(body, alive, openId) {
       const { tickets } = await api('/support/tickets');
