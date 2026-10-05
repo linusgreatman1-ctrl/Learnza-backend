@@ -1,16 +1,21 @@
+const crypto = require('crypto');
 const prisma = require('../db');
 const ai = require('./aiProvider.service');
+const { OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, profileFor } = require('../utils/paper');
 
 // The system writes practice material for every course on a student's dashboard — school
 // courses and self-study courses alike — so nobody has to wait for a lecturer to set it:
 //
-//   CBT mock exams   2 sets of 10 questions, plus a fresh one each week (up to 8)
-//   Past questions   1 set of 20 in the style of Nigerian exam papers (and one a month, up to 6)
-//   Practice bank    30 questions with explanations (30 more each month, up to 120)
+//   CBT mock exams   2 papers, plus a fresh one each week (up to 8)
+//   Past questions   1 paper in the style of the institution's past papers (and one a month, up to 6)
+//   Practice bank    40 questions with explanations (40 more each month, up to 160)
 //
-// Mock and past-question sets are ordinary Assessments (flagged generated) so the existing
-// screens, timers and marking work unchanged. The practice bank lives in PlatformQuestion.
-// Past-question sets are WRITTEN IN THE STYLE of past papers; they are not scans of real ones,
+// A mock or past-question PAPER is set the way the student's own kind of institution sets one
+// (utils/paper.js): Section A is 20 objective questions in 15 minutes, Section B is 5 theory
+// questions in 1 hour 30, and the two parts are taken separately. Each part is an ordinary
+// Assessment (flagged generated) so the existing screens, timers and marking work unchanged; the
+// two share a paperId. The practice bank lives in PlatformQuestion and is drawn 20 at a time.
+// Past-question papers are WRITTEN IN THE STYLE of past papers; they are not scans of real ones,
 // and say so in their titles.
 //
 // Everything runs in the background, one AI request at a time (providers rate-limit), and is
@@ -18,9 +23,9 @@ const ai = require('./aiProvider.service');
 
 const DAY = 24 * 60 * 60 * 1000;
 const PLAN = {
-  MOCK: { initial: 2, perSet: 10, topUpEvery: 7 * DAY, max: 8 },
-  PAST: { initial: 1, perSet: 20, topUpEvery: 30 * DAY, max: 6 },
-  PRACTICE: { initial: 1, perSet: 30, topUpEvery: 30 * DAY, max: 4 },
+  MOCK: { initial: 2, topUpEvery: 7 * DAY, max: 8 },
+  PAST: { initial: 1, topUpEvery: 30 * DAY, max: 6 },
+  PRACTICE: { initial: 1, perSet: 40, topUpEvery: 30 * DAY, max: 4 },
 };
 const RETRY_COOLDOWN_MS = 15 * 60 * 1000;
 
@@ -29,7 +34,7 @@ const lastFailure = new Map();       // `${kind}:${id}` -> time of the last fail
 let chain = Promise.resolve();       // one AI request at a time, across all courses
 const enqueue = (fn) => { const run = chain.then(fn, fn); chain = run.catch(() => {}); return run; };
 
-const SYSTEM = `You write multiple-choice exam questions for students at Nigerian higher institutions (universities, polytechnics, monotechnics, colleges of education). Reply with JSON only, exactly:
+const SYSTEM_OBJECTIVE = `You write multiple-choice exam questions for students at Nigerian higher institutions (universities, polytechnics, monotechnics, colleges of education). Reply with JSON only, exactly:
 { "title": string, "questions": [ { "text": string, "options": [string, string, string, string], "correctIndex": number, "explanation": string } ] }
 Rules:
 - Exactly the number of questions asked for; each has exactly 4 options and one correct answer (correctIndex 0-3).
@@ -39,17 +44,27 @@ Rules:
 - Plain text only, no markdown. No question may depend on a diagram.
 Return JSON only, no prose before or after.`;
 
+const SYSTEM_THEORY = `You set the theory section of a written examination for students at Nigerian higher institutions. Reply with JSON only, exactly:
+{ "title": string, "questions": [ { "text": string, "modelAnswer": string } ] }
+Rules:
+- Exactly the number of questions asked for. Each question is worth the same total marks, stated in the request.
+- Each question has parts labelled (a), (b), (c), each on its own line inside "text" (use \\n between parts), with the marks for that part in brackets at its end, e.g. "(a) Define inflation. (2 marks)". The part marks must add up to the question's total.
+- Spread the questions across different topics of the course; vary the command words; no two questions may overlap.
+- "modelAnswer" is a marking guide: the points an examiner would look for in each part, with the marks each earns, in plain sentences.
+- Plain text only, no markdown. No question may depend on a diagram.
+Return JSON only, no prose before or after.`;
+
 const STYLE = {
   MOCK: 'a CBT mock exam: balanced mix of recall, understanding and application, as in a computer-based test',
-  PAST: 'past-question practice: phrased the way questions typically appear in Nigerian university/polytechnic examinations on this course (do NOT claim they are real past papers)',
+  PAST: 'past-question practice: phrased the way questions typically appear in past examination papers of this kind of institution on this course (do NOT claim they are real past papers)',
   PRACTICE: 'topic practice questions, each focused on one concept, easy to medium difficulty',
 };
 
-async function askWithRetry(userPrompt) {
+async function askWithRetry(system, userPrompt) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const out = await ai.askForJson(SYSTEM, userPrompt);
+      const out = await ai.askForJson(system, userPrompt);
       if (out && Array.isArray(out.questions) && out.questions.length) return out;
       throw new Error('AI returned no questions');
     } catch (err) {
@@ -64,64 +79,117 @@ async function askWithRetry(userPrompt) {
   throw lastErr;
 }
 
-function clean(draft, n) {
+function cleanObjective(draft, n) {
   return (draft.questions || [])
     .filter((q) => q && q.text && Array.isArray(q.options) && q.options.length === 4 && Number.isInteger(q.correctIndex) && q.correctIndex >= 0 && q.correctIndex <= 3)
     .slice(0, n)
     .map((q) => ({ text: String(q.text).slice(0, 1000), options: q.options.map((o) => String(o).slice(0, 300)), correctIndex: q.correctIndex, explanation: q.explanation ? String(q.explanation).slice(0, 600) : null }));
 }
 
+function cleanTheory(draft, n, marks) {
+  return (draft.questions || [])
+    .filter((q) => q && q.text && String(q.text).trim().length > 20)
+    .slice(0, n)
+    .map((q) => {
+      let text = String(q.text).replace(/\\n/g, '\n').trim().slice(0, 2000);
+      // The marks are part of the question: if the writer left them out, state the total.
+      if (!/\b\d+\s*marks?\b/i.test(text)) text += `\n[${marks} marks]`;
+      return { text, modelAnswer: q.modelAnswer ? String(q.modelAnswer).slice(0, 2500) : null };
+    });
+}
+
 const courseLabel = (ctx) => (ctx.code ? `${ctx.code} — ${ctx.title}` : ctx.title);
 const where = (ctx) => (ctx.kind === 'school' ? { courseId: ctx.id } : { individualCourseId: ctx.id });
+const contextLines = (ctx, profile) => [
+  `Course: ${courseLabel(ctx)}`,
+  ctx.department ? `Department: ${ctx.department}` : null,
+  ctx.level ? `Level: ${ctx.level}` : null,
+  ctx.institutionType ? `Institution: ${profile.label}` : null,
+];
 
 async function write(ctx, kind, setNumber) {
-  const spec = PLAN[kind];
-  const prompt = [
-    `Course: ${courseLabel(ctx)}`,
-    ctx.department ? `Department: ${ctx.department}` : null,
-    ctx.level ? `Level: ${ctx.level}` : null,
-    `Style: ${STYLE[kind]}`,
-    `Number of questions: ${spec.perSet}`,
-    setNumber > 1 ? `This is set number ${setNumber}: use different questions and sub-topics from earlier sets.` : null,
-  ].filter(Boolean).join('\n');
-  const questions = clean(await askWithRetry(prompt), spec.perSet);
-  if (questions.length < Math.min(5, spec.perSet)) throw new Error('AI returned too few usable questions');
+  const profile = profileFor(ctx.institutionType);
+  const label = courseLabel(ctx);
 
   if (kind === 'PRACTICE') {
+    const questions = [];
+    for (let i = 0; i < PLAN.PRACTICE.perSet / OBJECTIVE_PER_PAPER; i++) {
+      const prompt = [
+        ...contextLines(ctx, profile),
+        `Style: ${STYLE.PRACTICE}`,
+        `Number of questions: ${OBJECTIVE_PER_PAPER}`,
+        setNumber > 1 || i > 0 ? 'Other questions already exist for this course: use different questions and sub-topics from any earlier ones.' : null,
+      ].filter(Boolean).join('\n');
+      questions.push(...cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, prompt), OBJECTIVE_PER_PAPER));
+    }
+    if (questions.length < 10) throw new Error('AI returned too few usable questions');
     await prisma.platformQuestion.createMany({
       data: questions.map((q) => ({
-        subject: courseLabel(ctx), level: ctx.level || null, source: 'Generated for your course',
+        subject: label, level: ctx.level || null, source: 'Generated for your course',
         text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, explanation: q.explanation,
         generated: true, active: true, ...where(ctx),
       })),
     });
     return;
   }
-  const title = kind === 'MOCK' ? `${courseLabel(ctx)} — Mock Exam ${setNumber}` : `${courseLabel(ctx)} — Past Questions Practice${setNumber > 1 ? ` ${setNumber}` : ''}`;
-  await prisma.assessment.create({
-    data: {
-      ...where(ctx),
-      authorId: ctx.authorId,
-      title,
-      type: kind === 'MOCK' ? 'Mock' : 'PAST_QUESTION',
-      durationMin: kind === 'MOCK' ? 15 : 30,
-      generated: true,
-      sentAt: ctx.kind === 'school' ? new Date() : null,
-      semesterId: ctx.semesterId || null,
-      questions: { create: questions.map((q, i) => ({ questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, explanation: q.explanation, order: i })) },
-    },
-  });
+
+  const name = kind === 'MOCK' ? `${label} — Mock Exam ${setNumber}` : `${label} — Past Questions Practice${setNumber > 1 ? ` ${setNumber}` : ''}`;
+  await createPaper(ctx, { style: STYLE[kind], name, assessmentType: kind === 'MOCK' ? 'Mock' : 'PAST_QUESTION', setNumber, generated: true });
 }
 
-// What exists for this course now.
+// Sets one paper -- Section A (objective) and Section B (theory) -- the way this kind of
+// institution sets its examinations. Used for mock and past-question papers and for the
+// semester exam of a self-study course.
+async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, generated = true }) {
+  const profile = profileFor(ctx.institutionType);
+  const earlier = setNumber > 1 ? `This is paper number ${setNumber}: use different questions and sub-topics from earlier papers.` : null;
+  const objective = cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, [
+    ...contextLines(ctx, profile), `Style: ${style}`, `Number of questions: ${OBJECTIVE_PER_PAPER}`, earlier,
+  ].filter(Boolean).join('\n')), OBJECTIVE_PER_PAPER);
+  if (objective.length < 10) throw new Error('AI returned too few usable objective questions');
+  const theory = cleanTheory(await askWithRetry(SYSTEM_THEORY, [
+    ...contextLines(ctx, profile),
+    `Style: ${style}`,
+    `Set as for ${profile.guide}`,
+    'Question type: THEORY',
+    `Number of questions: ${THEORY_PER_PAPER}`,
+    `Marks per question: ${profile.theoryMarks}`,
+    earlier,
+  ].filter(Boolean).join('\n')), THEORY_PER_PAPER, profile.theoryMarks);
+  if (theory.length < 3) throw new Error('AI returned too few usable theory questions');
+
+  const paperId = crypto.randomUUID();
+  const base = { ...where(ctx), authorId: ctx.authorId, type: assessmentType, generated, paperId, sentAt: new Date(), semesterId: ctx.semesterId || null };
+  // Both sections or neither, so a failure never leaves half a paper. Section A is stamped a moment
+  // earlier so lists, which go by creation time, always show it first.
+  const now = Date.now();
+  await prisma.$transaction([
+    prisma.assessment.create({
+      data: {
+        ...base, createdAt: new Date(now), title: `${name} · Section A (Objective)`, section: 'OBJECTIVE', durationMin: 15, totalMarks: objective.length,
+        questions: { create: objective.map((q, i) => ({ questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, explanation: q.explanation, order: i })) },
+      },
+    }),
+    prisma.assessment.create({
+      data: {
+        ...base, createdAt: new Date(now + 2), title: `${name} · Section B (Theory)`, section: 'THEORY', durationMin: 90, totalMarks: theory.length * profile.theoryMarks,
+        questions: { create: theory.map((q, i) => ({ questionType: 'THEORY', text: q.text, modelAnswer: q.modelAnswer, order: i })) },
+      },
+    }),
+  ]);
+}
+
+// What exists for this course now (a paper counts once, by its Section A).
 async function inventory(ctx) {
   const w = where(ctx);
+  const mock = { ...w, generated: true, type: 'Mock', section: 'OBJECTIVE' };
+  const past = { ...w, generated: true, type: 'PAST_QUESTION', section: 'OBJECTIVE' };
   const [mocks, pasts, practice, lastMock, lastPast, lastPractice] = await Promise.all([
-    prisma.assessment.count({ where: { ...w, generated: true, type: 'Mock' } }),
-    prisma.assessment.count({ where: { ...w, generated: true, type: 'PAST_QUESTION' } }),
+    prisma.assessment.count({ where: mock }),
+    prisma.assessment.count({ where: past }),
     prisma.platformQuestion.count({ where: { ...w, generated: true } }),
-    prisma.assessment.findFirst({ where: { ...w, generated: true, type: 'Mock' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
-    prisma.assessment.findFirst({ where: { ...w, generated: true, type: 'PAST_QUESTION' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    prisma.assessment.findFirst({ where: mock, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    prisma.assessment.findFirst({ where: past, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
     prisma.platformQuestion.findFirst({ where: { ...w, generated: true }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
   ]);
   return {
@@ -194,18 +262,19 @@ async function schoolAuthor(schoolId) {
 async function contextsFor(user) {
   const out = [];
   if (user.schoolId) {
-    const [rows, authorId, semester] = await Promise.all([
+    const [rows, authorId, semester, school] = await Promise.all([
       prisma.enrollment.findMany({ where: { studentId: user.id }, select: { course: { select: { id: true, code: true, title: true, level: true, practiceReadyAt: true, department: { select: { name: true, schoolId: true } } } } } }),
       schoolAuthor(user.schoolId),
       prisma.semester.findFirst({ where: { schoolId: user.schoolId, isCurrent: true }, select: { id: true } }),
+      prisma.school.findUnique({ where: { id: user.schoolId }, select: { institutionType: true } }),
     ]);
     if (authorId) for (const { course: c } of rows) {
       if (c.department.schoolId !== user.schoolId) continue;
-      out.push({ kind: 'school', id: c.id, code: c.code, title: c.title, level: c.level, department: c.department.name, authorId, semesterId: semester && semester.id, ready: !!c.practiceReadyAt, readyAt: c.practiceReadyAt });
+      out.push({ kind: 'school', id: c.id, code: c.code, title: c.title, level: c.level, department: c.department.name, authorId, semesterId: semester && semester.id, institutionType: school && school.institutionType, ready: !!c.practiceReadyAt, readyAt: c.practiceReadyAt });
     }
   }
   const own = await prisma.individualCourse.findMany({ where: { studentId: user.id } });
-  for (const c of own) out.push({ kind: 'self', id: c.id, title: c.title, authorId: user.id, ready: !!c.practiceReadyAt, readyAt: c.practiceReadyAt });
+  for (const c of own) out.push({ kind: 'self', id: c.id, title: c.title, authorId: user.id, institutionType: user.institutionType, ready: !!c.practiceReadyAt, readyAt: c.practiceReadyAt });
   return out;
 }
 
@@ -231,4 +300,4 @@ async function statusForStudent(user) {
   return ctxs.map((ctx) => ({ id: ctx.id, kind: ctx.kind, title: courseLabel(ctx), status: statusOf(ctx) }));
 }
 
-module.exports = { ensureForStudent, statusForStudent, kick, contextsFor, PLAN };
+module.exports = { ensureForStudent, statusForStudent, kick, contextsFor, createPaper, PLAN };

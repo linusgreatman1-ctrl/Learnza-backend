@@ -232,7 +232,9 @@
           <div style="font:700 15px Sora,sans-serif;margin-bottom:12px;">Choose payment method</div>
           ${cfg.flutterwavePublicKey ? `
           <button class="lzx-pay-fw" id="lzx-pay-fw"><span style="font-size:22px">🦋</span><div style="flex:1;text-align:left"><div style="font-weight:800;font-size:14px;">Pay with Flutterwave</div><div style="font-size:11px;opacity:.65;">Card, Bank, USSD, Mobile Money</div></div><span>→</span></button>` : ''}
-          <div style="font:700 15px Sora,sans-serif;margin:${cfg.flutterwavePublicKey ? '18px' : '0'} 0 12px;">${cfg.flutterwavePublicKey ? 'Or pay directly' : 'Pay by bank transfer'}</div>
+          ${cfg.paystack ? `
+          <button class="lzx-pay-fw lzx-pay-ps" id="lzx-pay-ps" style="${cfg.flutterwavePublicKey ? 'margin-top:10px;' : ''}"><span style="font-size:22px">💳</span><div style="flex:1;text-align:left"><div style="font-weight:800;font-size:14px;">Pay with Paystack</div><div style="font-size:11px;opacity:.65;">Card, Bank, USSD, Bank Transfer</div></div><span>→</span></button>` : ''}
+          <div style="font:700 15px Sora,sans-serif;margin:${cfg.flutterwavePublicKey || cfg.paystack ? '18px' : '0'} 0 12px;">${cfg.flutterwavePublicKey || cfg.paystack ? 'Or pay directly' : 'Pay by bank transfer'}</div>
           <div class="lzx-pay-card">
             <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:#1f8a5b;">🏦 Bank transfer</div>
             <div class="lzx-pay-row"><span>Bank</span><b>${esc(cfg.bank.bankName)}</b></div>
@@ -271,6 +273,19 @@
     overlay.querySelector('#lzx-pay-bank').addEventListener('click', () => manual('BANK'));
     overlay.querySelector('#lzx-pay-ussd').addEventListener('click', () => manual('USSD'));
 
+    // Paystack: the server prepares the checkout page; we go there and Paystack sends the browser
+    // back here, where payReturn() confirms the payment.
+    const psBtn = overlay.querySelector('#lzx-pay-ps');
+    if (psBtn) psBtn.addEventListener('click', async () => {
+      psBtn.disabled = true;
+      try {
+        const returnUrl = location.origin + location.pathname;
+        const init = await api(opts.kind === 'coins' ? '/coins/initiate' : '/billing/initiate', { method: 'POST', body: Object.assign({ provider: 'PAYSTACK', returnUrl }, opts.kind === 'coins' ? { packId: opts.packId } : { plan: opts.plan }) });
+        try { sessionStorage.setItem('lzx_pay', JSON.stringify({ ref: init.reference, kind: opts.kind === 'coins' ? 'coins' : 'plan' })); } catch { /* the return page also carries the reference */ }
+        location.href = init.authorizationUrl;
+      } catch (err) { psBtn.disabled = false; toast(err.message || 'Could not start the payment. Please try again.'); }
+    });
+
     const fwBtn = overlay.querySelector('#lzx-pay-fw');
     if (fwBtn) fwBtn.addEventListener('click', async () => {
       fwBtn.disabled = true;
@@ -298,6 +313,27 @@
         });
       } catch (err) { fwBtn.disabled = false; toast(err.message || 'Could not start the payment. Please try again.'); }
     });
+  }
+
+  // Back from Paystack's checkout page (it adds ?reference=… to the address we gave it): confirm the
+  // payment with the server and say what happened. Called by each app once it is signed in.
+  let payReturned = false;
+  async function payReturn({ api, toast, rerender }) {
+    if (payReturned) return;
+    let ref = null;
+    try {
+      const q = new URLSearchParams(location.search);
+      ref = q.get('reference') || q.get('trxref');
+      if (!ref) { const saved = JSON.parse(sessionStorage.getItem('lzx_pay') || 'null'); ref = saved && saved.ref; }
+    } catch { /* storage may be blocked */ }
+    if (!ref || !/^LZ-/.test(ref)) return;
+    payReturned = true;
+    try { sessionStorage.removeItem('lzx_pay'); history.replaceState(null, '', location.pathname + location.hash); } catch { /* ignore */ }
+    try {
+      const r = await api('/billing/verify/' + encodeURIComponent(ref));
+      toast(r.status === 'SUCCESS' ? (r.kind === 'coins' ? '✅ Coins added!' : '✅ Payment successful! Your plan is now active.') : 'Payment received — confirming with Paystack, this can take a moment.');
+      if (r.status === 'SUCCESS' && rerender) rerender();
+    } catch { /* not our payment, or not signed in: nothing to report */ }
   }
 
   // ---------------------------------------------------------------- study-group polls + seen
@@ -401,7 +437,7 @@
           ${mine.length ? `<optgroup label="Your courses">${mine.map((c) => `<option value="${c.kind}:${esc(c.id)}">${esc(c.title)} (${c.count} questions)</option>`).join('')}</optgroup>` : ''}
           ${subjects.length ? `<optgroup label="General subjects">${subjects.map((x) => `<option value="subject:${esc(x.subject)}">${esc(x.subject)} (${x.count})</option>`).join('')}</optgroup>` : ''}
         </select></div>
-        <div class="field"><label>How many questions?</label><select id="pq-count"><option>10</option><option>20</option><option>30</option></select></div>
+        <div class="field"><label>How many questions?</label><select id="pq-count"><option value="10">10 (8 minutes)</option><option value="20" selected>20 (15 minutes)</option><option value="30">30 (23 minutes)</option></select><div class="meta" style="margin-top:4px;">A full practice set is 20 objective questions in 15 minutes. For theory questions, open a Past Questions or CBT Mock paper and take Section B.</div></div>
         <button class="btn btn-primary" id="pq-start">Start practising</button>` : '<p class="muted">No practice questions yet.</p>'}
         ${preparing.length ? `<p class="muted" style="margin-top:14px;font-size:.85rem;">⏳ Still being prepared for: ${preparing.map((c) => esc(c.title)).join(', ')}. This page updates when they are ready.</p>` : ''}
       </div>`;
@@ -420,8 +456,14 @@
 
     function quiz(subject, questions) {
       const chosen = {};
+      // Same timing as every objective paper: 20 questions in 15 minutes.
+      const minutes = Math.max(1, Math.ceil(questions.length * 0.75));
+      const deadline = Date.now() + minutes * 60000;
+      let ticker = null;
+      const stop = () => { if (ticker) { clearInterval(ticker); ticker = null; } };
       view.innerHTML = `
-        <div class="page-head"><h1>${esc(subject)}</h1><button class="btn btn-ghost btn-sm" id="pq-quit">Quit</button></div>
+        <div class="page-head"><h1>${esc(subject)}</h1><div style="display:flex;align-items:center;gap:10px;"><span class="pill pill-accent tabular" id="pq-clock">--:--</span><button class="btn btn-ghost btn-sm" id="pq-quit">Quit</button></div></div>
+        <p class="meta" style="margin-bottom:10px;">${questions.length} objective question${questions.length === 1 ? '' : 's'} · ${minutes} minute${minutes === 1 ? '' : 's'} · submitted automatically when time is up</p>
         ${questions.map((q, i) => `
           <div class="card" style="margin-bottom:14px;">
             <div class="meta">Question ${i + 1} of ${questions.length}${q.year ? ' · ' + q.year : ''}${q.source ? ' · ' + esc(q.source) : ''}</div>
@@ -429,20 +471,29 @@
             ${q.options.map((o, k) => `<button class="lzx-optionbtn" data-q="${i}" data-k="${k}"><span>${'ABCDEF'[k]}. ${esc(o)}</span></button>`).join('')}
           </div>`).join('')}
         <button class="btn btn-primary" id="pq-submit">Submit answers</button>`;
-      view.querySelector('#pq-quit').addEventListener('click', () => practice(view, { api, esc, toast }));
+      view.querySelector('#pq-quit').addEventListener('click', () => { stop(); practice(view, { api, esc, toast }); });
+      const submit = async (auto) => {
+        const unanswered = questions.length - Object.keys(chosen).length;
+        if (!auto && unanswered && !confirm(unanswered + ' question' + (unanswered === 1 ? ' is' : 's are') + ' unanswered. Submit anyway?')) return;
+        stop();
+        try {
+          const r = await api('/questions/check', { method: 'POST', body: { answers: questions.map((q, i) => ({ id: q.id, choice: chosen[i] == null ? null : chosen[i] })) } });
+          results(subject, r);
+        } catch (err) { toast(err.message); }
+      };
+      const clock = view.querySelector('#pq-clock');
+      const tick = () => {
+        const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+        if (clock) clock.textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+        if (!left) { stop(); toast("Time is up — submitting your answers."); submit(true); }
+      };
+      tick(); ticker = setInterval(tick, 1000);
       view.querySelectorAll('.lzx-optionbtn').forEach((b) => b.addEventListener('click', () => {
         const qi = b.dataset.q;
         chosen[qi] = Number(b.dataset.k);
         view.querySelectorAll('.lzx-optionbtn[data-q="' + qi + '"]').forEach((x) => x.classList.toggle('mine', x === b));
       }));
-      view.querySelector('#pq-submit').addEventListener('click', async () => {
-        const unanswered = questions.length - Object.keys(chosen).length;
-        if (unanswered && !confirm(unanswered + ' question' + (unanswered === 1 ? ' is' : 's are') + ' unanswered. Submit anyway?')) return;
-        try {
-          const r = await api('/questions/check', { method: 'POST', body: { answers: questions.map((q, i) => ({ id: q.id, choice: chosen[i] == null ? null : chosen[i] })) } });
-          results(subject, r);
-        } catch (err) { toast(err.message); }
-      });
+      view.querySelector('#pq-submit').addEventListener('click', () => submit(false));
     }
 
     function results(subject, r) {
@@ -1013,5 +1064,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib, pay, elections, electionsAdmin, electionBanner, practiceWatch };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch };
 })();

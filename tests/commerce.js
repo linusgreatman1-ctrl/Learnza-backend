@@ -22,6 +22,8 @@ async function call(method, path, { token, body, headers } = {}) {
   });
   return { status: res.status, data: await res.json().catch(() => ({})) };
 }
+const PS_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_x';
+const crypto = require('crypto');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
@@ -56,10 +58,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const indie = { token: r.data.token, id: r.data.user.id };
 
   // ================================================================ payments
-  console.log('== payments: Flutterwave + bank transfer, no Paystack ==');
+  console.log('== payments: Flutterwave, Paystack and bank transfer ==');
   r = await call('GET', '/api/billing/config', { token: stu1.token });
   check('payment config: public key, PassNow bank details, plans, packs', r.status === 200 && r.data.flutterwavePublicKey && r.data.bank.bankName === 'Zenith Bank International' && r.data.bank.accountName === 'Infopedia Technology' && r.data.bank.accountNumber === '1016980625' && r.data.plans.length === 2 && r.data.packs.length === 2 && r.data.ussdTemplate === '*966*{amount}*1016980625#', r.data);
-  for (const [m, p] of [['GET', '/api/billing/providers'], ['POST', '/api/billing/checkout'], ['POST', '/api/billing/webhook/paystack'], ['POST', '/api/coins/checkout']]) {
+  for (const [m, p] of [['GET', '/api/billing/providers'], ['POST', '/api/billing/checkout'], ['POST', '/api/coins/checkout']]) {
     r = await call(m, p, { token: stu1.token, body: m === 'GET' ? undefined : {} });
     check(`${m} ${p} no longer exists`, r.status === 404, r.status);
   }
@@ -120,7 +122,47 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   r = await call('GET', '/api/billing/status', { token: stu3.token });
   check('a rejected transfer gives nothing', r.data.active === false);
 
-  console.log('== coins: same two routes ==');
+  // ---------------------------------------------------------------- Paystack
+  console.log('== Paystack ==');
+  r = await call('GET', '/api/billing/config', { token: indie.token });
+  check('config says Paystack is available', r.data.paystack === true, r.data.paystack);
+  r = await call('POST', '/api/billing/initiate', { token: indie.token, body: { plan: 'MONTHLY', provider: 'PAYSTACK', returnUrl: 'https://evil.example/steal' } });
+  check('a Paystack checkout that cannot be prepared creates nothing (502)', r.status === 502, r.status);
+  check('...and leaves no payment behind', (await prisma.payment.count({ where: { userId: indie.id, provider: 'PAYSTACK' } })) === 0);
+  const psRef = 'LZ-PS-' + RUN;
+  await prisma.payment.create({ data: { userId: indie.id, provider: 'PAYSTACK', reference: psRef, plan: 'MONTHLY', amountKobo: 1000000, status: 'PENDING' } });
+  const psHook = (event, key, sig) => {
+    const raw = JSON.stringify(event);
+    const signature = sig === undefined ? crypto.createHmac('sha512', key).update(raw).digest('hex') : sig;
+    return fetch(BASE + '/api/billing/webhook/paystack', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-paystack-signature': signature }, body: raw }).then((x) => x.status);
+  };
+  const charge = (reference, amount) => ({ event: 'charge.success', data: { reference, amount, status: 'success' } });
+  check('Paystack webhook without a valid signature -> 401', (await psHook(charge(psRef, 1000000), PS_KEY, 'nope')) === 401);
+  check('...signed with the wrong key -> 401', (await psHook(charge(psRef, 1000000), 'another-key')) === 401);
+  await psHook(charge(psRef, 500000), PS_KEY);
+  r = await call('GET', '/api/billing/status', { token: indie.token });
+  check('a Paystack payment for less than the price is not accepted', r.data.active === false);
+  check('a correctly signed, fully paid webhook -> 200', (await psHook(charge(psRef, 1000000), PS_KEY)) === 200);
+  r = await call('GET', '/api/billing/status', { token: indie.token });
+  check('...activates the subscription', r.data.active === true && r.data.subscription.plan === 'MONTHLY', r.data);
+  const psExp = (await prisma.subscription.findUnique({ where: { userId: indie.id } })).expiresAt.getTime();
+  await psHook(charge(psRef, 1000000), PS_KEY);
+  check('a replayed Paystack webhook does not extend it again', (await prisma.subscription.findUnique({ where: { userId: indie.id } })).expiresAt.getTime() === psExp);
+  r = await call('GET', '/api/super/payments', { token: SUPER });
+  const psRow = r.data.payments.find((p) => p.reference === psRef);
+  check('owner sees it as a Paystack payment', psRow && psRow.provider === 'PAYSTACK' && psRow.status === 'SUCCESS');
+  r = await call('POST', `/api/super/payments/${psRow.id}/confirm`, { token: SUPER });
+  check('Paystack payments cannot be confirmed by hand either', r.status === 400);
+  r = await call('POST', '/api/coins/initiate', { token: stu1.token, body: { packId: 'COINS_30', provider: 'PAYSTACK' } });
+  check('a Paystack coin checkout that cannot be prepared -> 502, nothing recorded', r.status === 502 && (await prisma.coinPurchase.count({ where: { userId: stu1.id, provider: 'PAYSTACK' } })) === 0, r.status);
+  const psCoin = 'LZ-COIN-PS-' + RUN;
+  await prisma.coinPurchase.create({ data: { userId: stu1.id, coins: 30, amountKobo: 250000, provider: 'PAYSTACK', reference: psCoin, status: 'PENDING' } });
+  await psHook(charge(psCoin, 250000), PS_KEY);
+  await psHook(charge(psCoin, 250000), PS_KEY);
+  r = await call('GET', '/api/coins', { token: stu1.token });
+  check('a Paystack coin purchase credits 30 coins exactly once', r.data.balance === 30, r.data.balance);
+
+  console.log('== coins: same routes ==');
   r = await call('POST', '/api/coins/initiate', { token: indie.token, body: { packId: 'COINS_30' } });
   check('coin initiate: server price (₦2,500)', r.status === 201 && r.data.amount === 2500 && r.data.reference.startsWith('LZ-COIN-'), r.data);
   const coinRef = r.data.reference;
@@ -267,6 +309,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ================================================================ generated practice
   console.log('== practice written for each course ==');
+  // The school is a polytechnic: its papers are set the NBTE way (Section B is 5 x 8 = 40 marks).
+  const schoolA = await prisma.school.findFirst({ where: { name: A.name } });
+  r = await call('PATCH', '/api/super/schools/' + schoolA.id, { token: SUPER, body: { institutionType: 'POLYTECHNIC' } });
+  check('the owner sets the type of institution', r.status === 200 && r.data.school.institutionType === 'POLYTECHNIC', r.data);
+  r = await call('PATCH', '/api/super/schools/' + schoolA.id, { token: SUPER, body: { institutionType: 'ACADEMY' } });
+  check('an unknown type of institution is refused', r.status === 400);
   r = await call('GET', '/api/practice/status', { token: lec1.token });
   check('students only', r.status === 403);
   r = await call('POST', '/api/practice/ensure', { token: stu1.token });
@@ -280,22 +328,53 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('it becomes ready', ready, r.data);
   r = await call('GET', `/api/courses/${course.id}/assessments`, { token: stu1.token });
   const mocks = r.data.assessments.filter((a) => a.type === 'Mock'), pasts = r.data.assessments.filter((a) => a.type === 'PAST_QUESTION');
-  check('the student has 2 mock exams (10 questions) and a past-question set (20)', mocks.length === 2 && mocks.every((m) => m._count.questions === 10) && pasts.length === 1 && pasts[0]._count.questions === 20, r.data.assessments.map((a) => [a.type, a._count.questions]));
-  check('past-question set is honestly titled as practice', /Past Questions Practice/.test(pasts[0].title));
+  const sectionA = (list) => list.filter((a) => a.section === 'OBJECTIVE'), sectionB = (list) => list.filter((a) => a.section === 'THEORY');
+  check('2 mock papers, each with Section A and Section B', sectionA(mocks).length === 2 && sectionB(mocks).length === 2, mocks.map((a) => a.title));
+  check('1 past-question paper, with both sections', sectionA(pasts).length === 1 && sectionB(pasts).length === 1);
+  check('Section A is 20 objective questions in 15 minutes', sectionA([...mocks, ...pasts]).every((a) => a.objectiveCount === 20 && a.theoryCount === 0 && a.minutes === 15), sectionA(mocks).map((a) => [a.objectiveCount, a.minutes]));
+  check('Section B is 5 theory questions in 1 hour 30', sectionB([...mocks, ...pasts]).every((a) => a.theoryCount === 5 && a.objectiveCount === 0 && a.minutes === 90), sectionB(mocks).map((a) => [a.theoryCount, a.minutes]));
+  check('the two sections of a paper are linked and Section A comes first', mocks[0].paperId === mocks[1].paperId && mocks[0].section === 'OBJECTIVE' && mocks[1].section === 'THEORY');
+  check('a polytechnic paper carries 20 + 5 x 8 = 60 marks', sectionB(mocks)[0].totalMarks === 40 && sectionA(mocks)[0].totalMarks === 20, [sectionA(mocks)[0].totalMarks, sectionB(mocks)[0].totalMarks]);
+  check('past-question paper is honestly titled as practice', /Past Questions Practice/.test(pasts[0].title));
+  r = await call('POST', `/api/assessments/${sectionA(mocks)[0].id}/start`, { token: stu1.token });
+  check('the server times Section A at 15 minutes', r.status === 200 && r.data.durationMin === 15, r.data);
+  r = await call('POST', `/api/assessments/${sectionB(mocks)[0].id}/start`, { token: stu1.token });
+  check('...and Section B at 90 minutes', r.status === 200 && r.data.durationMin === 90, r.data);
+  r = await call('GET', `/api/assessments/${sectionB(mocks)[0].id}`, { token: stu1.token });
+  check('theory questions arrive without their model answers', r.status === 200 && r.data.assessment.questions.length === 5 && r.data.assessment.questions.every((q) => q.questionType === 'THEORY' && q.modelAnswer === undefined && /\(a\)/.test(q.text)), r.data.assessment && r.data.assessment.questions[0]);
+  r = await call('POST', `/api/assessments/${sectionB(mocks)[0].id}/submit`, { token: stu1.token, body: { answers: [{ questionId: 'x', text: 'my answer' }] } });
+  check('a theory section submits and is not auto-marked', r.status === 200 && r.data.submission.total === 0, r.data);
+  r = await call('GET', `/api/assessments/${sectionB(mocks)[0].id}/my-review`, { token: stu1.token });
+  check('afterwards the model answers (marking guide) are shown for self-marking', r.status === 200 && r.data.review.length === 5 && r.data.review.every((q) => q.modelAnswer), r.data.review && r.data.review[0]);
+
+  // A lecturer's own test follows the same limits: at most 20 objective and 5 theory questions.
+  const obj = (n) => Array.from({ length: n }, (_, i) => ({ questionType: 'OBJECTIVE', text: 'Q' + i, options: ['a', 'b', 'c', 'd'], correctIndex: 0 }));
+  const th = (n) => Array.from({ length: n }, (_, i) => ({ questionType: 'THEORY', text: 'T' + i, modelAnswer: 'x' }));
+  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Too long', type: 'CA', questions: obj(21) } });
+  check('a test cannot have more than 20 objective questions', r.status === 400);
+  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Too much theory', type: 'CA', questions: [...obj(1), ...th(6)] } });
+  check('...or more than 5 theory questions', r.status === 400);
+  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Full paper', type: 'CA', questions: [...obj(20), ...th(5)] } });
+  check('20 objective + 5 theory is accepted', r.status === 200, r.data);
+  r = await call('GET', `/api/courses/${course.id}/assessments`, { token: stu1.token });
+  const full = r.data.assessments.find((a) => a.title === 'Full paper');
+  check('a mixed test is timed 15 + 90 = 105 minutes', full && full.minutes === 105, full && full.minutes);
   r = await call('GET', `/api/courses/${course.id}/assessments`, { token: lec1.token });
-  check("lecturers do not see (or manage) the system's sets", r.data.assessments.length === 0, r.data.assessments.map((a) => a.title));
+  check("lecturers do not see (or manage) the system's sets", r.data.assessments.every((a) => !a.generated && a.title !== 'x') && !r.data.assessments.some((a) => /Mock Exam|Past Questions Practice/.test(a.title)), r.data.assessments.map((a) => a.title));
   const stuAs = await call('GET', `/api/courses/${course.id}/assessments`, { token: stu2.token });
-  check('every enrolled student shares the same sets (written once per course)', stuAs.data.assessments.length === 3);
+  check('every enrolled student shares the same papers (written once per course)', stuAs.data.assessments.filter((a) => a.generated !== false && a.paperId).length === 6, stuAs.data.assessments.length);
   await call('POST', '/api/practice/ensure', { token: stu2.token });
   await sleep(1500);
   r = await call('GET', `/api/courses/${course.id}/assessments`, { token: stu1.token });
-  check('asking again writes nothing more', r.data.assessments.length === 3);
+  check('asking again writes nothing more', r.data.assessments.filter((a) => a.paperId).length === 6);
   const rec = await call('GET', '/api/students/me/academic-record', { token: stu1.token });
-  check("generated sets do not count as the student's tests", rec.data.tests.total === 0 && rec.data.exams.total === 0, rec.data.tests);
+  check("generated papers do not count as the student's tests (only the lecturer's own full paper does)", rec.data.tests.total === 1 && rec.data.exams.total === 0, rec.data.tests);
 
   r = await call('GET', '/api/questions/my-courses', { token: stu1.token });
   const mc = r.data.courses.find((c) => c.id === course.id);
-  check('a 30-question practice bank exists for the course', mc && mc.kind === 'school' && mc.count === 30, r.data);
+  check('a 40-question practice bank exists for the course', mc && mc.kind === 'school' && mc.count === 40, r.data);
+  r = await call('GET', `/api/questions/practice?courseId=${course.id}`, { token: stu1.token });
+  check('a practice session is 20 questions by default', r.status === 200 && r.data.questions.length === 20, r.data.questions && r.data.questions.length);
   r = await call('GET', `/api/questions/practice?courseId=${course.id}&count=10`, { token: stu1.token });
   check('practice questions for a course, without the answers', r.status === 200 && r.data.questions.length === 10 && r.data.questions.every((q) => q.correctIndex === undefined) && r.data.subject.includes('HIS101'), r.data.subject);
   const ids = r.data.questions.map((q) => q.id);
@@ -319,7 +398,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
   check('an independent student gets the same for their own course', ready, r.data);
   r = await call('GET', `/api/individual-courses/${selfCourse.id}/assessments`, { token: indie.token });
-  check('...2 mocks and a past-question set', r.data.assessments.filter((a) => a.type === 'Mock').length === 2 && r.data.assessments.filter((a) => a.type === 'PAST_QUESTION').length === 1, r.data.assessments.map((a) => a.type));
+  check('...2 mock papers and a past-question paper, each in two sections', r.data.assessments.filter((a) => a.type === 'Mock').length === 4 && r.data.assessments.filter((a) => a.type === 'PAST_QUESTION').length === 2, r.data.assessments.map((a) => a.type));
+  const semester = r.data.assessments.filter((a) => a.type === 'SEMESTER_EXAM');
+  check('...and a semester exam with Section A (20 objective, 15 min) and Section B (5 theory, 1h30)', semester.length === 2 && semester.some((a) => a.section === 'OBJECTIVE' && a.objectiveCount === 20 && a.minutes === 15) && semester.some((a) => a.section === 'THEORY' && a.theoryCount === 5 && a.minutes === 90), semester.map((a) => [a.section, a.objectiveCount, a.theoryCount, a.minutes]));
+  check('a monotechnic student gets a monotechnic paper (5 x 8 = 40 theory marks)', r.data.assessments.filter((a) => a.section === 'THEORY').every((a) => a.totalMarks === 40), r.data.assessments.filter((a) => a.section === 'THEORY').map((a) => a.totalMarks));
   r = await call('GET', `/api/questions/practice?individualCourseId=${selfCourse.id}&count=10`, { token: indie.token });
   check('...and practice questions', r.status === 200 && r.data.questions.length === 10);
   r = await call('GET', `/api/questions/practice?individualCourseId=${selfCourse.id}`, { token: stu1.token });

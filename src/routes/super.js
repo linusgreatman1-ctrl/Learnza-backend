@@ -121,10 +121,13 @@ router.get('/schools', async (req, res) => {
   });
 });
 
+const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'MONOTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
+
 router.post('/schools', async (req, res) => {
   const name = String(req.body.name || '').trim();
   const { state, address, contactEmail, contactPhone, adminName } = req.body;
   if (!name) return res.status(400).json({ error: 'School name is required.' });
+  if (req.body.institutionType && !INSTITUTION_TYPES.includes(req.body.institutionType)) return res.status(400).json({ error: 'Choose a valid type of institution.' });
   // The school signs in by name, so two schools can't share one (ignoring case).
   const clash = await prisma.school.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
   if (clash) return res.status(409).json({ error: 'A school with that name already exists.' });
@@ -141,6 +144,7 @@ router.post('/schools', async (req, res) => {
             address: address || null,
             contactEmail: contactEmail || null,
             contactPhone: contactPhone || null,
+            institutionType: req.body.institutionType || null,
             joinCode,
             subscriptionExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
           },
@@ -199,6 +203,10 @@ router.patch('/schools/:id', async (req, res) => {
   const data = {};
   for (const key of ['state', 'address', 'contactEmail', 'contactPhone']) {
     if (req.body[key] !== undefined) data[key] = req.body[key] || null;
+  }
+  if (req.body.institutionType !== undefined) {
+    if (req.body.institutionType && !INSTITUTION_TYPES.includes(req.body.institutionType)) return res.status(400).json({ error: 'Choose a valid type of institution.' });
+    data.institutionType = req.body.institutionType || null;
   }
   if (req.body.name !== undefined) {
     const name = String(req.body.name).trim();

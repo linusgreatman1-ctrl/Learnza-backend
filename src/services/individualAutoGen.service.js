@@ -114,21 +114,13 @@ async function generateOne(course, studentId, type) {
         })),
       });
     } else if (type === 'SEMESTER_EXAM') {
-      const draft = await quizGen.generateSemesterExam({ courseTitle: course.title, topic: course.title });
-      await prisma.assessment.create({
-        data: {
-          individualCourseId: course.id,
-          authorId: studentId,
-          title: draft.title || `${course.title} — Semester Exam`,
-          type: 'SEMESTER_EXAM',
-          durationMin: 45,
-          questions: {
-            create: (draft.questions || []).map((q, i) => ({
-              questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, order: i,
-            })),
-          },
-        },
-      });
+      // A real paper: Section A (20 objective, 15 minutes) and Section B (5 theory, 1h30), set the way
+      // the learner's kind of institution sets its examinations.
+      const owner = await prisma.user.findUnique({ where: { id: studentId }, select: { institutionType: true } });
+      await require('./practiceGen.service').createPaper(
+        { kind: 'self', id: course.id, title: course.title, authorId: studentId, institutionType: owner && owner.institutionType },
+        { style: 'a semester examination covering the whole course', name: `${course.title} — Semester Exam`, assessmentType: 'SEMESTER_EXAM', generated: false },
+      );
     }
   } catch (err) {
     // Best-effort: a transient AI failure (or AI not configured) shouldn't break the

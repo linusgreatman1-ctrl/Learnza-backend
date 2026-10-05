@@ -8,6 +8,15 @@ const fakeAi = () => process.env.LZ_FAKE_AI === '1';
 function fakeJson(userPrompt) {
   const n = parseInt((String(userPrompt).match(/Number of questions: (\d+)/) || [])[1], 10) || 5;
   const tag = (String(userPrompt).match(/Course: (.*)/) || [, 'Course'])[1];
+  if (/Question type: THEORY/.test(String(userPrompt))) {
+    return {
+      title: 'Fake theory',
+      questions: Array.from({ length: n }, (_, i) => ({
+        text: `${tag}: theory question ${i + 1}. (a) Define the term. (2 marks) (b) Explain it. (3 marks) (c) Give an example. (3 marks) ${Math.random().toString(36).slice(2, 7)}`,
+        modelAnswer: '(a) A definition. (b) An explanation. (c) An example.',
+      })),
+    };
+  }
   return {
     title: 'Fake set',
     questions: Array.from({ length: n }, (_, i) => ({
@@ -41,7 +50,7 @@ async function callGemini(systemPrompt, userPrompt, { json = true } = {}) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      ...(json ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
+      ...(json ? { generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 16384 } } : {}),
     }),
   });
   const data = await res.json();
@@ -69,7 +78,7 @@ async function callAnthropic(systemPrompt, userPrompt) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 2048,
+      max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }),

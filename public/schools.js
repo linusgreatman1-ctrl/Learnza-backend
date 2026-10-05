@@ -761,6 +761,7 @@
   function afterScreen() {
     const screen = state.view.screen;
     const role = state.user && state.user.role;
+    if (role === 'STUDENT') LZX.payReturn({ api, toast, rerender: () => renderScreen() });
     if (['my-dashboard', 'lect-dashboard', 'admin-dashboard'].includes(screen) && state.user.schoolId) {
       LZX.electionBanner(view, { api, esc, go: navigate, role });
     }
@@ -3604,7 +3605,7 @@
           <div class="card">
             ${sets.map((a) => `
               <div class="list-row">
-                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${a._count.questions} question${a._count.questions === 1 ? '' : 's'}</div></div>
+                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${paperSummary(a)}</div></div>
                 <button class="btn btn-primary btn-sm" data-practice="${a.id}" data-course-id="${course.id}" data-course-title="${esc(course.title)}" data-course-code="${esc(course.code)}">Practice</button>
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
@@ -3635,9 +3636,9 @@
     let qIdx = 0;
     let corrections = null; // set once graded; null while still answering
     let score = null, total = null;
-    // 1 minute per question, same rule as timed tests/exams -- auto-submits (grading
-    // whatever's answered so far) when time runs out instead of running forever.
-    const durationMin = Math.max(1, questions.length);
+    // Same timing rule as every paper (objective 15 minutes per 20, theory 1h30 per 5) -- auto-submits
+    // (grading whatever's answered so far) when time runs out instead of running forever.
+    const durationMin = paperMinutes(questions);
     const deadline = Date.now() + durationMin * 60000;
 
     view.innerHTML = `
@@ -3648,7 +3649,7 @@
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
-      <p class="muted" style="margin-bottom:10px;">Practice mode — ${durationMin} minute${durationMin === 1 ? '' : 's'} (1 min/question), auto-submits when time's up</p>
+      <p class="muted" style="margin-bottom:10px;">Practice mode — ${fmtMins(durationMin)}, auto-submits when time's up</p>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
         <span class="meta tabular" id="pq-counter" style="white-space:nowrap;"></span>
         <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="pq-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
@@ -3689,11 +3690,11 @@
       const c = corrections ? corrections.get(q.id) : null;
       document.getElementById('pq-body').innerHTML = `
         <div class="card quiz-q">
-          <div style="font-weight:600; margin-bottom:12px;">${qIdx + 1}. ${esc(q.text)}</div>
+          <div style="font-weight:600; margin-bottom:12px; white-space:pre-wrap;">${qIdx + 1}. ${esc(q.text)}</div>
           ${q.questionType === 'THEORY'
             ? c
               ? `<div class="meta">Your answer</div><p style="margin-bottom:10px;">${esc(c.myAnswer || '(no answer)')}</p><div class="meta">Model answer</div><p>${esc(c.modelAnswer || '(none provided)')}</p>`
-              : `<textarea class="theory-answer" placeholder="Write your answer…" rows="5" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
+              : `<textarea class="theory-answer" placeholder="Write your answer…" rows="12" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
             : q.options.map((opt, oi) => `
                 <div class="quiz-opt
                   ${!c && mine && mine.choice === oi ? 'selected' : ''}
@@ -4702,6 +4703,27 @@
   // SEMESTER_EXAM for the Semester Exam pages); otherwise students see everything
   // except PAST_QUESTION and SEMESTER_EXAM (those have their own dedicated pages) and
   // lecturers see everything they've created.
+  // Every paper is timed the same way: 20 objective questions in 15 minutes, 5 theory questions
+  // in 1 hour 30 (the server decides; this only mirrors it for screens that show the time early).
+  function paperMinutes(questions) {
+    const theory = questions.filter((q) => q.questionType === 'THEORY').length;
+    return Math.max(1, Math.ceil((questions.length - theory) * 0.75 + theory * 18));
+  }
+  function fmtMins(m) {
+    if (m < 60) return m + ' minute' + (m === 1 ? '' : 's');
+    const h = Math.floor(m / 60), r = m % 60;
+    return h + ' hour' + (h === 1 ? '' : 's') + (r ? ' ' + r + ' minutes' : '');
+  }
+  function paperSummary(a) {
+    const parts = [];
+    if (a.objectiveCount) parts.push(a.objectiveCount + ' objective');
+    if (a.theoryCount) parts.push(a.theoryCount + ' theory');
+    if (!parts.length) parts.push(a._count.questions + ' question' + (a._count.questions === 1 ? '' : 's'));
+    parts.push(fmtMins(a.minutes || a._count.questions));
+    if (a.totalMarks) parts.push(a.totalMarks + ' marks');
+    return parts.join(' · ');
+  }
+
   async function renderAssessments(isLecturer, opts = {}) {
     const { heading, typeFilter, defaultType, excludeTypes } = opts;
     const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
@@ -4736,7 +4758,7 @@
               <div class="list-row">
                 <div>
                   <div style="font-weight:600;">${esc(a.title)} ${isLecturer ? (a.sentAt ? '<span class="pill pill-pass" style="margin-left:6px;">Sent</span>' : '<span class="pill pill-muted" style="margin-left:6px;">Draft</span>') : ''}</div>
-                  <div class="meta">${esc(a.type)} · ${a._count.questions} question${a._count.questions === 1 ? '' : 's'} · ${a._count.questions} min</div>
+                  <div class="meta">${esc(a.type === 'PAST_QUESTION' ? 'Past questions' : a.type)} · ${paperSummary(a)}</div>
                 </div>
                 ${isLecturer
                   ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -4824,7 +4846,7 @@
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
-      <p class="muted" style="margin-bottom:10px;">${durationMin} minute${durationMin === 1 ? '' : 's'} (1 min/question) · auto-graded on submit</p>
+      <p class="muted" style="margin-bottom:10px;">${fmtMins(durationMin)} · ${questions.some((q) => q.questionType === 'THEORY') ? 'write full answers; compare them with the model answer afterwards' : 'auto-graded on submit'}</p>
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
         <span class="meta tabular" id="quiz-counter" style="white-space:nowrap;"></span>
         <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="quiz-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
@@ -4857,9 +4879,9 @@
       document.getElementById('quiz-progress').style.width = `${Math.round(((qIdx + 1) / questions.length) * 100)}%`;
       document.getElementById('quiz-body').innerHTML = `
         <div class="card quiz-q">
-          <div style="font-weight:600; margin-bottom:12px;">${qIdx + 1}. ${esc(q.text)}</div>
+          <div style="font-weight:600; margin-bottom:12px; white-space:pre-wrap;">${qIdx + 1}. ${esc(q.text)}</div>
           ${q.questionType === 'THEORY'
-            ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="5" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
+            ? `<textarea class="theory-answer" data-q="${q.id}" placeholder="Write your answer…" rows="12" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
             : q.options.map((opt, oi) => `
                 <div class="quiz-opt ${mine && mine.choice === oi ? 'selected' : ''}" data-opt="${oi}">
                   <span class="opt-label">${OPTION_LABELS[oi] || oi + 1}</span>${esc(opt)}
@@ -6031,7 +6053,7 @@
       <div class="field"><label>Title</label><input type="text" id="na-title" value="${esc(existing ? existing.title : '')}" required></div>
       ${typeFieldHtml}
       <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
-      <p class="meta" style="margin-bottom:14px;">Students get 1 minute per question automatically — no need to set a duration.</p>
+      <p class="meta" style="margin-bottom:14px;">Time is set automatically: 15 minutes for 20 objective questions, 1 hour 30 for 5 theory questions (a test can have up to 20 objective and 5 theory questions).</p>
       <div id="na-questions">${existing ? existing.questions.map((q, i) => questionBlock(i, q)).join('') : questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
       ${existing && existing.sentAt ? `

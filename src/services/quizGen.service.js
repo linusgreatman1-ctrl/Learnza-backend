@@ -1,6 +1,6 @@
 const ai = require('./aiProvider.service');
 
-const TEST_SYSTEM_PROMPT = `You are writing a short multiple-choice quiz for a self-directed learner studying on their own. Reply with JSON only, matching exactly:
+const TEST_SYSTEM_PROMPT = `You are writing a multiple-choice test (20 questions) for a self-directed learner studying on their own. Reply with JSON only, matching exactly:
 {
   "title": string,
   "questions": [
@@ -8,7 +8,7 @@ const TEST_SYSTEM_PROMPT = `You are writing a short multiple-choice quiz for a s
   ]
 }
 Rules:
-- Exactly 5 questions, each with exactly 4 options and one correct answer (correctIndex is 0-3).
+- Exactly 20 questions, each with exactly 4 options and one correct answer (correctIndex is 0-3).
 - Questions should test real understanding of the topic, not trivia.
 Return JSON only, no prose before or after.`;
 

@@ -183,3 +183,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* election result bars (extras.js) */
 .lzx-bar { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; margin-top: 6px; }
 .lzx-bar > div { height: 100%; background: #c1861f; }
+.lzx-pay-ps { background: #0ba4db; color: #fff; }

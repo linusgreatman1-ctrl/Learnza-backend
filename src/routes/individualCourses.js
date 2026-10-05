@@ -1,5 +1,6 @@
 const express = require('express');
 const prisma = require('../db');
+const { withTiming, TIMING_INCLUDE } = require('../utils/paper');
 const { requireAuth, requireRole } = require('../auth');
 const autoGen = require('../services/individualAutoGen.service');
 const labDemo = require('../services/labDemo.service');
@@ -59,10 +60,10 @@ router.get('/individual-courses/:id/assessments', requireAuth, requireRole('STUD
   await autoGen.ensureAutoContentForCourse(course, req.user.id).catch(() => {});
   const assessments = await prisma.assessment.findMany({
     where: { individualCourseId: course.id },
-    include: { _count: { select: { questions: true } } },
-    orderBy: { createdAt: 'desc' },
+    include: TIMING_INCLUDE,
+    orderBy: { createdAt: 'asc' },
   });
-  res.json({ assessments });
+  res.json({ assessments: assessments.map(withTiming) });
 });
 
 // Pre-recorded (AI-narrated) lessons for a self-directed course -- the individual-

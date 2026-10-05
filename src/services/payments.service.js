@@ -2,6 +2,7 @@ const prisma = require('../db');
 const { getPlan } = require('../config/plans');
 const coins = require('./coins.service');
 const flutterwave = require('./flutterwave.service');
+const paystack = require('./paystack.service');
 const { notify } = require('./notification.service');
 
 // Everything that turns "a payment exists" into "the student has what they paid for". Shared by
@@ -50,9 +51,10 @@ async function settle(reference, paidKobo) {
   return { ok: false, reason: 'not_found' };
 }
 
-// Asks Flutterwave about `reference` and settles it if it was paid.
-async function verifyAndSettle(reference) {
-  const verified = await flutterwave.verifyByReference(reference);
+// Asks the provider that took the payment (Flutterwave or Paystack) about `reference` and settles
+// it if it was paid.
+async function verifyAndSettle(reference, provider = 'FLUTTERWAVE') {
+  const verified = provider === 'PAYSTACK' ? await paystack.verifyByReference(reference) : await flutterwave.verifyByReference(reference);
   if (!verified.ok) return { ok: false, reason: verified.reason || 'not_paid' };
   return settle(reference, verified.amountKobo);
 }

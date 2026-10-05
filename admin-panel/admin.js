@@ -248,6 +248,7 @@
         <form id="onboard-form">
           <div class="row">
             <div style="flex:2"><label>School name *</label><input id="ob-name" required placeholder="e.g. University of Lagos"></div>
+            <div><label>Type of institution</label><select id="ob-type"><option value="">Select…</option>${[['UNIVERSITY','University'],['POLYTECHNIC','Polytechnic'],['MONOTECHNIC','Monotechnic'],['COLLEGE_OF_EDUCATION','College of Education'],['OTHER','Other']].map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
             <div><label>State</label><select id="ob-state"><option value="">Select…</option>${STATES.map((s) => `<option>${esc(s)}</option>`).join('')}</select></div>
           </div>
           <div class="row">
@@ -271,7 +272,7 @@
       btn.disabled = true;
       try {
         const { school, joinCode } = await api('/schools', { method: 'POST', body: {
-          name: $('ob-name').value.trim(), state: $('ob-state').value, address: $('ob-address').value.trim(),
+          name: $('ob-name').value.trim(), institutionType: $('ob-type').value, state: $('ob-state').value, address: $('ob-address').value.trim(),
           contactPhone: $('ob-phone').value.trim(), contactEmail: $('ob-email').value.trim(), adminName: $('ob-admin').value.trim(),
         } });
         $('ob-result').innerHTML = `<div class="result-box"><strong>${esc(school.name)} created!</strong> Give the school this permanent Join Code — they sign in to the Schools app with their school name and this code.<span class="code">${esc(joinCode)}</span><button class="btn-ghost btn-sm" id="ob-copy">Copy code</button></div>`;
@@ -316,6 +317,7 @@
       <form id="sc-edit">
         <div class="row">
           <div style="flex:2"><label>Name</label><input id="se-name" value="${esc(school.name)}" required></div>
+          <div><label>Type of institution</label><select id="se-type"><option value="">—</option>${[['UNIVERSITY','University'],['POLYTECHNIC','Polytechnic'],['MONOTECHNIC','Monotechnic'],['COLLEGE_OF_EDUCATION','College of Education'],['OTHER','Other']].map(([v, l]) => `<option value="${v}" ${v === school.institutionType ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div><label>State</label><select id="se-state"><option value="">—</option>${STATES.map((s) => `<option ${s === school.state ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
         </div>
         <div class="row">
@@ -350,7 +352,7 @@
     q('#sc-edit').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        await api('/schools/' + id, { method: 'PATCH', body: { name: q('#se-name').value.trim(), state: q('#se-state').value, address: q('#se-address').value.trim(), contactPhone: q('#se-phone').value.trim(), contactEmail: q('#se-email').value.trim() } });
+        await api('/schools/' + id, { method: 'PATCH', body: { name: q('#se-name').value.trim(), institutionType: q('#se-type').value, state: q('#se-state').value, address: q('#se-address').value.trim(), contactPhone: q('#se-phone').value.trim(), contactEmail: q('#se-email').value.trim() } });
         toast('Saved'); m.close(); loadSchools();
       } catch (err) { toast(err.message); }
     });
@@ -477,7 +479,7 @@
   }
 
   // ---------------- payments & subscriptions ----------------
-  const providerLabel = (p) => (p === 'MANUAL_TRANSFER' ? 'Bank transfer / USSD' : p === 'FLUTTERWAVE' ? 'Flutterwave' : esc(p));
+  const providerLabel = (p) => (p === 'MANUAL_TRANSFER' ? 'Bank transfer / USSD' : p === 'FLUTTERWAVE' ? 'Flutterwave' : p === 'PAYSTACK' ? 'Paystack' : esc(p));
   // A student reported a bank transfer or USSD payment: the admin confirms it once the money is seen.
   function manualButtons(path, row) {
     if (row.provider !== 'MANUAL_TRANSFER' || row.status !== 'PENDING') return '';

@@ -109,3 +109,34 @@ test('the real pages load their own scripts in dependency order (extras before a
     assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html), page + ' has an inline script, which the CSP forbids');
   }
 });
+
+test('paper timing: 20 objective in 15 minutes, 5 theory in 1h30, in proportion otherwise', () => {
+  const { minutesFor, profileFor, totalMarks, PROFILES } = require('../../src/utils/paper');
+  const obj = (n) => Array.from({ length: n }, () => ({ questionType: 'OBJECTIVE' }));
+  const th = (n) => Array.from({ length: n }, () => ({ questionType: 'THEORY' }));
+  assert.equal(minutesFor(obj(20)), 15);
+  assert.equal(minutesFor(th(5)), 90);
+  assert.equal(minutesFor([...obj(20), ...th(5)]), 105);
+  assert.equal(minutesFor(obj(10)), 8);
+  assert.equal(minutesFor([]), 1);
+  // the examination's share of the course mark: universities 70, polytechnics / monotechnics / colleges of education 60
+  assert.equal(totalMarks(profileFor('UNIVERSITY')), 70);
+  for (const t of ['POLYTECHNIC', 'MONOTECHNIC', 'COLLEGE_OF_EDUCATION']) assert.equal(totalMarks(profileFor(t)), 60, t);
+  assert.equal(profileFor('nonsense'), PROFILES.OTHER);
+  for (const p of Object.values(PROFILES)) assert.equal(p.examShare + p.caShare, 100);
+  for (const p of Object.values(PROFILES)) assert.equal(totalMarks(p), p.examShare);
+});
+
+test('paystack webhook signatures: HMAC-SHA512 of the raw body with the secret key', () => {
+  process.env.PAYSTACK_SECRET_KEY = 'sk_test_unit';
+  const crypto = require('crypto');
+  const paystack = require('../../src/services/paystack.service');
+  const body = Buffer.from('{"event":"charge.success"}');
+  const sig = crypto.createHmac('sha512', 'sk_test_unit').update(body).digest('hex');
+  assert.equal(paystack.verifyWebhookSignature(body, sig), true);
+  assert.equal(paystack.verifyWebhookSignature(body, 'bad'), false);
+  assert.equal(paystack.verifyWebhookSignature(Buffer.from('{"event":"other"}'), sig), false);
+  assert.equal(paystack.verifyWebhookSignature(body, undefined), false);
+  delete process.env.PAYSTACK_SECRET_KEY;
+  assert.equal(paystack.verifyWebhookSignature(body, sig), false);
+});

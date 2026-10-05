@@ -22,6 +22,7 @@ model School {
   joinCode              String       @unique
   status                String       @default("ACTIVE") // ACTIVE | SUSPENDED
   subscriptionExpiresAt DateTime?
+  institutionType       String? // UNIVERSITY | POLYTECHNIC | MONOTECHNIC | COLLEGE_OF_EDUCATION | OTHER -- decides how generated exam papers are set
   createdAt             DateTime     @default(now())
   departments           Department[]
   users                 User[]
@@ -413,6 +414,13 @@ model Assessment {
   // Written by the system (mock exams, past-question practice) rather than by a lecturer: hidden
   // from lecturers' lists and left out of a student's test counts and academic record.
   generated   Boolean   @default(false)
+  // A written paper has two timed parts that are taken separately: Section A (objective) and
+  // Section B (theory). Both parts of one paper share a paperId.
+  section     String?   // OBJECTIVE | THEORY | null (a lecturer's own mixed test)
+  paperId     String?
+  totalMarks  Int?
+
+  @@index([paperId])
 }
 
 model Question {

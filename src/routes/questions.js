@@ -48,7 +48,7 @@ router.get('/practice', async (req, res) => {
     if (!subject) return res.status(400).json({ error: 'Choose a subject.' });
     filter = { subject, generated: false };
   }
-  const count = Math.min(30, Math.max(5, parseInt(req.query.count, 10) || 10));
+  const count = Math.min(30, Math.max(5, parseInt(req.query.count, 10) || 20));
   const ids = (await prisma.platformQuestion.findMany({ where: { ...filter, active: true }, select: { id: true } })).map((q) => q.id);
   if (!ids.length) return res.status(404).json({ error: courseId || selfCourseId ? 'Your questions for this course are still being prepared. Try again in a minute.' : 'There are no questions for that subject yet.' });
   // Fisher–Yates on the id list, then take the first `count`.
