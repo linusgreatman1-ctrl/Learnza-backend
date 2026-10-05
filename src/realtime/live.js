@@ -15,7 +15,8 @@ const { getSubscriptionStatus, isEnforced } = require('../subscription');
 // the old socket's disconnect event still fires even though the teacher is still
 // teaching). Ending immediately on first disconnect was the cause of "session has
 // ended" firing on students mid-lecture.
-const TEACHER_GRACE_MS = 25000;
+// How long a class waits for a lecturer who dropped off (a flat battery, a tunnel, a phone call) before it is ended.
+const TEACHER_GRACE_MS = 3 * 60 * 1000;
 
 function attachLiveNamespace(io) {
   const nsp = io.of('/live');
@@ -27,6 +28,7 @@ function attachLiveNamespace(io) {
   const handsByLiveClass = new Map(); // liveClassId -> Map<socket.id, { studentName, kind }> raised hands waiting for the lecturer
   const floorByLiveClass = new Map(); // liveClassId -> { socketId, name, kind, phase } the ONE student let in right now
   const classQuestionByLiveClass = new Map(); // liveClassId -> text of a question the lecturer put to the whole class
+  const answeredByLiveClass = new Map(); // liveClassId -> Set of student user ids who have already answered that question
 
   function floorInfo(liveClassId) {
     const f = floorByLiveClass.get(liveClassId);
@@ -140,34 +142,17 @@ function attachLiveNamespace(io) {
       }
     });
 
-    // A question is distinct from the flat chat log: it lands in the teacher's queue
-    // (not broadcast to the class) until the teacher actually answers it, at which
-    // point the Q&A pair is broadcast to everyone -- mirrors "got a question" being
-    // answered on the board elsewhere in the app, rather than getting lost in chatter.
-    socket.on('live:question', ({ liveClassId, text }) => {
-      if (!text || !text.trim() || socket.liveClassId !== liveClassId || socket.user.role !== 'STUDENT') return;
-      // Only the student the lecturer has let in can send one.
-      const floor = floorByLiveClass.get(liveClassId);
-      if (!floor || floor.socketId !== socket.id) return;
-      if (!questionsByLiveClass.has(liveClassId)) questionsByLiveClass.set(liveClassId, []);
-      const queue = questionsByLiveClass.get(liveClassId);
-      const question = { id: `${socket.id}-${Date.now()}`, studentSocketId: socket.id, studentName: socket.user.fullName, text: text.trim().slice(0, 500), kind: floor.kind, askedAt: new Date().toISOString() };
-      queue.push(question);
-      floorByLiveClass.delete(liveClassId);
-      const teacherSocketId = teacherSocketByLiveClass.get(liveClassId);
-      if (teacherSocketId) nsp.to(teacherSocketId).emit('live:new-question', question);
-      socket.emit('live:hand-state', { state: 'sent', kind: question.kind });
-      sendFloor(liveClassId);
-    });
-
     // A student raises a hand: to ask a question, or (when the lecturer has put a question to the class) to answer it.
-    socket.on('live:raise-hand', ({ liveClassId }) => {
+    socket.on('live:raise-hand', ({ liveClassId, kind: wanted }) => {
       if (socket.liveClassId !== liveClassId || socket.user.role !== 'STUDENT') return;
       const teacherSocketId = teacherSocketByLiveClass.get(liveClassId);
       if (!teacherSocketId) return;
       const floor = floorByLiveClass.get(liveClassId);
       if (floor && floor.socketId === socket.id) return;
-      const kind = classQuestionByLiveClass.get(liveClassId) ? 'answer' : 'question';
+      // Answering is only offered while there is a question and this student has not answered it yet; after that the hand
+      // goes up for a question of their own, without waiting for the lecturer to clear anything.
+      const answered = answeredByLiveClass.get(liveClassId);
+      const kind = classQuestionByLiveClass.get(liveClassId) && wanted !== 'question' && !(answered && answered.has(socket.user.id)) ? 'answer' : 'question';
       if (kind === 'answer' && floor && floor.kind === 'answer') return; // someone is already answering
       if (!handsByLiveClass.has(liveClassId)) handsByLiveClass.set(liveClassId, new Map());
       handsByLiveClass.get(liveClassId).set(socket.id, { studentName: socket.user.fullName, kind });
@@ -196,6 +181,10 @@ function attachLiveNamespace(io) {
       }
       const kind = (hand && hand.kind) || (classQuestionByLiveClass.get(liveClassId) ? 'answer' : 'question');
       hands.delete(studentSocketId);
+      if (kind === 'answer' && target && target.user) {
+        if (!answeredByLiveClass.has(liveClassId)) answeredByLiveClass.set(liveClassId, new Set());
+        answeredByLiveClass.get(liveClassId).add(target.user.id);
+      }
       floorByLiveClass.set(liveClassId, { socketId: studentSocketId, name: hand ? hand.studentName : (target && target.user ? target.user.fullName : 'A student'), kind, phase: 'choosing' });
       if (kind === 'answer') {
         // the other students' hands fade away: one answers at a time
@@ -214,7 +203,8 @@ function attachLiveNamespace(io) {
     socket.on('live:speak-mode', ({ liveClassId, mode }) => {
       const floor = floorByLiveClass.get(liveClassId);
       if (!floor || floor.socketId !== socket.id) return;
-      floor.phase = mode === 'mic' ? 'speaking' : 'typing';
+      if (mode !== 'mic') return; // there is no typing any more: the mic is the only way
+      floor.phase = 'speaking';
       sendFloor(liveClassId);
     });
     // The lecturer puts a question to the whole class; students then raise a hand to answer.
@@ -233,6 +223,7 @@ function attachLiveNamespace(io) {
         sendFloor(liveClassId);
       }
       const q = typeof question === 'string' ? question.trim().slice(0, 500) : '';
+      answeredByLiveClass.delete(liveClassId);
       if (q) classQuestionByLiveClass.set(liveClassId, q); else classQuestionByLiveClass.delete(liveClassId);
       nsp.to(`live:${liveClassId}`).emit('live:class-question', { question: q || null });
     });
@@ -243,19 +234,6 @@ function attachLiveNamespace(io) {
       infoByLiveClass.set(liveClassId, { ...cur, topic: topic.trim().slice(0, 200) });
       nsp.to(`live:${liveClassId}`).emit('live:room-info', roomInfo(liveClassId));
       try { await prisma.liveClass.update({ where: { id: liveClassId }, data: { title: topic.trim().slice(0, 200) || 'Live class' } }); } catch { /* the screens already updated */ }
-    });
-
-    socket.on('live:answer-question', ({ liveClassId, questionId, answer }) => {
-      if (teacherSocketByLiveClass.get(liveClassId) !== socket.id || !answer || !answer.trim()) return;
-      const queue = questionsByLiveClass.get(liveClassId) || [];
-      const idx = queue.findIndex((q) => q.id === questionId);
-      const question = idx >= 0 ? queue[idx] : null;
-      if (idx >= 0) queue.splice(idx, 1);
-      nsp.to(`live:${liveClassId}`).emit('live:qa', {
-        studentName: question ? question.studentName : 'A student',
-        question: question ? question.text : '',
-        answer: answer.trim(),
-      });
     });
 
     // Relay SDP/ICE between two specific sockets; the server never inspects the
@@ -317,6 +295,7 @@ function attachLiveNamespace(io) {
     handsByLiveClass.delete(liveClassId);
     floorByLiveClass.delete(liveClassId);
     classQuestionByLiveClass.delete(liveClassId);
+    answeredByLiveClass.delete(liveClassId);
     const endedAt = new Date();
     // Read startedAt before the update so everyone (host and students alike) can be
     // told how long the class actually ran, not just that it ended.
