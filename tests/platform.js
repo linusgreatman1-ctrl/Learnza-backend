@@ -92,7 +92,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('the student now has an active subscription', r.data.active === true, r.data);
   r = await call('GET', '/api/super/subscriptions?state=active', { token: SUPER });
   check('it shows in the active list', r.data.subscriptions.some((s) => s.userId === indieId && s.active), r.data.total);
-  await prisma.payment.create({ data: { userId: indieId, provider: 'PAYSTACK', reference: 'plat_' + RUN, plan: 'MONTHLY', amountKobo: 1000000, status: 'SUCCESS' } });
+  await prisma.payment.create({ data: { userId: indieId, provider: 'FLUTTERWAVE', reference: 'plat_' + RUN, plan: 'MONTHLY', amountKobo: 1000000, status: 'SUCCESS' } });
   r = await call('GET', '/api/super/payments', { token: SUPER });
   check('payments list + revenue summary', r.data.payments.some((p) => p.reference === 'plat_' + RUN) && r.data.summary.revenueKobo >= 1000000, r.data.summary);
   r = await call('POST', `/api/super/subscriptions/${indieId}/revoke`, { token: SUPER });

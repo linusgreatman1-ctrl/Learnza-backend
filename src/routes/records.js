@@ -219,7 +219,7 @@ async function computeAcademicRecord(student) {
   const courseIds = enrollments.map((e) => e.courseId);
 
   const [assessments, assignments, submissions, assignmentSubmissions] = await Promise.all([
-    courseIds.length ? prisma.assessment.findMany({ where: { courseId: { in: courseIds } }, select: { id: true, type: true } }) : [],
+    courseIds.length ? prisma.assessment.findMany({ where: { courseId: { in: courseIds }, generated: false }, select: { id: true, type: true } }) : [],
     courseIds.length ? prisma.assignment.findMany({ where: { courseId: { in: courseIds } }, select: { id: true } }) : [],
     prisma.submission.findMany({ where: { studentId: student.id }, select: { assessmentId: true, submittedAt: true } }),
     prisma.assignmentSubmission.findMany({ where: { studentId: student.id }, select: { assignmentId: true } }),

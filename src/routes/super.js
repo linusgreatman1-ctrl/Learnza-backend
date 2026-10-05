@@ -61,7 +61,9 @@ router.get('/dashboard', async (req, res) => {
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const [openTickets, unreadChats, money, activeSubs, aiToday, liveNow, newToday] = await Promise.all([
+  const [pendingPayments, pendingCoinBuys, openTickets, unreadChats, money, activeSubs, aiToday, liveNow, newToday] = await Promise.all([
+    prisma.payment.count({ where: { status: 'PENDING', provider: 'MANUAL_TRANSFER' } }),
+    prisma.coinPurchase.count({ where: { status: 'PENDING', provider: 'MANUAL_TRANSFER' } }),
     prisma.supportTicket.count({ where: { status: 'OPEN' } }),
     prisma.chatThread.count({ where: { unreadForAdmin: { gt: 0 } } }),
     prisma.payment.aggregate({ where: { status: 'SUCCESS', createdAt: { gte: monthStart } }, _sum: { amountKobo: true } }),
@@ -84,7 +86,7 @@ router.get('/dashboard', async (req, res) => {
     schools: { total: schools, active, suspended, expired },
     schoolUsers: { students: byRole.STUDENT || 0, lecturers: byRole.LECTURER || 0, staff: byRole.STAFF || 0, admins: byRole.ADMIN || 0 },
     independentStudents: independent,
-    activity: { openTickets, unreadChats, revenueThisMonthKobo: money._sum.amountKobo || 0, activeSubscriptions: activeSubs, aiQuestionsToday: aiToday, liveNow, newUsersToday: newToday },
+    activity: { pendingManualPayments: pendingPayments + pendingCoinBuys, openTickets, unreadChats, revenueThisMonthKobo: money._sum.amountKobo || 0, activeSubscriptions: activeSubs, aiQuestionsToday: aiToday, liveNow, newUsersToday: newToday },
     recentSchools,
   });
 });

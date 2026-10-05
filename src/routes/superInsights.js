@@ -453,7 +453,7 @@ function shapeQuestion(input) {
 
 router.get('/questions', async (req, res) => {
   const { page, size } = pageOf(req, 50);
-  const where = {};
+  const where = { generated: false }; // the system's per-course sets are not part of the owner's bank
   if (req.query.subject) where.subject = String(req.query.subject);
   if (req.query.active === 'true') where.active = true;
   if (req.query.active === 'false') where.active = false;
@@ -461,7 +461,7 @@ router.get('/questions', async (req, res) => {
   if (search) where.text = { contains: search, mode: 'insensitive' };
   const [total, subjects, rows] = await Promise.all([
     prisma.platformQuestion.count({ where }),
-    prisma.platformQuestion.groupBy({ by: ['subject'], _count: { _all: true }, orderBy: { subject: 'asc' } }),
+    prisma.platformQuestion.groupBy({ by: ['subject'], where: { generated: false }, _count: { _all: true }, orderBy: { subject: 'asc' } }),
     prisma.platformQuestion.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }),
   ]);
   res.json({ total, page, pageSize: size, subjects: subjects.map((s) => ({ subject: s.subject, count: s._count._all })), questions: rows.map((q) => ({ ...q, options: JSON.parse(q.options) })) });

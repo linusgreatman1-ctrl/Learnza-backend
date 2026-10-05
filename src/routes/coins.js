@@ -1,58 +1,55 @@
 const express = require('express');
+const crypto = require('crypto');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const coins = require('../services/coins.service');
-const paystack = require('../services/paystack.service');
-const flutterwave = require('../services/flutterwave.service');
 
-// A student's coin wallet: balance, history, and buying a pack. Payment confirmation shares
-// routes/billing.js's verify + webhook endpoints (the reference tells them apart).
+// A student's coin wallet: balance, history, and buying a pack — the same two ways as a
+// subscription (Flutterwave popup, or bank transfer / USSD confirmed by an admin). Payment
+// confirmation shares routes/billing.js (verify + webhook); the reference tells them apart.
 const router = express.Router();
 router.use(requireAuth, requireRole('STUDENT'));
 
+const INTERNAL = /@internal\.learnza\.local$/;
+const payerEmail = (u) => (u.email && !INTERNAL.test(u.email) ? u.email : process.env.PAY_FALLBACK_EMAIL || 'payments@learnza.app');
+
 router.get('/', async (req, res) => {
   const wallet = await coins.getWallet(req.user.id);
-  const [ledger, purchases] = await Promise.all([
+  const [ledger, pending] = await Promise.all([
     prisma.coinLedger.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 30 }),
-    prisma.coinPurchase.findMany({ where: { userId: req.user.id, status: 'PENDING' }, orderBy: { createdAt: 'desc' }, take: 3 }),
+    prisma.coinPurchase.findMany({ where: { userId: req.user.id, status: 'PENDING', provider: 'MANUAL_TRANSFER' }, orderBy: { createdAt: 'desc' }, take: 3 }),
   ]);
   res.json({
     balance: wallet.balance,
     minutesLeft: Math.floor(coins.walletSeconds(wallet) / 60),
     packs: coins.PACKS,
     secondsPerCoin: coins.SECONDS_PER_COIN,
-    providers: { paystack: paystack.isConfigured(), flutterwave: flutterwave.isConfigured() },
-    pending: purchases,
+    pending,
     ledger,
   });
 });
 
-router.post('/checkout', async (req, res) => {
+// Card / bank / USSD through Flutterwave's popup: record the purchase at the server's price.
+router.post('/initiate', async (req, res) => {
   const pack = coins.getPack(req.body.packId);
-  const { provider } = req.body;
   if (!pack) return res.status(400).json({ error: 'Choose a coin pack.' });
-  if (!['paystack', 'flutterwave'].includes(provider)) return res.status(400).json({ error: 'Invalid payment provider.' });
+  const reference = `LZ-COIN-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  await prisma.coinPurchase.create({
+    data: { userId: req.user.id, coins: pack.coins, amountKobo: pack.amountKobo, provider: 'FLUTTERWAVE', reference, status: 'PENDING' },
+  });
+  res.status(201).json({ reference, amount: pack.amountKobo / 100, amountKobo: pack.amountKobo, email: payerEmail(req.user), name: req.user.fullName, label: pack.label, coins: pack.coins });
+});
 
-  const reference = `learnzacoins_${req.user.id}_${Date.now()}`;
-  const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-  const back = `${origin}${req.user.schoolId ? '/schools' : '/app'}#billing-callback`;
-  try {
-    const purchase = await prisma.coinPurchase.create({
-      data: { userId: req.user.id, coins: pack.coins, amountKobo: pack.amountKobo, provider: provider.toUpperCase(), reference, status: 'PENDING' },
-    });
-    if (provider === 'paystack') {
-      const data = await paystack.initializeTransaction({
-        email: req.user.email, amountKobo: pack.amountKobo, reference, callbackUrl: back, metadata: { userId: req.user.id, packId: pack.id },
-      });
-      return res.json({ checkoutUrl: data.authorization_url, reference: purchase.reference });
-    }
-    const data = await flutterwave.initializePayment({
-      email: req.user.email, amountNaira: pack.amountKobo / 100, reference, redirectUrl: back, meta: { userId: req.user.id, packId: pack.id },
-    });
-    return res.json({ checkoutUrl: data.link, reference: purchase.reference });
-  } catch (err) {
-    return res.status(503).json({ error: err.message });
-  }
+// Bank transfer / USSD: recorded PENDING; an admin confirms it and the coins are credited then.
+router.post('/manual', async (req, res) => {
+  const pack = coins.getPack(req.body.packId);
+  if (!pack) return res.status(400).json({ error: 'Choose a coin pack.' });
+  const how = req.body.method === 'USSD' ? 'USSD' : 'BANK';
+  const reference = `LZ-COIN-MANUAL-${how}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  await prisma.coinPurchase.create({
+    data: { userId: req.user.id, coins: pack.coins, amountKobo: pack.amountKobo, provider: 'MANUAL_TRANSFER', reference, status: 'PENDING' },
+  });
+  res.status(201).json({ reference, coins: pack.coins, message: 'Thanks! We will add your coins as soon as the payment is confirmed (usually within 24 hours).' });
 });
 
 module.exports = router;

@@ -434,6 +434,7 @@
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['academic-record', 'Academic Record'],
+      ['elections', 'Elections'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
       ['wallet', 'AI Minutes & Coins'],
@@ -472,6 +473,7 @@
       ['research', 'AI Research Assistant'],
       ['practice', 'Practice Questions'],
       ['staff-profile', 'My Staff Profile'],
+      ['elections', 'Elections'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
       ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
@@ -498,6 +500,7 @@
       ['admin-announce', 'Announce'],
       ['admin-bulk-message', 'Bulk SMS/Email'],
       ['admin-management', 'Admin Management'],
+      ['admin-elections', 'Elections'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
       ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
@@ -752,6 +755,20 @@
 
   // No loading placeholder: the previous screen just stays on-screen (instead of
   // blanking to "Loading…") until the next one's data is ready and replaces it.
+  // Things that belong on a screen once it is drawn: the "N elections are waiting for your vote"
+  // banner on each dashboard, and the "preparing your practice questions" note on the screens that
+  // list generated mock exams, past questions and practice questions.
+  function afterScreen() {
+    const screen = state.view.screen;
+    const role = state.user && state.user.role;
+    if (['my-dashboard', 'lect-dashboard', 'admin-dashboard'].includes(screen) && state.user.schoolId) {
+      LZX.electionBanner(view, { api, esc, go: navigate, role });
+    }
+    if (role === 'STUDENT' && ['cbt-mock', 'past-questions-hub', 'practice'].includes(screen)) {
+      LZX.practiceWatch(view, { api, esc, rerender: () => renderScreen() });
+    }
+  }
+
   async function render() {
     LZX.progress(true);
     try {
@@ -764,6 +781,7 @@
   async function renderScreen() {
     try {
       await dispatch();
+      afterScreen();
     } catch (err) {
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
       view.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -800,6 +818,8 @@
         case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
         case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'practice': return LZX.practice(view, { api, esc, toast });
+        case 'elections': return LZX.elections(view, { api, esc, toast });
+        case 'admin-elections': return LZX.electionsAdmin(view, { api, esc, toast });
         case 'settings-profile': return renderSettingsProfile();
         case 'settings-password': return renderSettingsPassword();
         case 'lab': return renderLab();
@@ -4218,11 +4238,8 @@
   // ================= BILLING =================
 
   async function renderBilling() {
-    const [{ active, subscription, enforced }, { paystack, flutterwave }] = await Promise.all([
-      api('/billing/status'),
-      api('/billing/providers'),
-    ]);
-    const noProvider = !paystack && !flutterwave;
+    const { active, subscription, enforced } = await api('/billing/status');
+    const noProvider = false; // bank transfer is always available; the Flutterwave popup is offered on top when configured
 
     view.innerHTML = `
       <div class="page-head"><h1>Subscription</h1></div>
@@ -4258,19 +4275,11 @@
       </div>
     `;
 
+    const PLAN_INFO = { MONTHLY: { title: 'Monthly plan', amountNaira: 10000 }, YEARLY: { title: 'Yearly plan', amountNaira: 105000 } };
     view.querySelectorAll('[data-plan]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const provider = paystack ? 'paystack' : 'flutterwave';
-        try {
-          const { checkoutUrl, reference } = await api('/billing/checkout', {
-            method: 'POST',
-            body: { plan: btn.dataset.plan, provider },
-          });
-          localStorage.setItem('vp_pending_payment_ref', reference);
-          window.location.href = checkoutUrl;
-        } catch (err) {
-          toast(err.message);
-        }
+      btn.addEventListener('click', () => {
+        const info = PLAN_INFO[btn.dataset.plan];
+        LZX.pay({ api, esc, toast }, { kind: 'plan', plan: btn.dataset.plan, title: info.title, amountNaira: info.amountNaira, onDone: () => render() });
       });
     });
   }
@@ -4572,8 +4581,26 @@
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const menu = document.getElementById('delete-menu-' + btn.dataset.toggleDeleteMenu);
+        const closeAll = () => view.querySelectorAll('.delete-menu-options').forEach((m) => { m.hidden = true; });
         view.querySelectorAll('.delete-menu-options').forEach((m) => { if (m !== menu) m.hidden = true; });
-        if (menu) menu.hidden = !menu.hidden;
+        if (!menu) return;
+        menu.hidden = !menu.hidden;
+        if (menu.hidden) return;
+        // Placed with fixed coordinates, so the chat box's own scroll area can never clip it. (The
+        // first message sits at the very top of that box, where a menu opening upward was cut off.)
+        // It opens below the button when there is room, otherwise above, and stays on screen.
+        const r = btn.getBoundingClientRect();
+        menu.style.position = 'fixed';
+        menu.style.bottom = 'auto';
+        menu.style.right = 'auto';
+        menu.style.zIndex = '400';
+        const h = menu.offsetHeight || 96, w = menu.offsetWidth || 200;
+        const fitsBelow = r.bottom + 6 + h <= window.innerHeight - 8;
+        menu.style.top = (fitsBelow ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px';
+        menu.style.left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - w - 8)) + 'px';
+        setTimeout(() => document.addEventListener('click', closeAll, { once: true }), 0);
+        const box = document.getElementById('chat-messages');
+        if (box) box.addEventListener('scroll', closeAll, { once: true });
       });
     });
     view.querySelectorAll('[data-delete-msg]').forEach((btn) => {
@@ -4717,7 +4744,7 @@
                       <button class="btn btn-ghost btn-sm" data-send="${a.id}">${a.sentAt ? 'Resend' : 'Send'}</button>
                       <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
                     </div>`
-                  : `<button class="btn btn-primary btn-sm" data-take="${a.id}">Take test</button>`}
+                  : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${a.type === 'SEMESTER_EXAM' ? 'Take exam' : 'Take test'}</button>`}
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>

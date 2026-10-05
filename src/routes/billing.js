@@ -1,164 +1,91 @@
 const express = require('express');
+const crypto = require('crypto');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { getSubscriptionStatus, isEnforced } = require('../subscription');
-const { getPlan } = require('../config/plans');
-const paystack = require('../services/paystack.service');
+const { PLANS, getPlan } = require('../config/plans');
+const { bank, flutterwavePublicKey } = require('../config/payments');
 const flutterwave = require('../services/flutterwave.service');
+const payments = require('../services/payments.service');
 const coins = require('../services/coins.service');
 
+// Subscriptions, structured like PassNow's: the browser opens Flutterwave's checkout popup (card,
+// bank transfer, USSD, mobile money) with the PUBLIC key; the server fixes the price, verifies
+// the result with the SECRET key and confirms again from Flutterwave's webhook. Anyone who would
+// rather pay by plain bank transfer or USSD files a manual request that an admin confirms.
 const router = express.Router();
+
+const INTERNAL = /@internal\.learnza\.local$/;
+// Flutterwave needs a deliverable email address for the receipt; accounts created without one
+// carry a placeholder that is not.
+const payerEmail = (u) => (u.email && !INTERNAL.test(u.email) ? u.email : process.env.PAY_FALLBACK_EMAIL || 'payments@learnza.app');
 
 router.get('/status', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const status = await getSubscriptionStatus(req.user.id);
   res.json({ ...status, enforced: isEnforced() });
 });
 
-router.get('/providers', requireAuth, (req, res) => {
-  res.json({ paystack: paystack.isConfigured(), flutterwave: flutterwave.isConfigured() });
+// Everything the payment screen needs, from one place.
+router.get('/config', requireAuth, (req, res) => {
+  const { accountNumber, accountName, bankName } = bank;
+  res.json({
+    flutterwavePublicKey: flutterwavePublicKey(),
+    bank: { bankName, accountName, accountNumber },
+    ussdTemplate: '*966*{amount}*' + accountNumber + '#',
+    plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, amountNaira: p.amountNaira, days: p.days, aiMinutes: p.aiMinutes })),
+    packs: coins.PACKS,
+  });
 });
 
-router.post('/checkout', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const { plan, provider } = req.body;
-  let planConfig;
-  try {
-    planConfig = getPlan(plan);
-  } catch {
-    return res.status(400).json({ error: 'Invalid plan. Choose MONTHLY or YEARLY.' });
-  }
-  if (!['paystack', 'flutterwave'].includes(provider)) {
-    return res.status(400).json({ error: 'Invalid payment provider.' });
-  }
-
-  const reference = `learnza_${req.user.id}_${Date.now()}`;
-  const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-
-  try {
-    const payment = await prisma.payment.create({
-      data: {
-        userId: req.user.id,
-        provider: provider.toUpperCase(),
-        reference,
-        plan,
-        amountKobo: planConfig.amountKobo,
-        status: 'PENDING',
-      },
-    });
-
-    if (provider === 'paystack') {
-      const data = await paystack.initializeTransaction({
-        email: req.user.email,
-        amountKobo: planConfig.amountKobo,
-        reference,
-        callbackUrl: `${origin}${req.user.schoolId ? "/schools" : "/app"}#billing-callback`,
-        metadata: { userId: req.user.id, plan },
-      });
-      return res.json({ checkoutUrl: data.authorization_url, reference: payment.reference });
-    }
-
-    const data = await flutterwave.initializePayment({
-      email: req.user.email,
-      amountNaira: planConfig.amountNaira,
-      reference,
-      redirectUrl: `${origin}${req.user.schoolId ? "/schools" : "/app"}#billing-callback`,
-      meta: { userId: req.user.id, plan },
-    });
-    return res.json({ checkoutUrl: data.link, reference: payment.reference });
-  } catch (err) {
-    return res.status(503).json({ error: err.message });
-  }
+// Starts a card/bank/USSD payment: records a PENDING payment at the server's price and hands the
+// browser the reference to open Flutterwave's popup with.
+router.post('/initiate', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  let plan;
+  try { plan = getPlan(req.body.plan); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
+  const reference = `LZ-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  await prisma.payment.create({
+    data: { userId: req.user.id, provider: 'FLUTTERWAVE', reference, plan: req.body.plan, amountKobo: plan.amountKobo, status: 'PENDING' },
+  });
+  res.status(201).json({ reference, amount: plan.amountNaira, amountKobo: plan.amountKobo, email: payerEmail(req.user), name: req.user.fullName, label: plan.label });
 });
 
-// Fallback verification the frontend can call right after redirect, in case the
-// async webhook hasn't landed yet.
+// Bank transfer / USSD: nothing to verify against, so it is recorded PENDING for an admin to confirm.
+router.post('/manual', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  let plan;
+  try { plan = getPlan(req.body.plan); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
+  const reference = `LZ-MANUAL-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  await prisma.payment.create({
+    data: { userId: req.user.id, provider: 'MANUAL_TRANSFER', reference, plan: req.body.plan, amountKobo: plan.amountKobo, status: 'PENDING' },
+  });
+  res.status(201).json({ reference, message: 'Thanks! Your plan will be activated as soon as the payment is confirmed (usually within 24 hours).' });
+});
+
+// The browser calls this right after the popup reports success — a quick confirmation so the
+// student is not left looking at "pending". The webhook remains the source of truth. Works for
+// subscription payments and coin purchases alike.
 router.get('/verify/:reference', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const coinPurchase = await prisma.coinPurchase.findUnique({ where: { reference: req.params.reference } });
-  if (coinPurchase) return verifyCoinPurchase(req, res, coinPurchase);
-  const payment = await prisma.payment.findUnique({ where: { reference: req.params.reference } });
-  if (!payment || payment.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found' });
-  if (payment.status === 'SUCCESS') return res.json({ status: 'SUCCESS' });
-
-  try {
-    if (payment.provider === 'PAYSTACK') {
-      const data = await paystack.verifyTransaction(payment.reference);
-      if (data.status === 'success') await activateSubscription(payment);
-    } else {
-      const data = await flutterwave.verifyTransaction(req.query.transactionId || payment.reference);
-      if (data.status === 'successful') await activateSubscription(payment);
-    }
-    const fresh = await prisma.payment.findUnique({ where: { id: payment.id } });
-    res.json({ status: fresh.status });
-  } catch (err) {
-    res.status(503).json({ error: err.message });
-  }
+  const { reference } = req.params;
+  const payment = await prisma.payment.findUnique({ where: { reference } });
+  const purchase = payment ? null : await prisma.coinPurchase.findUnique({ where: { reference } });
+  const record = payment || purchase;
+  if (!record || record.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found' });
+  const kind = payment ? 'plan' : 'coins';
+  if (record.status === 'SUCCESS') return res.json({ status: 'SUCCESS', kind, coins: purchase ? purchase.coins : undefined });
+  if (record.provider !== 'FLUTTERWAVE') return res.json({ status: record.status, kind });
+  const result = await payments.verifyAndSettle(reference);
+  const fresh = payment ? await prisma.payment.findUnique({ where: { id: record.id } }) : await prisma.coinPurchase.findUnique({ where: { id: record.id } });
+  res.json({ status: fresh.status, kind, coins: purchase ? purchase.coins : undefined, ...(result.ok ? {} : { note: result.reason }) });
 });
 
-async function verifyCoinPurchase(req, res, purchase) {
-  if (purchase.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found' });
-  if (purchase.status === 'SUCCESS') return res.json({ status: 'SUCCESS', kind: 'coins' });
-  try {
-    if (purchase.provider === 'PAYSTACK') {
-      const data = await paystack.verifyTransaction(purchase.reference);
-      if (data.status === 'success') await coins.completePurchase(purchase);
-    } else {
-      const data = await flutterwave.verifyTransaction(req.query.transactionId || purchase.reference);
-      if (data.status === 'successful') await coins.completePurchase(purchase);
-    }
-    const fresh = await prisma.coinPurchase.findUnique({ where: { id: purchase.id } });
-    res.json({ status: fresh.status, kind: 'coins' });
-  } catch (err) {
-    res.status(503).json({ error: err.message });
-  }
-}
-
-async function activateSubscription(payment) {
-  if (payment.status === 'SUCCESS') return;
-  const planConfig = getPlan(payment.plan);
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + planConfig.days * 24 * 60 * 60 * 1000);
-
-  // Every activation (first purchase or renewal) resets the AI credit bank to a full
-  // fresh allotment for the new cycle -- credits don't carry over, matching "once you
-  // finish your AI credit usage, you have to subscribe more."
-  const aiSecondsGranted = planConfig.aiMinutes * 60;
-  const subscription = await prisma.subscription.upsert({
-    where: { userId: payment.userId },
-    create: { userId: payment.userId, plan: payment.plan, status: 'ACTIVE', startedAt: now, expiresAt, aiSecondsGranted, aiSecondsUsed: 0 },
-    update: { plan: payment.plan, status: 'ACTIVE', startedAt: now, expiresAt, aiSecondsGranted, aiSecondsUsed: 0 },
-  });
-  await prisma.payment.update({
-    where: { id: payment.id },
-    data: { status: 'SUCCESS', subscriptionId: subscription.id },
-  });
-}
-
-// Webhooks are public (called by the payment provider, not a logged-in user) and are
-// authenticated by signature instead of a session token. server.js captures req.rawBody
-// for signature verification.
-router.post('/webhook/paystack', async (req, res) => {
-  const signature = req.headers['x-paystack-signature'];
-  if (!paystack.verifyWebhookSignature(req.rawBody, signature)) return res.status(401).end();
-
-  const event = req.body;
-  if (event.event === 'charge.success') {
-    const payment = await prisma.payment.findUnique({ where: { reference: event.data.reference } });
-    if (payment) await activateSubscription(payment);
-    const purchase = await prisma.coinPurchase.findUnique({ where: { reference: event.data.reference } });
-    if (purchase) await coins.completePurchase(purchase);
-  }
-  res.status(200).end();
-});
-
+// Flutterwave tells us a charge completed. Public route, authenticated by the verif-hash header
+// (server.js keeps the raw body available).
 router.post('/webhook/flutterwave', async (req, res) => {
-  const signature = req.headers['verif-hash'];
-  if (!flutterwave.verifyWebhookSignature(signature)) return res.status(401).end();
-
-  const event = req.body;
-  if (event.event === 'charge.completed' && event.data?.status === 'successful') {
-    const payment = await prisma.payment.findUnique({ where: { reference: event.data.tx_ref } });
-    if (payment) await activateSubscription(payment);
-    const purchase = await prisma.coinPurchase.findUnique({ where: { reference: event.data.tx_ref } });
-    if (purchase) await coins.completePurchase(purchase);
+  if (!flutterwave.verifyWebhookSignature(req.headers['verif-hash'])) return res.status(401).end();
+  const event = req.body || {};
+  const reference = event.data && (event.data.tx_ref || event.data.reference);
+  if (reference && event.event === 'charge.completed' && event.data.status === 'successful') {
+    const paidKobo = typeof event.data.amount === 'number' ? Math.round(event.data.amount * 100) : null;
+    await payments.settle(reference, paidKobo);
   }
   res.status(200).end();
 });

@@ -229,7 +229,7 @@
       <h3>People</h3>
       <div class="cards">${stat(d.schoolUsers.students, 'School students')}${stat(d.schoolUsers.lecturers, 'Lecturers')}${stat(d.schoolUsers.staff, 'Non-academic staff')}${stat(d.schoolUsers.admins, 'School admins')}${stat(d.independentStudents, 'Independent students')}</div>
       <h3>Needs attention</h3>
-      <div class="cards">' + '${stat(d.activity.openTickets, 'Tickets waiting on you')}${stat(d.activity.unreadChats, 'Chats with unread messages')}' + '</div>
+      <div class="cards">${stat(d.activity.pendingManualPayments, 'Bank transfers to confirm')}${stat(d.activity.openTickets, 'Tickets waiting on you')}${stat(d.activity.unreadChats, 'Chats with unread messages')}</div>
       <h3>This month</h3>
       <div class="cards">${stat(naira(d.activity.revenueThisMonthKobo), 'Subscription revenue')}${stat(d.activity.activeSubscriptions, 'Active subscriptions')}${stat(d.activity.aiQuestionsToday, 'AI questions today')}${stat(d.activity.liveNow, 'Live classes on now')}${stat(d.activity.newUsersToday, 'New users today')}</div>
       <h3>Recently onboarded</h3>
@@ -477,6 +477,27 @@
   }
 
   // ---------------- payments & subscriptions ----------------
+  const providerLabel = (p) => (p === 'MANUAL_TRANSFER' ? 'Bank transfer / USSD' : p === 'FLUTTERWAVE' ? 'Flutterwave' : esc(p));
+  // A student reported a bank transfer or USSD payment: the admin confirms it once the money is seen.
+  function manualButtons(path, row) {
+    if (row.provider !== 'MANUAL_TRANSFER' || row.status !== 'PENDING') return '';
+    return '<button class="btn-gold btn-sm" data-confirm="' + path + '|' + row.id + '">Confirm paid</button> <button class="btn-ghost btn-sm" data-reject="' + path + '|' + row.id + '">Reject</button>';
+  }
+  function wireManual(root, path, reload) {
+    root.querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => {
+      const [p, id] = b.dataset.confirm.split('|');
+      if (p !== path) return;
+      if (!confirm('Confirm that the money for this payment has arrived? The student gets what they paid for straight away.')) return;
+      try { await api('/' + p + '/' + id + '/confirm', { method: 'POST' }); toast('Confirmed'); reload(); } catch (err) { toast(err.message); }
+    }));
+    root.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
+      const [p, id] = b.dataset.reject.split('|');
+      if (p !== path) return;
+      if (!confirm('Reject this payment? Nothing is given to the student.')) return;
+      try { await api('/' + p + '/' + id + '/reject', { method: 'POST' }); toast('Rejected'); reload(); } catch (err) { toast(err.message); }
+    }));
+  }
+
   async function renderPayments(initial) {
     view.innerHTML = '<div class="view-head"><div><h1>Payments &amp; Subscriptions</h1><div class="muted">Student subscriptions paid through Paystack or Flutterwave, and manual grants.</div></div></div><div id="pay-host"></div>';
     tabs($('pay-host'), [['payments', 'Payments'], ['subs', 'Subscriptions'], ['coins', 'Coins'], ['grant', 'Grant access']], async (tab, body) => {
@@ -491,9 +512,10 @@
           const stat = (n, l) => '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>';
           body.innerHTML = '<div class="cards">' + stat(naira(d.summary.revenueKobo), 'All-time revenue (' + d.summary.paid + ' payments)') + stat(naira(d.summary.monthKobo), 'This month (' + d.summary.monthPaid + ')') + stat(d.summary.pending, 'Pending') + stat(d.summary.failed, 'Failed') + '</div>' +
             '<div class="toolbar"><select id="pay-f"><option value="">All</option><option>SUCCESS</option><option>PENDING</option><option>FAILED</option></select></div>' +
-            '<div class="table-wrap"><table><thead><tr><th>When</th><th>Student</th><th>Plan</th><th>Amount</th><th>Provider</th><th>Status</th><th>Reference</th></tr></thead><tbody>' +
-            (d.payments.map((p) => '<tr><td>' + fmtDateTime(p.createdAt) + '</td><td><strong>' + esc(p.user.fullName) + '</strong><div class="small muted">' + esc(p.user.school ? p.user.school.name : p.user.email) + '</div></td><td>' + esc(p.plan) + '</td><td class="tabular">' + naira(p.amountKobo) + '</td><td>' + esc(p.provider) + '</td><td><span class="pill ' + (p.status === 'SUCCESS' ? 'ok' : p.status === 'PENDING' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></td><td class="small muted">' + esc(p.reference) + '</td></tr>').join('') || '<tr><td colspan="7" class="muted">No payments yet.</td></tr>') + '</tbody></table></div>';
+            '<div class="table-wrap"><table><thead><tr><th>When</th><th>Student</th><th>Plan</th><th>Amount</th><th>Provider</th><th>Status</th><th>Reference</th><th></th></tr></thead><tbody>' +
+            (d.payments.map((p) => '<tr><td>' + fmtDateTime(p.createdAt) + '</td><td><strong>' + esc(p.user.fullName) + '</strong><div class="small muted">' + esc(p.user.school ? p.user.school.name : p.user.email) + '</div></td><td>' + esc(p.plan) + '</td><td class="tabular">' + naira(p.amountKobo) + '</td><td>' + providerLabel(p.provider) + '</td><td><span class="pill ' + (p.status === 'SUCCESS' ? 'ok' : p.status === 'PENDING' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></td><td class="small muted">' + esc(p.reference) + '</td><td style="white-space:nowrap">' + manualButtons('payments', p) + '</td></tr>').join('') || '<tr><td colspan="8" class="muted">No payments yet.</td></tr>') + '</tbody></table></div>';
           $('pay-f').value = filter;
+          wireManual(body, 'payments', load);
           $('pay-f').addEventListener('change', () => { filter = $('pay-f').value; page = 1; load(); });
           body.appendChild(pager(page, d.total, d.pageSize, (p) => { page = p; load(); }));
         } else {
@@ -772,9 +794,10 @@
       const stat = (n, l) => '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>';
       body.innerHTML = '<div class="cards">' + stat(naira(d.summary.revenueKobo), 'Coin revenue') + stat(d.summary.coinsSold, 'Coins sold') + stat(d.summary.paid, 'Paid purchases') + '</div>' +
         '<div class="panel" style="max-width:640px"><h3>Add coins to a student</h3><form id="cg-form"><div class="row"><div style="flex:2"><label>Student email</label><input id="cg-email" type="email" required></div><div><label>Coins</label><input id="cg-n" type="number" min="1" max="10000" required></div></div><label>Note (shown in their history)</label><input id="cg-note" placeholder="e.g. Scholarship top-up"><div style="margin-top:12px"><button class="btn-gold" type="submit">Add coins</button></div></form></div>' +
-        '<h3 style="margin-top:20px">Purchases</h3><div class="table-wrap"><table><thead><tr><th>When</th><th>Student</th><th>Coins</th><th>Amount</th><th>Provider</th><th>Status</th></tr></thead><tbody>' +
-        (d.purchases.map((p) => '<tr><td>' + fmtDateTime(p.createdAt) + '</td><td><strong>' + esc(p.user.fullName) + '</strong></td><td class="tabular">' + p.coins + '</td><td class="tabular">' + naira(p.amountKobo) + '</td><td>' + esc(p.provider) + '</td><td><span class="pill ' + (p.status === 'SUCCESS' ? 'ok' : p.status === 'PENDING' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></td></tr>').join('') || '<tr><td colspan="6" class="muted">No purchases yet.</td></tr>') + '</tbody></table></div>';
+        '<h3 style="margin-top:20px">Purchases</h3><div class="table-wrap"><table><thead><tr><th>When</th><th>Student</th><th>Coins</th><th>Amount</th><th>Provider</th><th>Status</th><th></th></tr></thead><tbody>' +
+        (d.purchases.map((p) => '<tr><td>' + fmtDateTime(p.createdAt) + '</td><td><strong>' + esc(p.user.fullName) + '</strong></td><td class="tabular">' + p.coins + '</td><td class="tabular">' + naira(p.amountKobo) + '</td><td>' + providerLabel(p.provider) + '</td><td><span class="pill ' + (p.status === 'SUCCESS' ? 'ok' : p.status === 'PENDING' ? 'warn' : 'bad') + '">' + esc(p.status) + '</span></td><td style="white-space:nowrap">' + manualButtons('coins/purchases', p) + '</td></tr>').join('') || '<tr><td colspan="7" class="muted">No purchases yet.</td></tr>') + '</tbody></table></div>';
       body.appendChild(pager(page, d.total, d.pageSize, (p) => { page = p; load(); }));
+      wireManual(body, 'coins/purchases', load);
       // The append-only ledger: every coin that was credited, granted or spent.
       const ledgerBox = document.createElement('div');
       ledgerBox.innerHTML = '<h3 style="margin-top:24px">Ledger</h3><div id="cg-ledger"><p class="muted">Loading…</p></div>';

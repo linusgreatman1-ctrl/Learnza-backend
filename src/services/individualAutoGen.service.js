@@ -154,8 +154,9 @@ async function ensureAutoContentForCourse(course, studentId) {
   if (!lessonCount) tasks.push(generateOne(course, studentId, 'LESSONS'));
   if (!lastAssignment || lastAssignment.createdAt < startOfToday()) tasks.push(generateOne(course, studentId, 'ASSIGNMENT'));
   if (!lastTest || Date.now() - lastTest.createdAt.getTime() > WEEK_MS) tasks.push(generateOne(course, studentId, 'CA'));
-  if (!lastMock || Date.now() - lastMock.createdAt.getTime() > WEEK_MS) tasks.push(generateOne(course, studentId, 'Mock'));
-  if (!lastPastQuestion || Date.now() - lastPastQuestion.createdAt.getTime() > MONTH_MS) tasks.push(generateOne(course, studentId, 'PAST_QUESTION'));
+  // Mock exams and past-question practice are written by services/practiceGen.service.js (bigger
+  // sets, for school and self-study courses alike), so they are not generated here any more.
+  void lastMock; void lastPastQuestion;
   if (!lastExam || Date.now() - lastExam.createdAt.getTime() > SEMESTER_MS) tasks.push(generateOne(course, studentId, 'SEMESTER_EXAM'));
   await Promise.allSettled(tasks);
 }

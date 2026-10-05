@@ -40,12 +40,12 @@ test('plans: prices live on the server and agree with each other', () => {
 
 test('coin packs: priced and sized consistently', () => {
   const coins = require('../../src/services/coins.service');
-  assert.equal(coins.SECONDS_PER_COIN, 300);
+  assert.equal(coins.SECONDS_PER_COIN, 60);
   assert.deepEqual(coins.PACKS.map((p) => [p.coins, p.amountKobo]), [[30, 250000], [100, 750000]]);
   for (const p of coins.PACKS) assert.equal(p.minutes, (p.coins * coins.SECONDS_PER_COIN) / 60);
   assert.equal(coins.getPack('COINS_30').coins, 30);
   assert.equal(coins.getPack('nope'), null);
-  assert.equal(coins.walletSeconds({ balance: 2, aiSecondsCredit: 45 }), 645);
+  assert.equal(coins.walletSeconds({ balance: 2, aiSecondsCredit: 45 }), 165);
 });
 
 test('settings: every definition has a sane default and a label', () => {

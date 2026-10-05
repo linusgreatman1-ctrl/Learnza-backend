@@ -18,6 +18,8 @@ const settings = require('./settings');
 const coinsRoutes = require('./routes/coins');
 const supportRoutes = require('./routes/support');
 const questionsRoutes = require('./routes/questions');
+const practiceRoutes = require('./routes/practice');
+const electionsRoutes = require('./routes/elections');
 const siteFiles = require('./siteFiles');
 const syslog = require('./syslog');
 const assessmentsRoutes = require('./routes/assessments');
@@ -58,7 +60,7 @@ app.use(helmet({
     useDefaults: false,
     directives: {
       'default-src': ["'self'"],
-      'script-src': ["'self'", 'https://cdnjs.cloudflare.com', 'https://cdn.socket.io', 'https://cdn.jsdelivr.net', "'wasm-unsafe-eval'"],
+      'script-src': ["'self'", 'https://cdnjs.cloudflare.com', 'https://cdn.socket.io', 'https://cdn.jsdelivr.net', 'https://checkout.flutterwave.com', "'wasm-unsafe-eval'"],
       'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
       'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
       'img-src': ["'self'", 'data:', 'blob:', 'https:'],
@@ -159,6 +161,8 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/coins', coinsRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/questions', questionsRoutes);
+app.use('/api/practice', practiceRoutes);
+app.use('/api/elections', electionsRoutes);
 app.use('/api', aiTeacherRoutes);
 app.use('/api', liveRoutes);
 app.use('/api', researchAssistantRoutes);

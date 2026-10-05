@@ -14,7 +14,9 @@ Schools **cannot register themselves**. The platform owner onboards a school fro
 
 - **Learning**: courses, lessons (lecturer video/script or AI Teacher with a lip-synced avatar), tests/CBT/semester exams with auto-marking, assignments and projects, past questions, digital lab, e-library, AI research assistant, study groups (chat, files, voice notes, polls, "seen by" receipts), live classes with recordings, class attendance, formal results, gamification (points, streaks, badges — no leaderboard of other students' scores).
 - **School administration**: directory of lecturers / staff / students, semesters, hostels and allocations, transcript and clearance requests, credentials with public verification, academic record, disciplinary records, staff attendance / CPD / publications, bulk in-app/email/SMS messages.
-- **Money**: student subscriptions (Paystack or Flutterwave) and **coins** — a pay-as-you-go top-up for live AI Teacher minutes once the plan's included minutes run out (1 coin = 5 minutes; packs of 30 / 100).
+- **Money**: student subscriptions (monthly ₦10,000 / yearly ₦105,000) and **coins** (1 coin = 1 minute of live AI Teacher time; packs of 30 / 100) — paid like PassNow: **Flutterwave** (card, bank, USSD, mobile money; verified server-side and by webhook) or a **bank transfer / USSD** request that the super admin confirms in the panel. Paystack is not supported. Everything settles through one idempotent path (`src/services/payments.service.js`) that checks the amount paid.
+- **Practice made for each course**: for every course on a student's dashboard (school or independent) the system writes 2 CBT mock exams, a past-question-style practice set and a 30-question practice bank, topped up weekly (`src/services/practiceGen.service.js`). Past-question sets are honest practice written from the course, not real papers.
+- **Elections**: the school admin runs a student union (SUG) or lecturer election; lecturers and/or students vote once on a secret ballot (no voter id is stored with a vote); the admin sees every candidate's votes with the student/lecturer split, turnout and who has voted — never who voted for whom.
 - **Help**: support tickets, live chat (AI assistant answers until a person from the team replies), app reviews.
 - **Digital ID**: every account — independent student, school student, lecturer, non-academic staff, school admin — has a PassNow-style card (role badge, photo, ID number, institution, department, level, QR code, "Save as picture"). Anyone can add their own photo; a school admin can set anyone's in the directory, and a lecturer can set the photo of students in their classes. Only facts the account actually holds are shown.
 - **Installable**: both apps are PWAs (manifest, offline shell, "new version available" prompt).
@@ -61,6 +63,8 @@ SUPER_EMAIL=… SUPER_PASSWORD=… node tests/platform.js                       
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/support-coins.js                     # tickets, chat, reviews, coins, polls
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/digital-id.js                        # every role signs in and has a Digital ID; photo permissions
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/oversight.js                         # oversight views, question bank, logs, codes, Code Editor
+SUPER_EMAIL=… SUPER_PASSWORD=… node tests/commerce.js                          # payments, bank transfers, coins, elections, generated practice (start the server with LZ_FAKE_AI=1 FLUTTERWAVE_WEBHOOK_HASH=whash FLUTTERWAVE_PUBLIC_KEY=FLWPUBK-test)
+SUPER_EMAIL=… SUPER_PASSWORD=… node tests/perf.js                              # query-count / N+1 check (LZ_QUERY_COUNT=1 on the server)
 ```
 
 `e2e.js` finishes by tripping the sign-in rate limiter, so restart the server between runs.
@@ -79,4 +83,4 @@ railway redeploy --yes --from-source
 
 ### Environment variables
 
-See `.env.example`. Required: `DATABASE_URL`, `JWT_SECRET`, `SEED_SUPER_ADMIN_EMAIL`, `SEED_SUPER_ADMIN_PASSWORD`. Optional features switch on when their variables are present: AI (`GEMINI_API_KEY` or `ANTHROPIC_API_KEY`), AI avatar (`SIMLI_*`), payments (`PAYSTACK_SECRET_KEY` / `FLUTTERWAVE_*`), email (`SMTP_*`), SMS (`TERMII_*`), file storage (`CLOUDINARY_*` — without it uploads go to local disk, which a redeploy wipes).
+See `.env.example`. Required: `DATABASE_URL`, `JWT_SECRET`, `SEED_SUPER_ADMIN_EMAIL`, `SEED_SUPER_ADMIN_PASSWORD`. Optional features switch on when their variables are present: AI (`GEMINI_API_KEY` or `ANTHROPIC_API_KEY`), AI avatar (`SIMLI_*`), payments (`FLUTTERWAVE_PUBLIC_KEY`, `FLUTTERWAVE_SECRET_KEY`, `FLUTTERWAVE_WEBHOOK_HASH`; bank details via `PAY_*`; webhook URL `/api/billing/webhook/flutterwave`), email (`SMTP_*`), SMS (`TERMII_*`), file storage (`CLOUDINARY_*` — without it uploads go to local disk, which a redeploy wipes).

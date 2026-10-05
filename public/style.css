@@ -167,3 +167,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lzx-progress.on { opacity: 1; }
 .lzx-progress::after { content: ''; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, #e3ac4c, transparent); animation: lzx-slide 1s ease-in-out infinite; }
 @keyframes lzx-slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+/* payment sheet (extras.js) */
+.lzx-pay-bg { position: fixed; inset: 0; background: rgba(10, 20, 40, .55); z-index: 9000; display: flex; align-items: flex-end; justify-content: center; overflow-y: auto; }
+.lzx-pay { width: 100%; max-width: 480px; background: var(--paper-raised, #fff); color: var(--ink, #142033); border-radius: 20px 20px 0 0; overflow: hidden; margin-top: 40px; }
+@media (min-width: 640px) { .lzx-pay-bg { align-items: center; } .lzx-pay { border-radius: 20px; margin: 24px 0; } }
+.lzx-pay-head { position: relative; background: linear-gradient(135deg, #0f1b2e, #16355c); color: #fff; padding: 20px; text-align: center; }
+.lzx-pay-x { position: absolute; right: 12px; top: 12px; background: rgba(255,255,255,.14); color: #fff; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; }
+.lzx-pay-body { padding: 18px; }
+.lzx-pay-fw { width: 100%; background: #f5a623; color: #1a1a2e; border: none; border-radius: 14px; padding: 15px; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.lzx-pay-fw[disabled] { opacity: .6; cursor: default; }
+.lzx-pay-card { border: 1.5px solid rgba(128,128,128,.3); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+.lzx-pay-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 1.9; }
+
+/* election result bars (extras.js) */
+.lzx-bar { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; margin-top: 6px; }
+.lzx-bar > div { height: 100%; background: #c1861f; }

@@ -1,46 +1,37 @@
+// Flutterwave, server side. The browser opens Flutterwave's own checkout popup with the PUBLIC
+// key (see public/extras.js); everything that decides whether money was really paid happens
+// here with the SECRET key, which never leaves the server.
 const BASE_URL = 'https://api.flutterwave.com/v3';
 
-function isConfigured() {
-  return !!process.env.FLUTTERWAVE_SECRET_KEY;
+const isConfigured = () => !!process.env.FLUTTERWAVE_SECRET_KEY;
+
+// Asks Flutterwave about a payment by the reference we gave it (tx_ref). Resolves
+// { ok, amountKobo } — ok is true only for a successful, completed transaction.
+async function verifyByReference(reference) {
+  if (!isConfigured()) return { ok: false, reason: 'not_configured' };
+  try {
+    const res = await fetch(`${BASE_URL}/transactions/verify_by_reference?tx_ref=${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}` },
+    });
+    if (!res.ok) return { ok: false, reason: 'http_' + res.status };
+    const body = await res.json();
+    return {
+      ok: body && body.status === 'success' && body.data && body.data.status === 'successful',
+      amountKobo: body && body.data && typeof body.data.amount === 'number' ? Math.round(body.data.amount * 100) : null,
+    };
+  } catch (err) {
+    console.error('[flutterwave] verify failed:', err.message);
+    return { ok: false, reason: 'network' };
+  }
 }
 
-async function initializePayment({ email, amountNaira, reference, redirectUrl, meta }) {
-  if (!isConfigured()) throw new Error('Flutterwave is not configured (missing FLUTTERWAVE_SECRET_KEY)');
-  const res = await fetch(`${BASE_URL}/payments`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      tx_ref: reference,
-      amount: amountNaira,
-      currency: 'NGN',
-      redirect_url: redirectUrl,
-      customer: { email },
-      meta,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Flutterwave initialization failed');
-  return data.data; // { link }
-}
-
-async function verifyTransaction(transactionId) {
-  if (!isConfigured()) throw new Error('Flutterwave is not configured (missing FLUTTERWAVE_SECRET_KEY)');
-  const res = await fetch(`${BASE_URL}/transactions/${encodeURIComponent(transactionId)}/verify`, {
-    headers: { Authorization: `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}` },
-  });
-  const data = await res.json();
-  if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Flutterwave verification failed');
-  return data.data; // { status: 'successful'|..., amount, tx_ref, ... }
-}
-
-// Flutterwave webhooks are authenticated by a static shared secret hash header, not HMAC.
+// Flutterwave webhooks are authenticated by a static shared secret in the verif-hash header.
 function verifyWebhookSignature(signatureHeader) {
-  const expected = process.env.FLUTTERWAVE_WEBHOOK_HASH;
+  const expected = process.env.FLUTTERWAVE_WEBHOOK_HASH || process.env.FLUTTERWAVE_SECRET_HASH;
   if (!expected || !signatureHeader) return false;
-  return signatureHeader === expected;
+  const a = Buffer.from(String(signatureHeader));
+  const b = Buffer.from(expected);
+  return a.length === b.length && require('crypto').timingSafeEqual(a, b);
 }
 
-module.exports = { isConfigured, initializePayment, verifyTransaction, verifyWebhookSignature };
+module.exports = { isConfigured, verifyByReference, verifyWebhookSignature };

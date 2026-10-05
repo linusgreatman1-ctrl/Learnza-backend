@@ -3,6 +3,7 @@ const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const autoGen = require('../services/individualAutoGen.service');
 
+const practice = require('../services/practiceGen.service');
 const router = express.Router();
 
 // One aggregated view across every enrolled course -- backs the "My Dashboard" screen
@@ -18,6 +19,9 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
   if (req.user.isIndividual) {
     await autoGen.ensureAutoContent(req.user.id).catch(() => {});
   }
+  // Mock exams, past-question practice and practice questions for every course on this
+  // dashboard are written in the background the first time (and topped up over time).
+  practice.ensureForStudent(req.user).catch(() => {});
   const enrollments = await prisma.enrollment.findMany({
     where: { studentId: req.user.id },
     select: { courseId: true },
@@ -86,7 +90,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
         // /assessments/:id/practice-submit) -- they belong on the Past Questions hub,
         // not this list of things with a real submission state to show.
         prisma.assessment.findMany({
-          where: { individualCourseId: { in: icIds }, type: { not: 'PAST_QUESTION' } },
+          where: { individualCourseId: { in: icIds }, type: { not: 'PAST_QUESTION' }, generated: false },
           include: { _count: { select: { questions: true } }, individualCourse: { select: { title: true } } },
           orderBy: { createdAt: 'desc' },
           take: 30,

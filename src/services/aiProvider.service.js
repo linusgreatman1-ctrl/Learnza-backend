@@ -4,7 +4,21 @@ const syslog = require('../syslog');
 // catchable error when neither is configured yet -- callers turn that into a friendly
 // "AI Teacher isn't set up yet" response rather than a crash.
 
+const fakeAi = () => process.env.LZ_FAKE_AI === '1';
+function fakeJson(userPrompt) {
+  const n = parseInt((String(userPrompt).match(/Number of questions: (\d+)/) || [])[1], 10) || 5;
+  const tag = (String(userPrompt).match(/Course: (.*)/) || [, 'Course'])[1];
+  return {
+    title: 'Fake set',
+    questions: Array.from({ length: n }, (_, i) => ({
+      text: `${tag}: question ${i + 1} ${Math.random().toString(36).slice(2, 7)}`,
+      options: ['A', 'B', 'C', 'D'], correctIndex: i % 4, explanation: 'Because.',
+    })),
+  };
+}
+
 function isConfigured() {
+  if (fakeAi()) return true;
   return !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY);
 }
 
@@ -135,6 +149,7 @@ function requireProvider() {
 // Sends a prompt pair and returns parsed JSON. `systemPrompt` should instruct the
 // model to reply with JSON only.
 async function askForJson(systemPrompt, userPrompt) {
+  if (fakeAi()) return fakeJson(userPrompt);
   const provider = requireProvider();
   let raw;
   try {

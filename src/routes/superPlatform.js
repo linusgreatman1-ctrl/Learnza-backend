@@ -6,6 +6,7 @@ const { notifyMany } = require('../services/notification.service');
 const bulkMessage = require('../services/bulkMessage.service');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const settings = require('../settings');
+const payments = require('../services/payments.service');
 
 // The rest of the platform owner's API (mounted inside routes/super.js, so every route here
 // is already behind "signed in as SUPER_ADMIN"): announcements, payments & subscriptions,
@@ -119,6 +120,26 @@ router.get('/payments', async (req, res) => {
       pending, failed,
     },
   });
+});
+
+// A bank-transfer / USSD payment a student reported: the admin saw the money, so confirm it and
+// the subscription starts. (Idempotent — confirming twice does nothing the second time.)
+router.post('/payments/:id/confirm', async (req, res) => {
+  const payment = await prisma.payment.findUnique({ where: { id: req.params.id } });
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (payment.provider !== 'MANUAL_TRANSFER') return res.status(400).json({ error: 'Only bank-transfer payments are confirmed by hand. Card payments confirm themselves.' });
+  const result = await payments.settle(payment.reference, null);
+  await logAction(req, 'PAYMENT_CONFIRMED', 'Payment', payment.id, { reference: payment.reference, amountKobo: payment.amountKobo });
+  res.json({ ok: result.ok });
+});
+
+router.post('/payments/:id/reject', async (req, res) => {
+  const payment = await prisma.payment.findUnique({ where: { id: req.params.id } });
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (payment.provider !== 'MANUAL_TRANSFER' || payment.status !== 'PENDING') return res.status(400).json({ error: 'Only a pending bank-transfer payment can be rejected.' });
+  await prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } });
+  await logAction(req, 'PAYMENT_REJECTED', 'Payment', payment.id, { reference: payment.reference });
+  res.json({ ok: true });
 });
 
 router.get('/subscriptions', async (req, res) => {

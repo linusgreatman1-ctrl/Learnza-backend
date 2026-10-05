@@ -28,6 +28,7 @@ model School {
   semesters             Semester[]
   hostels               Hostel[]
   libraryResources      LibraryResource[]
+  elections             Election[]
 }
 
 // A school's own term/semester calendar. isCurrent marks the one new activity
@@ -247,6 +248,7 @@ model Course {
   lecturers    CourseLecturer[]
 
   @@unique([departmentId, code])
+  practiceReadyAt DateTime? // when the system finished writing this course's mock exams, past-question set and practice bank
 }
 
 // Explicit "this lecturer teaches this course" assignment, set by admin when adding a
@@ -408,6 +410,9 @@ model Assessment {
   @@index([courseId])
   @@index([individualCourseId])
   @@index([authorId])
+  // Written by the system (mock exams, past-question practice) rather than by a lecturer: hidden
+  // from lecturers' lists and left out of a student's test counts and academic record.
+  generated   Boolean   @default(false)
 }
 
 model Question {
@@ -691,6 +696,7 @@ model IndividualCourse {
   lessons     Lesson[]
 
   @@index([studentId])
+  practiceReadyAt DateTime? // when the system finished writing this course's mock exams, past-question set and practice bank
 }
 
 // Per-class daily attendance, marked by the lecturer teaching that course (distinct
@@ -1028,6 +1034,12 @@ model GroupMessageRead {
 // the answer never reaches the browser before it is submitted.
 model PlatformQuestion {
   id           String   @id @default(cuid())
+  // Questions the system wrote for one of a student's courses (a school course, or a self-study
+  // course) rather than the owner's general bank. No foreign key: they simply stop being offered
+  // if the course is deleted.
+  courseId           String?
+  individualCourseId String?
+  generated          Boolean  @default(false)
   subject      String
   topic        String?
   level        String?  // e.g. 100L, 200L, ND1
@@ -1041,6 +1053,8 @@ model PlatformQuestion {
   createdAt    DateTime @default(now())
 
   @@index([subject, active])
+  @@index([courseId])
+  @@index([individualCourseId])
 }
 
 // ---- System log ----------------------------------------------------------------------
@@ -1076,4 +1090,83 @@ model SiteFileVersion {
   publishedAt DateTime?
 
   @@index([path, createdAt])
+}
+
+// ---- Elections --------------------------------------------------------------------------
+// A school admin runs a student union (SUG) election or a lecturers' election. Ballots are
+// secret: ElectionVote records WHAT was chosen (and whether a student or a lecturer chose it),
+// ElectionVoter records WHO has voted — and nothing links the two.
+model Election {
+  id              String   @id @default(cuid())
+  school          School   @relation(fields: [schoolId], references: [id])
+  schoolId        String
+  title           String
+  description     String?
+  kind            String   // STUDENT_SUG | LECTURER
+  voters          String   // STUDENTS | LECTURERS | BOTH
+  status          String   @default("DRAFT") // DRAFT | OPEN | CLOSED
+  opensAt         DateTime?
+  closesAt        DateTime?
+  resultsVisible  Boolean  @default(false) // may voters see the result once it is closed?
+  createdById     String
+  createdAt       DateTime @default(now())
+  openedAt        DateTime?
+  closedAt        DateTime?
+  positions       ElectionPosition[]
+  ballots         ElectionVoter[]
+  votes           ElectionVote[]
+
+  @@index([schoolId, status])
+}
+
+model ElectionPosition {
+  id         String   @id @default(cuid())
+  election   Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  electionId String
+  title      String
+  order      Int      @default(0)
+  candidates ElectionCandidate[]
+  votes      ElectionVote[]
+
+  @@index([electionId])
+}
+
+model ElectionCandidate {
+  id         String   @id @default(cuid())
+  position   ElectionPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  positionId String
+  userId     String?  // the student or lecturer, when picked from the directory
+  name       String
+  manifesto  String?
+  photoUrl   String?
+  votes      ElectionVote[]
+
+  @@index([positionId])
+}
+
+model ElectionVoter {
+  id         String   @id @default(cuid())
+  election   Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  electionId String
+  voterId    String
+  voterRole  String   // STUDENT | LECTURER
+  votedAt    DateTime @default(now())
+
+  @@unique([electionId, voterId])
+}
+
+model ElectionVote {
+  id          String   @id @default(cuid())
+  election    Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  electionId  String
+  position    ElectionPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  positionId  String
+  candidate   ElectionCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidateId String
+  voterRole   String   // STUDENT | LECTURER — which group cast it (no voter id, on purpose)
+  createdAt   DateTime @default(now())
+
+  @@index([electionId])
+  @@index([positionId])
+  @@index([candidateId])
 }

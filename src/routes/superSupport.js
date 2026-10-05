@@ -3,6 +3,7 @@ const prisma = require('../db');
 const { logAction } = require('../audit');
 const { notify } = require('../services/notification.service');
 const coins = require('../services/coins.service');
+const payments = require('../services/payments.service');
 
 // The owner's side of support (tickets, live chat, reviews) and of coins. Mounted inside
 // routes/super.js, so everything here is already behind "signed in as SUPER_ADMIN".
@@ -127,6 +128,24 @@ router.get('/coins/purchases', async (req, res) => {
     total, page, pageSize: size, purchases,
     summary: { revenueKobo: bought._sum.amountKobo || 0, coinsSold: bought._sum.coins || 0, paid: bought._count },
   });
+});
+
+router.post('/coins/purchases/:id/confirm', async (req, res) => {
+  const purchase = await prisma.coinPurchase.findUnique({ where: { id: req.params.id } });
+  if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+  if (purchase.provider !== 'MANUAL_TRANSFER') return res.status(400).json({ error: 'Only bank-transfer purchases are confirmed by hand. Card payments confirm themselves.' });
+  const result = await payments.settle(purchase.reference, null);
+  await logAction(req, 'COIN_PURCHASE_CONFIRMED', 'CoinPurchase', purchase.id, { coins: purchase.coins });
+  res.json({ ok: result.ok });
+});
+
+router.post('/coins/purchases/:id/reject', async (req, res) => {
+  const purchase = await prisma.coinPurchase.findUnique({ where: { id: req.params.id } });
+  if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+  if (purchase.provider !== 'MANUAL_TRANSFER' || purchase.status !== 'PENDING') return res.status(400).json({ error: 'Only a pending bank-transfer purchase can be rejected.' });
+  await prisma.coinPurchase.update({ where: { id: purchase.id }, data: { status: 'FAILED' } });
+  await logAction(req, 'COIN_PURCHASE_REJECTED', 'CoinPurchase', purchase.id);
+  res.json({ ok: true });
 });
 
 router.get('/coins/ledger', async (req, res) => {

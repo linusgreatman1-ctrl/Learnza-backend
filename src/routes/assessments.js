@@ -19,7 +19,7 @@ router.get('/courses/:id/assessments', requireAuth, loadCourse(), async (req, re
   const assessments = await prisma.assessment.findMany({
     // Drafts (sentAt still null) are the lecturer's own working copy -- invisible to
     // students until deliberately sent, same as a draft Result.
-    where: { courseId: req.course.id, ...(req.user.role === 'STUDENT' ? { sentAt: { not: null } } : {}) },
+    where: { courseId: req.course.id, ...(req.user.role === 'STUDENT' ? { sentAt: { not: null } } : { generated: false }) },
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: 'desc' },
   });

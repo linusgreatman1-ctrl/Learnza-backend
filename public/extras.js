@@ -185,37 +185,119 @@
   }
 
   // ---------------------------------------------------------------- AI minutes & coins
-  async function wallet(view, { api, esc, toast }) {
+  async function wallet(view, ctx) {
+    const { api, esc, toast } = ctx;
     const [w, sub] = await Promise.all([api('/coins'), api('/billing/status').catch(() => null)]);
-    const providers = [];
-    if (w.providers.paystack) providers.push(['paystack', 'Paystack']);
-    if (w.providers.flutterwave) providers.push(['flutterwave', 'Flutterwave']);
     view.innerHTML = `
       <div class="page-head"><h1>AI Minutes &amp; Coins</h1></div>
       <div class="card" style="margin-bottom:16px;">
         <div class="meta">Coin balance</div>
         <div style="font-size:2.2rem;font-weight:800;">🪙 ${w.balance}</div>
-        <div class="meta">${w.minutesLeft} minutes of live AI Teacher time in your wallet (1 coin = ${w.secondsPerCoin / 60} minutes)</div>
+        <div class="meta">${w.minutesLeft} minute${w.minutesLeft === 1 ? '' : 's'} of live AI Teacher time in your wallet (1 coin = 1 minute)</div>
         <p class="muted" style="margin-top:10px;font-size:.85rem;">Your subscription already includes AI Teacher minutes each cycle. Coins are used only after those run out, so nothing is wasted.${sub && sub.enforced === false ? ' (The subscription paywall is currently off.)' : ''}</p>
       </div>
+      ${w.pending.length ? `<div class="hint-box" style="margin-bottom:16px;">⏳ ${w.pending.length} bank-transfer purchase${w.pending.length === 1 ? ' is' : 's are'} waiting to be confirmed (${w.pending.map((p) => p.coins + ' coins').join(', ')}). Your coins appear as soon as it is.</div>` : ''}
       <div class="card" style="margin-bottom:16px;">
         <h3 style="margin-bottom:6px;">Buy coins</h3>
-        ${providers.length ? '' : '<p class="muted">Online payment is not set up yet. Please contact Learnza support to top up.</p>'}
         ${w.packs.map((p) => `
-          <div class="lzx-pack"><div><div style="font-weight:700;">${esc(p.label)}</div><div class="meta">${p.minutes} minutes · ${naira(p.amountKobo)}</div></div>
-          <div>${providers.map(([id, label]) => `<button class="btn btn-primary btn-sm" data-buy="${p.id}" data-provider="${id}" style="margin-left:6px;">${esc(label)}</button>`).join('')}</div></div>`).join('')}
+          <div class="lzx-pack"><div><div style="font-weight:700;">${esc(p.label)}</div><div class="meta">${esc(p.blurb || p.minutes + ' minutes')} · ${naira(p.amountKobo)}</div></div>
+          <button class="btn btn-primary btn-sm" data-buy="${p.id}">Buy</button></div>`).join('')}
       </div>
       <div class="card"><h3 style="margin-bottom:6px;">History</h3>
         ${w.ledger.map((e) => `<div class="list-row"><div><div style="font-weight:600;">${esc(e.reason === 'PURCHASE' ? 'Coins bought' : e.reason === 'AI_USAGE' ? 'Live AI Teacher' : e.reason === 'GRANT' ? 'Added by Learnza' : 'Adjustment')}</div><div class="meta">${esc(e.note || '')} · ${esc(fmt(e.createdAt))}</div></div><div style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} 🪙</div></div>`).join('') || '<p class="muted" style="padding:10px;">Nothing yet.</p>'}
       </div>`;
-    view.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', async () => {
-      b.disabled = true;
-      try {
-        const r = await api('/coins/checkout', { method: 'POST', body: { packId: b.dataset.buy, provider: b.dataset.provider } });
-        try { localStorage.setItem('vp_pending_payment_ref', r.reference); } catch { /* private mode */ }
-        window.location.href = r.checkoutUrl;
-      } catch (err) { toast(err.message); b.disabled = false; }
+    view.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
+      const pack = w.packs.find((p) => p.id === b.dataset.buy);
+      pay(ctx, { kind: 'coins', packId: pack.id, title: pack.label, amountNaira: pack.amountKobo / 100, onDone: () => wallet(view, ctx) });
     }));
+  }
+
+  // ---------------------------------------------------------------- paying (subscriptions + coins)
+  // Same two routes as PassNow: Flutterwave's popup (card, bank transfer, USSD, mobile money), or a
+  // plain bank transfer / USSD that an admin confirms by hand. The price always comes from the
+  // server; the browser only names the plan or pack.
+  let payCfg = null;
+  async function pay(ctx, opts) {
+    const { api, esc, toast } = ctx;
+    if (!payCfg) payCfg = await api('/billing/config');
+    const cfg = payCfg;
+    const amount = opts.amountNaira;
+    const ussd = cfg.ussdTemplate.replace('{amount}', Math.round(amount));
+    const overlay = document.createElement('div');
+    overlay.className = 'lzx-pay-bg';
+    overlay.innerHTML = `
+      <div class="lzx-pay" role="dialog" aria-label="Choose payment method">
+        <div class="lzx-pay-head"><button class="lzx-pay-x" id="lzx-pay-close" aria-label="Close">✕</button><div style="opacity:.6;font-size:12px;">${esc(opts.title)}</div><div style="font:800 30px Sora,sans-serif;">${naira(amount * 100)}</div></div>
+        <div class="lzx-pay-body">
+          <div style="font:700 15px Sora,sans-serif;margin-bottom:12px;">Choose payment method</div>
+          ${cfg.flutterwavePublicKey ? `
+          <button class="lzx-pay-fw" id="lzx-pay-fw"><span style="font-size:22px">🦋</span><div style="flex:1;text-align:left"><div style="font-weight:800;font-size:14px;">Pay with Flutterwave</div><div style="font-size:11px;opacity:.65;">Card, Bank, USSD, Mobile Money</div></div><span>→</span></button>` : ''}
+          <div style="font:700 15px Sora,sans-serif;margin:${cfg.flutterwavePublicKey ? '18px' : '0'} 0 12px;">${cfg.flutterwavePublicKey ? 'Or pay directly' : 'Pay by bank transfer'}</div>
+          <div class="lzx-pay-card">
+            <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:#1f8a5b;">🏦 Bank transfer</div>
+            <div class="lzx-pay-row"><span>Bank</span><b>${esc(cfg.bank.bankName)}</b></div>
+            <div class="lzx-pay-row"><span>Account name</span><b>${esc(cfg.bank.accountName)}</b></div>
+            <div class="lzx-pay-row"><span>Account number</span><b>${esc(cfg.bank.accountNumber)}</b></div>
+            <div class="lzx-pay-row"><span>Amount</span><b>${naira(amount * 100)}</b></div>
+            <button class="btn btn-ghost btn-sm" id="lzx-pay-copy" style="width:100%;margin-top:10px;">📋 Copy account number</button>
+            <button class="btn btn-primary btn-sm" id="lzx-pay-bank" style="width:100%;margin-top:8px;">✅ I've made the transfer</button>
+          </div>
+          <div class="lzx-pay-card">
+            <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:#2563d6;">📱 USSD (no internet needed)</div>
+            <div style="font-size:13px;line-height:1.7;">Dial <b>${esc(ussd)}</b> on your phone (${esc(cfg.bank.bankName.split(' ')[0])} EazyBanking) and follow the prompts, then confirm below.</div>
+            <button class="btn btn-primary btn-sm" id="lzx-pay-ussd" style="width:100%;margin-top:10px;">✅ I've completed the USSD payment</button>
+          </div>
+          <div class="muted" style="font-size:11px;text-align:center;line-height:1.6;">🔒 Payments are processed securely. Bank transfer / USSD payments are confirmed manually, usually within 24 hours.</div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('#lzx-pay-close').addEventListener('click', close);
+    const done = () => { close(); if (opts.onDone) opts.onDone(); };
+
+    overlay.querySelector('#lzx-pay-copy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(cfg.bank.accountNumber); toast('📋 Account number copied'); } catch { toast('Account number: ' + cfg.bank.accountNumber); }
+    });
+
+    async function manual(method) {
+      try {
+        const body = opts.kind === 'coins' ? { packId: opts.packId, method } : { plan: opts.plan };
+        const r = await api(opts.kind === 'coins' ? '/coins/manual' : '/billing/manual', { method: 'POST', body });
+        toast('✅ ' + r.message);
+        done();
+      } catch (err) { toast(err.message); }
+    }
+    overlay.querySelector('#lzx-pay-bank').addEventListener('click', () => manual('BANK'));
+    overlay.querySelector('#lzx-pay-ussd').addEventListener('click', () => manual('USSD'));
+
+    const fwBtn = overlay.querySelector('#lzx-pay-fw');
+    if (fwBtn) fwBtn.addEventListener('click', async () => {
+      fwBtn.disabled = true;
+      try {
+        await lib('flutterwave');
+        const init = await api(opts.kind === 'coins' ? '/coins/initiate' : '/billing/initiate', { method: 'POST', body: opts.kind === 'coins' ? { packId: opts.packId } : { plan: opts.plan } });
+        fwBtn.disabled = false;
+        window.FlutterwaveCheckout({
+          public_key: cfg.flutterwavePublicKey,
+          tx_ref: init.reference,
+          amount: init.amount,
+          currency: 'NGN',
+          payment_options: 'card,banktransfer,ussd,mobilemoney',
+          customer: { email: init.email, name: init.name || 'Learnza student' },
+          customizations: { title: 'Learnza ' + opts.title, description: opts.kind === 'coins' ? 'Coin purchase' : 'Subscription payment' },
+          callback: async () => {
+            // A popup "success" is not proof of payment: ask the server, which asks Flutterwave.
+            try {
+              const r = await api('/billing/verify/' + encodeURIComponent(init.reference));
+              toast(r.status === 'SUCCESS' ? (opts.kind === 'coins' ? '✅ Coins added!' : '✅ Payment successful! Your plan is now active.') : 'Payment received — confirming with the provider, this can take a moment.');
+            } catch { toast('Payment received — confirming with the provider, this can take a moment.'); }
+            done();
+          },
+          onclose: () => toast('Payment window closed.'),
+        });
+      } catch (err) { fwBtn.disabled = false; toast(err.message || 'Could not start the payment. Please try again.'); }
+    });
   }
 
   // ---------------------------------------------------------------- study-group polls + seen
@@ -308,22 +390,30 @@
   // Questions the platform owner curates in the admin panel. Pick a subject, answer a set,
   // then see the correct answers and explanations (grading happens on the server).
   async function practice(view, { api, esc, toast }) {
-    const { subjects } = await api('/questions/subjects');
+    const [{ subjects }, { courses }] = await Promise.all([api('/questions/subjects'), api('/questions/my-courses').catch(() => ({ courses: [] }))]);
+    const mine = courses.filter((c) => c.count > 0);
+    const preparing = courses.filter((c) => c.count === 0);
     view.innerHTML = `
       <div class="page-head"><h1>Practice Questions</h1></div>
       <div class="card">
-        ${subjects.length ? `
-        <div class="field"><label>Subject</label><select id="pq-subject">${subjects.map((x) => `<option value="${esc(x.subject)}">${esc(x.subject)} (${x.count})</option>`).join('')}</select></div>
+        ${mine.length || subjects.length ? `
+        <div class="field"><label>What would you like to practise?</label><select id="pq-subject">
+          ${mine.length ? `<optgroup label="Your courses">${mine.map((c) => `<option value="${c.kind}:${esc(c.id)}">${esc(c.title)} (${c.count} questions)</option>`).join('')}</optgroup>` : ''}
+          ${subjects.length ? `<optgroup label="General subjects">${subjects.map((x) => `<option value="subject:${esc(x.subject)}">${esc(x.subject)} (${x.count})</option>`).join('')}</optgroup>` : ''}
+        </select></div>
         <div class="field"><label>How many questions?</label><select id="pq-count"><option>10</option><option>20</option><option>30</option></select></div>
-        <button class="btn btn-primary" id="pq-start">Start practising</button>` : '<p class="muted">No practice questions have been added yet. Check back soon.</p>'}
+        <button class="btn btn-primary" id="pq-start">Start practising</button>` : '<p class="muted">No practice questions yet.</p>'}
+        ${preparing.length ? `<p class="muted" style="margin-top:14px;font-size:.85rem;">⏳ Still being prepared for: ${preparing.map((c) => esc(c.title)).join(', ')}. This page updates when they are ready.</p>` : ''}
       </div>`;
     const start = view.querySelector('#pq-start');
     if (!start) return;
     start.addEventListener('click', async () => {
       start.disabled = true;
       try {
-        const subject = view.querySelector('#pq-subject').value;
-        const { questions } = await api('/questions/practice?subject=' + encodeURIComponent(subject) + '&count=' + view.querySelector('#pq-count').value);
+        const [kind, ...rest] = view.querySelector('#pq-subject').value.split(':');
+        const id = rest.join(':');
+        const q = kind === 'school' ? 'courseId=' + encodeURIComponent(id) : kind === 'self' ? 'individualCourseId=' + encodeURIComponent(id) : 'subject=' + encodeURIComponent(id);
+        const { subject, questions } = await api('/questions/practice?' + q + '&count=' + view.querySelector('#pq-count').value);
         quiz(subject, questions);
       } catch (err) { toast(err.message); start.disabled = false; }
     });
@@ -536,6 +626,302 @@
     ctx.toast('⬇ ID saved');
   }
 
+  // ---------------------------------------------------------------- elections
+  // Voters (students and lecturers) see the elections open to them and vote once, in secret.
+  // The school admin sets elections up (a student-union SUG election, or an election among
+  // lecturers), opens and closes them, and watches each candidate's votes — with the split
+  // between student and lecturer voters and who has turned out, but never who voted for whom.
+  const stateLabel = { DRAFT: 'Draft', UPCOMING: 'Starts soon', OPEN: 'Voting open', CLOSED: 'Closed' };
+  const statePill = (s) => (s === 'OPEN' ? 'pill-pass' : s === 'CLOSED' ? 'pill-muted' : 'pill-accent');
+  const kindLabel = (k) => (k === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers\' election');
+  const votersLabel = (v) => ({ STUDENTS: 'students vote', LECTURERS: 'lecturers vote', BOTH: 'students and lecturers vote' }[v]);
+  const when = (d) => (d ? fmt(d) : null);
+  function candidateFace(esc, c, size) {
+    const px = size || 44;
+    return c.photoUrl
+      ? `<img alt="" src="${esc(c.photoUrl)}" style="width:${px}px;height:${px}px;border-radius:50%;object-fit:cover;flex:0 0 ${px}px;">`
+      : `<div style="width:${px}px;height:${px}px;border-radius:50%;background:linear-gradient(135deg,#e3ac4c,#c1861f);color:#1b1406;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 ${px}px;">${esc(initialsOf(c.name))}</div>`;
+  }
+
+  // ---- the dashboard banner: "N elections are waiting for your vote"
+  async function electionBanner(view, { api, esc, go, role }) {
+    let s;
+    try { s = await api('/elections/summary'); } catch { return; }
+    if (!view.isConnected) return;
+    const old = view.querySelector('.lzx-election-banner');
+    if (old) old.remove();
+    if (!(s.pending > 0 || s.open > 0)) return;
+    const el = document.createElement('div');
+    el.className = 'hint-box lzx-election-banner';
+    el.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:16px;';
+    const admin = typeof s.pending === 'number' && s.pending === 0 && s.open > 0 && role === 'ADMIN';
+    el.innerHTML = s.pending > 0
+      ? `<span style="font-size:22px">🗳️</span><div style="flex:1;"><strong>${s.pending} election${s.pending === 1 ? ' is' : 's are'} waiting for your vote.</strong><div class="meta">Tap to vote — it takes a minute and your ballot is secret.</div></div><span>→</span>`
+      : `<span style="font-size:22px">🗳️</span><div style="flex:1;"><strong>${s.open} election${s.open === 1 ? ' is' : 's are'} open for voting.</strong><div class="meta">${admin ? 'Tap to see the live count.' : 'You have already voted in every one.'}</div></div><span>→</span>`;
+    el.addEventListener('click', () => go(role === 'ADMIN' ? 'admin-elections' : 'elections'));
+    const head = view.querySelector('.page-head');
+    if (head && head.parentNode === view) head.insertAdjacentElement('afterend', el); else view.insertBefore(el, view.firstChild);
+  }
+
+  // ---- voters
+  async function elections(view, ctx) {
+    const { api, esc, toast } = ctx;
+    const { elections: list } = await api('/elections');
+    view.innerHTML = `
+      <div class="page-head"><h1>Elections</h1></div>
+      ${list.length ? list.map((e) => `
+        <div class="card" style="margin-bottom:12px;cursor:pointer;" data-open="${e.id}">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+            <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
+            <div style="text-align:right;"><span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span>${e.hasVoted ? '<div class="meta" style="margin-top:6px;">✓ You voted</div>' : e.state === 'OPEN' ? '<div class="meta" style="margin-top:6px;color:#c1861f;font-weight:700;">Vote now →</div>' : ''}</div>
+          </div>
+        </div>`).join('') : '<div class="card"><p class="muted">There are no elections for you right now. When your school opens one, you will be notified here.</p></div>'}`;
+    view.querySelectorAll('[data-open]').forEach((c) => c.addEventListener('click', () => ballot(view, ctx, c.dataset.open)));
+  }
+
+  async function ballot(view, ctx, id) {
+    const { api, esc, toast } = ctx;
+    const d = await api('/elections/' + id);
+    const e = d.election;
+    const open = e.state === 'OPEN' && !e.hasVoted;
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(e.title)}</h1><button class="btn btn-ghost btn-sm" id="el-back">← All elections</button></div>
+      ${e.description ? `<p class="muted" style="margin-bottom:14px;">${esc(e.description)}</p>` : ''}
+      <div class="meta" style="margin-bottom:16px;">${esc(kindLabel(e.kind))} · ${esc(votersLabel(e.voters))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''} · <span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
+      ${e.hasVoted ? '<div class="hint-box" style="margin-bottom:16px;">✅ Your vote has been counted. Thank you for taking part. Your ballot is secret — nobody can see who you voted for.</div>' : ''}
+      ${e.state === 'UPCOMING' ? `<div class="hint-box" style="margin-bottom:16px;">Voting opens ${esc(when(e.opensAt) || 'soon')}.</div>` : ''}
+      ${d.positions.map((p) => `
+        <div class="card" style="margin-bottom:14px;">
+          <h3 style="margin-bottom:10px;">${esc(p.title)}</h3>
+          ${p.candidates.map((c) => `
+            <label class="lzx-cand" style="display:flex;gap:12px;align-items:flex-start;padding:10px;border:1.5px solid rgba(128,128,128,.3);border-radius:12px;margin-bottom:8px;${open ? 'cursor:pointer;' : 'opacity:.85;'}">
+              ${open ? `<input type="radio" name="pos-${p.id}" value="${c.id}" style="margin-top:14px;">` : ''}
+              ${candidateFace(esc, c)}
+              <div><div style="font-weight:700;">${esc(c.name)}</div>${c.manifesto ? `<div class="meta" style="white-space:pre-wrap;">${esc(c.manifesto)}</div>` : ''}</div>
+            </label>`).join('')}
+          ${open ? `<button class="btn btn-ghost btn-sm" data-clear="${p.id}">Clear my choice</button>` : ''}
+        </div>`).join('')}
+      ${open ? '<button class="btn btn-primary" id="el-cast">Cast my vote</button><p class="muted" style="font-size:.8rem;margin-top:8px;">You can skip a position. Once you cast your vote it cannot be changed.</p>' : ''}
+      ${d.results ? resultsHtml(esc, d.results, null) : ''}`;
+    view.querySelector('#el-back').addEventListener('click', () => elections(view, ctx));
+    view.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => view.querySelectorAll(`input[name="pos-${b.dataset.clear}"]`).forEach((r) => { r.checked = false; })));
+    const cast = view.querySelector('#el-cast');
+    if (cast) cast.addEventListener('click', async () => {
+      const choices = d.positions.map((p) => { const r = view.querySelector(`input[name="pos-${p.id}"]:checked`); return r ? { positionId: p.id, candidateId: r.value } : null; }).filter(Boolean);
+      if (!choices.length) return toast('Pick at least one candidate.');
+      const skipped = d.positions.length - choices.length;
+      if (!confirm(`Cast your vote${skipped ? ` (skipping ${skipped} position${skipped === 1 ? '' : 's'})` : ''}? You cannot change it afterwards.`)) return;
+      cast.disabled = true;
+      try { await api(`/elections/${id}/vote`, { method: 'POST', body: { choices } }); toast('🗳️ Vote counted — thank you!'); ballot(view, ctx, id); } catch (err) { toast(err.message); cast.disabled = false; }
+    });
+  }
+
+  // ---- results (used by both the admin and, once allowed, voters)
+  function resultsHtml(esc, positions, turn) {
+    return `
+      <h2 style="margin:22px 0 10px;font-size:1.1rem;">Results</h2>
+      ${turn ? `<div class="grid-cards" style="margin-bottom:16px;">${Object.entries(turn).map(([g, t]) => `<div class="card course-card"><div class="code">${t.voted} / ${t.eligible}</div><div class="meta">${g === 'students' ? 'Students' : 'Lecturers'} voted${t.eligible ? ' (' + Math.round(t.voted / t.eligible * 100) + '%)' : ''}</div></div>`).join('')}</div>` : ''}
+      ${positions.map((p) => `
+        <div class="card" style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;"><h3>${esc(p.title)}</h3><span class="meta">${p.totalVotes} vote${p.totalVotes === 1 ? '' : 's'}${p.tied ? ' · tie for the lead' : ''}</span></div>
+          ${p.candidates.map((c) => `
+            <div style="margin-top:12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                ${candidateFace(esc, c, 34)}
+                <div style="flex:1;"><div style="font-weight:700;">${c.leading ? '👑 ' : ''}${esc(c.name)}</div>
+                  ${turn ? `<div class="meta">${c.byStudents} from students · ${c.byLecturers} from lecturers</div>` : ''}</div>
+                <div style="text-align:right;font-weight:800;">${c.votes}<div class="meta" style="font-weight:500;">${c.percent}%</div></div>
+              </div>
+              <div class="lzx-bar"><div style="width:${c.percent}%"></div></div>
+            </div>`).join('')}
+        </div>`).join('')}`;
+  }
+
+  // ---- the school admin
+  async function electionsAdmin(view, ctx) {
+    const { api, esc, toast } = ctx;
+    const { elections: list } = await api('/elections/manage');
+    view.innerHTML = `
+      <div class="page-head"><h1>Elections</h1><button class="btn btn-accent btn-sm" id="el-new">+ New election</button></div>
+      <p class="muted" style="margin-bottom:16px;">Run a student union (SUG) election or an election among lecturers. Voters get a notification when you open it, vote once, and the ballot is secret — you see each candidate's votes and who has turned out, never who voted for whom.</p>
+      ${list.length ? list.map((e) => `
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind))} · ${esc(votersLabel(e.voters))} · ${e.positions} position${e.positions === 1 ? '' : 's'} · ${e.ballots} ballot${e.ballots === 1 ? '' : 's'} cast${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
+            <div><span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+            ${e.state === 'DRAFT' ? `<button class="btn btn-ghost btn-sm" data-edit="${e.id}">✏️ Edit</button><button class="btn btn-primary btn-sm" data-open="${e.id}">▶ Open voting</button><button class="btn btn-ghost btn-sm" data-del="${e.id}">Delete</button>` : ''}
+            ${e.state !== 'DRAFT' ? `<button class="btn btn-primary btn-sm" data-results="${e.id}">📊 View votes</button>` : ''}
+            ${e.state === 'OPEN' || e.state === 'UPCOMING' ? `<button class="btn btn-ghost btn-sm" data-close="${e.id}">⏹ Close voting</button>` : ''}
+          </div>
+        </div>`).join('') : '<div class="card"><p class="muted">No elections yet. Start one with “New election”.</p></div>'}`;
+    view.querySelector('#el-new').addEventListener('click', () => electionForm(view, ctx, null));
+    const act = (sel, fn) => view.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b)));
+    act('[data-edit]', (b) => electionForm(view, ctx, b.dataset.edit));
+    act('[data-results]', (b) => electionResults(view, ctx, b.dataset.results));
+    act('[data-open]', async (b) => {
+      if (!confirm('Open voting now? Everyone who can vote is notified straight away. After this the election can no longer be edited.')) return;
+      try { const r = await api(`/elections/manage/${b.dataset.open}/open`, { method: 'POST' }); toast(`Voting is open — ${r.notified} people notified`); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
+    });
+    act('[data-close]', async (b) => {
+      if (!confirm('Close voting now? Nobody can vote after this.')) return;
+      try { await api(`/elections/manage/${b.dataset.close}/close`, { method: 'POST' }); toast('Voting closed'); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
+    });
+    act('[data-del]', async (b) => {
+      if (!confirm('Delete this draft election?')) return;
+      try { await api(`/elections/manage/${b.dataset.del}`, { method: 'DELETE' }); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
+    });
+  }
+
+  async function electionResults(view, ctx, id) {
+    const { api, esc, toast } = ctx;
+    const d = await api(`/elections/manage/${id}/results`);
+    const e = d.election;
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(e.title)}</h1><button class="btn btn-ghost btn-sm" id="el-back">← Elections</button></div>
+      <div class="meta" style="margin-bottom:12px;">${esc(kindLabel(e.kind))} · ${esc(votersLabel(e.voters))} · <span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+        <label style="display:flex;gap:8px;align-items:center;font-weight:500;"><input type="checkbox" id="el-vis" ${e.resultsVisible ? 'checked' : ''}> Let voters see the result once voting closes</label>
+        <button class="btn btn-ghost btn-sm" id="el-refresh">↻ Refresh count</button>
+      </div>
+      ${resultsHtml(esc, d.positions, d.turnout)}
+      <h3 style="margin:22px 0 8px;">Who has voted (${d.voted.length})</h3>
+      <p class="muted" style="font-size:.85rem;margin-bottom:8px;">This list shows that a person voted, not what they chose.</p>
+      <div class="card" style="max-height:340px;overflow:auto;">${d.voted.map((v) => `<div class="list-row"><div><div style="font-weight:600;">${esc(v.name)}</div><div class="meta">${esc(v.idNumber || '')} · ${v.role === 'STUDENT' ? 'Student' : 'Lecturer'}</div></div><div class="meta">${esc(fmt(v.at))}</div></div>`).join('') || '<p class="muted" style="padding:12px;">Nobody has voted yet.</p>'}</div>`;
+    view.querySelector('#el-back').addEventListener('click', () => electionsAdmin(view, ctx));
+    view.querySelector('#el-refresh').addEventListener('click', () => electionResults(view, ctx, id));
+    view.querySelector('#el-vis').addEventListener('change', async (ev) => {
+      try { await api(`/elections/manage/${id}/results-visible`, { method: 'POST', body: { visible: ev.target.checked } }); toast(ev.target.checked ? 'Voters will see the result' : 'Result hidden from voters'); } catch (err) { toast(err.message); }
+    });
+  }
+
+  async function electionForm(view, ctx, editId) {
+    const { api, esc, toast } = ctx;
+    let model = { title: '', description: '', kind: 'STUDENT_SUG', voters: 'STUDENTS', opensAt: '', closesAt: '', resultsVisible: false, positions: [{ title: '', candidates: [] }] };
+    if (editId) {
+      const d = await api('/elections/manage/' + editId);
+      const e = d.election;
+      const local = (x) => (x ? new Date(new Date(x).getTime() - new Date(x).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
+      model = { title: e.title, description: e.description || '', kind: e.kind, voters: e.voters, opensAt: local(e.opensAt), closesAt: local(e.closesAt), resultsVisible: e.resultsVisible, positions: d.positions.map((p) => ({ title: p.title, candidates: p.candidates.map((c) => ({ userId: c.userId, name: c.name, manifesto: c.manifesto || '' })) })) };
+    }
+    function draw() {
+      view.innerHTML = `
+        <div class="page-head"><h1>${editId ? 'Edit election' : 'New election'}</h1><button class="btn btn-ghost btn-sm" id="ef-cancel">Cancel</button></div>
+        <div class="card" style="margin-bottom:14px;">
+          <div class="field"><label>Title</label><input id="ef-title" maxlength="120" value="${esc(model.title)}" placeholder="e.g. SUG Election 2026/2027"></div>
+          <div class="field"><label>Description (optional)</label><textarea id="ef-desc" rows="2" maxlength="600">${esc(model.description)}</textarea></div>
+          <div class="field"><label>Who is standing?</label><select id="ef-kind"><option value="STUDENT_SUG" ${model.kind === 'STUDENT_SUG' ? 'selected' : ''}>Students — student union (SUG) election</option><option value="LECTURER" ${model.kind === 'LECTURER' ? 'selected' : ''}>Lecturers — lecturers' election</option></select></div>
+          <div class="field"><label>Who votes?</label><select id="ef-voters"><option value="STUDENTS" ${model.voters === 'STUDENTS' ? 'selected' : ''}>Students</option><option value="LECTURERS" ${model.voters === 'LECTURERS' ? 'selected' : ''}>Lecturers</option><option value="BOTH" ${model.voters === 'BOTH' ? 'selected' : ''}>Students and lecturers</option></select></div>
+          <div class="field"><label>Voting opens (optional — leave empty to start when you press Open)</label><input id="ef-opens" type="datetime-local" value="${esc(model.opensAt)}"></div>
+          <div class="field"><label>Voting closes (optional — leave empty to close it yourself)</label><input id="ef-closes" type="datetime-local" value="${esc(model.closesAt)}"></div>
+          <label style="display:flex;gap:8px;align-items:center;font-weight:500;"><input type="checkbox" id="ef-vis" ${model.resultsVisible ? 'checked' : ''}> Let voters see the result once voting closes</label>
+        </div>
+        ${model.positions.map((p, pi) => `
+          <div class="card" style="margin-bottom:12px;" data-pos="${pi}">
+            <div style="display:flex;gap:8px;"><input class="ef-ptitle" data-pi="${pi}" value="${esc(p.title)}" placeholder="Position, e.g. President" maxlength="80" style="flex:1;font-weight:700;">${model.positions.length > 1 ? `<button class="btn btn-ghost btn-sm" data-delpos="${pi}">Remove position</button>` : ''}</div>
+            ${p.candidates.map((c, ci) => `
+              <div style="margin-top:10px;padding:10px;border:1px solid rgba(128,128,128,.3);border-radius:10px;">
+                <div style="display:flex;gap:8px;align-items:center;"><input class="ef-cname" data-pi="${pi}" data-ci="${ci}" value="${esc(c.name)}" placeholder="Candidate name" maxlength="100" style="flex:1;" ${c.userId ? 'readonly title="Picked from your school directory"' : ''}><button class="btn btn-ghost btn-sm" data-delcand="${pi}:${ci}">✕</button></div>
+                <textarea class="ef-cman" data-pi="${pi}" data-ci="${ci}" rows="2" placeholder="Manifesto / short bio (optional)" maxlength="600" style="width:100%;margin-top:6px;">${esc(c.manifesto || '')}</textarea>
+              </div>`).join('')}
+            <div style="margin-top:10px;position:relative;">
+              <input class="ef-find" data-pi="${pi}" placeholder="🔎 Add a candidate from your school (search by name or ID)…" style="width:100%;">
+              <div class="ef-found" data-found="${pi}" style="position:absolute;left:0;right:0;z-index:20;background:var(--paper-raised,#fff);color:var(--ink,#142033);border:1px solid rgba(128,128,128,.4);border-radius:10px;max-height:220px;overflow:auto;" hidden></div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-addname="${pi}" style="margin-top:8px;">+ Add a candidate by name</button>
+          </div>`).join('')}
+        <button class="btn btn-ghost" id="ef-addpos" style="margin-bottom:16px;">+ Add another position</button>
+        <div style="display:flex;gap:10px;"><button class="btn btn-primary" id="ef-save">Save election</button></div>`;
+      wire();
+    }
+    function readForm() {
+      model.title = view.querySelector('#ef-title').value; model.description = view.querySelector('#ef-desc').value;
+      model.kind = view.querySelector('#ef-kind').value; model.voters = view.querySelector('#ef-voters').value;
+      model.opensAt = view.querySelector('#ef-opens').value; model.closesAt = view.querySelector('#ef-closes').value;
+      model.resultsVisible = view.querySelector('#ef-vis').checked;
+      view.querySelectorAll('.ef-ptitle').forEach((i) => { model.positions[i.dataset.pi].title = i.value; });
+      view.querySelectorAll('.ef-cname').forEach((i) => { model.positions[i.dataset.pi].candidates[i.dataset.ci].name = i.value; });
+      view.querySelectorAll('.ef-cman').forEach((i) => { model.positions[i.dataset.pi].candidates[i.dataset.ci].manifesto = i.value; });
+    }
+    function wire() {
+      view.querySelector('#ef-cancel').addEventListener('click', () => electionsAdmin(view, ctx));
+      view.querySelector('#ef-kind').addEventListener('change', (e) => {
+        readForm();
+        // picking the kind sets the natural voters; candidates picked for the other kind no longer fit
+        model.voters = e.target.value === 'STUDENT_SUG' ? 'STUDENTS' : 'LECTURERS';
+        model.positions.forEach((p) => { p.candidates = p.candidates.filter((c) => !c.userId); });
+        draw();
+      });
+      view.querySelector('#ef-addpos').addEventListener('click', () => { readForm(); model.positions.push({ title: '', candidates: [] }); draw(); });
+      view.querySelectorAll('[data-delpos]').forEach((b) => b.addEventListener('click', () => { readForm(); model.positions.splice(Number(b.dataset.delpos), 1); draw(); }));
+      view.querySelectorAll('[data-delcand]').forEach((b) => b.addEventListener('click', () => { readForm(); const [p, c] = b.dataset.delcand.split(':').map(Number); model.positions[p].candidates.splice(c, 1); draw(); }));
+      view.querySelectorAll('[data-addname]').forEach((b) => b.addEventListener('click', () => { readForm(); model.positions[Number(b.dataset.addname)].candidates.push({ userId: null, name: '', manifesto: '' }); draw(); }));
+      let timer;
+      view.querySelectorAll('.ef-find').forEach((input) => input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const box = view.querySelector(`[data-found="${input.dataset.pi}"]`);
+        const q = input.value.trim();
+        if (q.length < 2) { box.hidden = true; return; }
+        timer = setTimeout(async () => {
+          try {
+            const { people } = await api(`/elections/manage/candidates?kind=${model.kind}&q=${encodeURIComponent(q)}`);
+            box.innerHTML = people.map((p) => `<div class="list-row" data-pick="${p.id}" style="cursor:pointer;padding:8px 12px;"><div><div style="font-weight:600;">${esc(p.name)}</div><div class="meta">${esc(p.detail)}</div></div></div>`).join('') || '<p class="muted" style="padding:10px;">Nobody matches.</p>';
+            box.hidden = false;
+            box.querySelectorAll('[data-pick]').forEach((row) => row.addEventListener('click', () => {
+              const person = people.find((x) => x.id === row.dataset.pick);
+              readForm();
+              const list = model.positions[Number(input.dataset.pi)].candidates;
+              if (list.some((c) => c.userId === person.id)) return toast('Already added to this position.');
+              list.push({ userId: person.id, name: person.name, manifesto: '' });
+              draw();
+            }));
+          } catch (err) { toast(err.message); }
+        }, 250);
+      }));
+      view.querySelector('#ef-save').addEventListener('click', async () => {
+        readForm();
+        const body = {
+          title: model.title, description: model.description, kind: model.kind, voters: model.voters, resultsVisible: model.resultsVisible,
+          opensAt: model.opensAt ? new Date(model.opensAt).toISOString() : null, closesAt: model.closesAt ? new Date(model.closesAt).toISOString() : null,
+          positions: model.positions.map((p) => ({ title: p.title, candidates: p.candidates.map((c) => ({ userId: c.userId || undefined, name: c.name, manifesto: c.manifesto })) })),
+        };
+        try {
+          await api(editId ? '/elections/manage/' + editId : '/elections/manage', { method: editId ? 'PUT' : 'POST', body });
+          toast('Election saved — open it when you are ready.');
+          electionsAdmin(view, ctx);
+        } catch (err) { toast(err.message); }
+      });
+    }
+    draw();
+  }
+
+  // ---------------------------------------------------------------- generated practice: progress banner
+  // The system writes mock exams, past-question practice and practice questions for every course
+  // on the student's dashboard. Opening a screen that shows them starts anything still missing;
+  // while it is being written this shows a note and refreshes the screen when it is done.
+  async function practiceWatch(view, { api, esc, rerender }) {
+    let data;
+    try { data = await api('/practice/ensure', { method: 'POST' }); } catch { return; }
+    const busy = (d) => d.courses.filter((c) => c.status === 'generating' || c.status === 'pending');
+    if (!busy(data).length) return;
+    const bar = document.createElement('div');
+    bar.className = 'hint-box lzx-prep';
+    const head = view.querySelector('.page-head');
+    if (head && head.parentNode === view) head.insertAdjacentElement('afterend', bar); else view.insertBefore(bar, view.firstChild);
+    const text = (d) => '⏳ Preparing your practice questions for ' + busy(d).map((c) => esc(c.title)).join(', ') + '… this page updates by itself.';
+    bar.innerHTML = text(data);
+    let tries = 0;
+    const timer = setInterval(async () => {
+      if (!bar.isConnected || ++tries > 30) return clearInterval(timer);
+      try {
+        const d = await api('/practice/status');
+        if (!bar.isConnected) return clearInterval(timer);
+        if (!busy(d).length) { clearInterval(timer); bar.remove(); rerender(); } else bar.innerHTML = text(d);
+      } catch { /* keep trying */ }
+    }, 8000);
+  }
+
   // ---------------------------------------------------------------- on-demand libraries
   // KaTeX (maths) and Chart.js (graphs) are only used on the AI Teacher's board. They used to be
   // downloaded on every visit to every screen (~450 KB); now they are fetched the first time a
@@ -543,6 +929,7 @@
   const LIBS = {
     katex: { css: 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css', js: 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js', ready: () => window.katex },
     chart: { js: 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js', ready: () => window.Chart },
+    flutterwave: { js: 'https://checkout.flutterwave.com/v3.js', ready: () => typeof window.FlutterwaveCheckout === 'function' },
   };
   const libLoads = {};
   function lib(name) {
@@ -626,5 +1013,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib, pay, elections, electionsAdmin, electionBanner, practiceWatch };
 })();

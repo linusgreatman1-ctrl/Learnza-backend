@@ -2,13 +2,13 @@ const prisma = require('../db');
 
 // Coins are a pay-as-you-go top-up for live AI Teacher time. A subscription already includes
 // AI minutes each billing cycle (src/subscription.js); once those are used up, coins keep the
-// avatar going. 1 coin = 5 minutes. The wallet holds whole coins plus the unspent remainder of
-// the coin currently being used, so a 2-minute answer costs 2 minutes, not a whole coin.
-const SECONDS_PER_COIN = 5 * 60;
+// avatar going. 1 coin = 1 minute (as in PassNow). The wallet holds whole coins plus the unspent
+// remainder of the coin currently being used, so a 30-second answer costs 30 seconds, not a coin.
+const SECONDS_PER_COIN = 60;
 
 const PACKS = [
-  { id: 'COINS_30', coins: 30, amountKobo: 250000, label: '30 coins', minutes: 150 },
-  { id: 'COINS_100', coins: 100, amountKobo: 750000, label: '100 coins', minutes: 500 },
+  { id: 'COINS_30', coins: 30, amountKobo: 250000, label: '30 coins', minutes: 30, blurb: '30 minutes of live AI teaching' },
+  { id: 'COINS_100', coins: 100, amountKobo: 750000, label: '100 coins', minutes: 100, blurb: '100 minutes — best value' },
 ];
 
 function getPack(id) {
