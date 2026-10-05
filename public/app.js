@@ -1611,6 +1611,17 @@
   // user's own avatar only (Digital ID, My Dashboard) -- shows the uploaded photo once
   // set, falling back to initials. `id` must be unique per render since a screen can
   // show it more than once (it currently never does, but this keeps it safe).
+  // Mounts the shared Digital ID card for the signed-in person into #lzx-id-host.
+  function mountMyDigitalId() {
+    const host = document.getElementById('lzx-id-host');
+    if (!host) return;
+    LZX.digitalId(host, {
+      user: state.user, school: state.school, department: state.department, api, esc, toast,
+      photoPath: '/auth/me/avatar',
+      onUser: (user) => { state.user = user; saveSession(state.token, user); },
+    });
+  }
+
   function selfAvatarHtml(id) {
     const u = state.user;
     return u.avatarUrl
@@ -1660,25 +1671,7 @@
     const u = state.user;
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
-      <div class="id-card" style="margin-bottom:28px;">
-        <div class="id-top"><span>Learnza</span><span>Student</span></div>
-        <div class="id-row">
-          ${selfAvatarHtml('avatar-individual-id')}
-          <div>
-            <div class="id-value">${esc(u.fullName)}</div>
-            <div class="id-field tabular" style="margin-top:4px;">${esc(u.email)}</div>
-          </div>
-        </div>
-        <div class="id-grid">
-          <div><div class="id-field">Phone</div><div>${esc(u.phone || '—')}</div></div>
-          <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
-          <div><div class="id-field">Institution type</div><div>${esc(INSTITUTION_TYPE_LABELS[u.institutionType] || '—')}</div></div>
-          <div><div class="id-field">Attended institution</div><div>${esc(u.attendedSchoolName || '—')}</div></div>
-          <div><div class="id-field">Department</div><div>${esc(u.attendedDepartment || '—')}</div></div>
-          <div><div class="id-field">Course of study</div><div>${esc(u.courseOfStudy || '—')}</div></div>
-          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
-        </div>
-      </div>
+      <div id="lzx-id-host"></div>
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Learnza account</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
@@ -1687,7 +1680,7 @@
         <li class="clickable" id="cred-library" style="cursor:pointer;"><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
       </ul>
     `;
-    wireSelfAvatarUpload('avatar-individual-id');
+    mountMyDigitalId();
     document.getElementById('cred-courses').addEventListener('click', () => navigate('individual-courses'));
     document.getElementById('cred-subscription').addEventListener('click', () => navigate('billing'));
     document.getElementById('cred-library').addEventListener('click', () => navigate('library'));
@@ -1712,23 +1705,7 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
-      <div class="id-card" style="margin-bottom:28px;">
-        <div class="id-top"><span>Learnza${state.school ? ` · ${esc(state.school.name)}` : ''}</span><span>Student</span></div>
-        <div class="id-row">
-          ${selfAvatarHtml('avatar-student-id')}
-          <div>
-            <div class="id-value">${esc(u.fullName)}</div>
-            <div class="id-field tabular" style="margin-top:4px;">${esc(u.matricNumber || 'Matric number pending')}</div>
-          </div>
-        </div>
-        <div class="id-grid">
-          <div><div class="id-field">Department</div><div>${state.department ? esc(state.department.name) : '—'}</div></div>
-          <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
-          <div><div class="id-field">Email</div><div>${esc(u.email)}</div></div>
-          <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
-          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
-        </div>
-      </div>
+      <div id="lzx-id-host"></div>
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Digital credentials</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
@@ -1807,7 +1784,7 @@
       </div>
     `;
 
-    wireSelfAvatarUpload('avatar-student-id');
+    mountMyDigitalId();
     document.getElementById('cred-courses').addEventListener('click', () => navigate(state.user.isIndividual ? 'individual-courses' : 'courses'));
     view.querySelectorAll('[data-open-result]').forEach((row) => {
       row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'digital-id' }));

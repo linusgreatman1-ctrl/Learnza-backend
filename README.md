@@ -16,6 +16,7 @@ Schools **cannot register themselves**. The platform owner onboards a school fro
 - **School administration**: directory of lecturers / staff / students, semesters, hostels and allocations, transcript and clearance requests, credentials with public verification, academic record, disciplinary records, staff attendance / CPD / publications, bulk in-app/email/SMS messages.
 - **Money**: student subscriptions (Paystack or Flutterwave) and **coins** — a pay-as-you-go top-up for live AI Teacher minutes once the plan's included minutes run out (1 coin = 5 minutes; packs of 30 / 100).
 - **Help**: support tickets, live chat (AI assistant answers until a person from the team replies), app reviews.
+- **Digital ID**: every account — independent student, school student, lecturer, non-academic staff, school admin — has a PassNow-style card (role badge, photo, ID number, institution, department, level, QR code, "Save as picture"). Anyone can add their own photo; a school admin can set anyone's in the directory, and a lecturer can set the photo of students in their classes. Only facts the account actually holds are shown.
 - **Installable**: both apps are PWAs (manifest, offline shell, "new version available" prompt).
 
 ### Super-admin panel
@@ -58,6 +59,7 @@ SUPER_EMAIL=… SUPER_PASSWORD=… LOG_FILE=server.log node tests/e2e.js        
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/isolation.js                         # two-school isolation + add lecturer/student flows
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/platform.js                          # announcements, payments, settings, library…
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/support-coins.js                     # tickets, chat, reviews, coins, polls
+SUPER_EMAIL=… SUPER_PASSWORD=… node tests/digital-id.js                        # every role signs in and has a Digital ID; photo permissions
 SUPER_EMAIL=… SUPER_PASSWORD=… node tests/oversight.js                         # oversight views, question bank, logs, codes, Code Editor
 ```
 

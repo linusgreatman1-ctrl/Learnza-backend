@@ -7,6 +7,8 @@ const { notify, notifyMany } = require('../services/notification.service');
 const { getCurrentSemesterId } = require('../semester');
 const bulkMessage = require('../services/bulkMessage.service');
 const { departmentsInSchool, coursesInSchool } = require('../scope');
+const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
+const photoUpload = memoryUpload(5);
 
 // People added by the school admin don't need an email -- they sign in with their access
 // code. The column is required and unique, so those accounts get an address that can never
@@ -524,6 +526,19 @@ async function setUserStatus(req, res, next, { role, statuses }) {
   const { passwordHash, ...safe } = updated;
   res.json({ user: safe });
 }
+
+// A photo for someone in this school's directory (their Digital ID card), set by the admin --
+// useful for staff and students who have not added one themselves.
+router.post('/users/:id/photo', photoUpload.single('avatar'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an image first.' });
+  const user = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: { in: ['STUDENT', 'LECTURER', 'STAFF'] } } });
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  let url;
+  try { ({ url } = await saveUpload(req.file)); } catch { return res.status(502).json({ error: 'Upload failed. Please try again.' }); }
+  const updated = await prisma.user.update({ where: { id: user.id }, data: { avatarUrl: url } });
+  const { passwordHash, ...safe } = updated;
+  res.json({ user: safe });
+});
 
 router.post('/lecturers/:id/:action', (req, res, next) =>
   setUserStatus(req, res, next, { role: 'LECTURER', statuses: { suspend: 'SUSPENDED', 'lift-suspension': 'ACTIVE', dismiss: 'DISMISSED' } })

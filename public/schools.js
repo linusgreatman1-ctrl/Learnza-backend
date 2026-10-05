@@ -402,6 +402,7 @@
   function defaultScreenFor(role) {
     if (role === 'STUDENT') return 'my-dashboard';
     if (role === 'LECTURER') return 'lect-dashboard';
+    if (role === 'STAFF') return 'staff-dashboard';
     return 'admin-dashboard';
   }
 
@@ -471,6 +472,12 @@
       ['settings', 'Settings'],
       ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
     ],
+    STAFF: [
+      ['staff-dashboard', 'My Dashboard'],
+      ['library', 'e-Library'],
+      ['digital-id', 'Digital ID'],
+      ['settings', 'Settings'],
+    ],
     ADMIN: [
       ['admin-dashboard', 'My Dashboard'],
       ['admin-directory', 'Staff & Student Directory'],
@@ -487,6 +494,7 @@
       ['admin-announce', 'Announce'],
       ['admin-bulk-message', 'Bulk SMS/Email'],
       ['admin-management', 'Admin Management'],
+      ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
       ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
     ],
@@ -773,6 +781,7 @@
         case 'leaderboard': return renderLeaderboard();
         case 'research': return renderResearchAssistant();
         case 'digital-id': return renderDigitalId();
+        case 'staff-dashboard': return renderStaffDashboard();
         case 'settings': return renderSettings();
         case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
         case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
@@ -1905,9 +1914,12 @@
         const input = document.getElementById('live-askclass-input');
         if (!input.value.trim()) return;
         live.classQuestion = input.value.trim();
+        live.noVoiceUntil = Date.now() + 2000;   // a new class question ends any open turn; nothing is left to answer
+        live.voice = null;
         live.socket.emit('live:ask-class', { liveClassId, question: live.classQuestion });
         input.value = '';
         renderAskClassActive();
+        renderQuestionQueue();
       });
       renderAskClassActive();
     } else {
@@ -1934,39 +1946,88 @@
     });
   }
 
-  // Host: raised hands (each can be let in), then the typed questions and answers students have sent.
+  // Host: one question in front of the lecturer at a time. It leaves the list as soon as it has been dealt with --
+  // a typed reply is sent, or "Done answering" is tapped after answering out loud -- and the next one pops up.
+  function seqOf(o) { if (!o._n) { live.seq = (live.seq || 0) + 1; o._n = live.seq; } return o._n; }
+
   function renderQuestionQueue() {
     const box = document.getElementById('live-question-queue');
     const countPill = document.getElementById('live-question-count');
     if (!box || !live) return;
-    const hands = Array.from(live.hands.values());
-    const items = Array.from(live.questions.values());
-    countPill.textContent = `${hands.length + items.length} waiting`;
-    const handHtml = hands.map((h) => `
-      <div class="list-row" style="align-items:center; gap:8px;">
-        <div><div style="font-weight:600;">✋ ${esc(h.studentName)}</div><div class="meta">${h.kind === 'answer' ? 'wants to answer' : 'has a question'}</div></div>
-        <button class="btn btn-accent btn-sm" data-allow="${esc(h.studentSocketId)}">🎤 Allow to speak</button>
-      </div>`).join('');
-    const itemHtml = items.map((q) => `
-      <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:8px;" data-question-row="${q.id}">
-        <div><div style="font-weight:600;">${q.kind === 'answer' ? '✍' : '💬'} ${esc(q.studentName)} ${q.kind === 'answer' ? 'answered' : 'asked'}</div><p style="margin-top:4px;">${esc(q.text)}</p></div>
-        <form class="answer-form" data-answer-for="${q.id}" style="display:flex; gap:8px; width:100%;">
-          <input type="text" class="answer-input" placeholder="Reply to the class…" style="flex:1;">
-          <button class="btn btn-primary btn-sm" type="submit">Reply</button>
-          <button class="btn btn-ghost btn-sm done-btn" type="button" title="Mark as done">✅</button>
-        </form>
-      </div>`).join('');
-    box.innerHTML = (handHtml + itemHtml) || '<p class="muted">Nothing yet. When students raise a hand you can let them speak.</p>';
+    const queue = Array.from(live.hands.values()).map((h) => ({ n: seqOf(h), hand: h }))
+      .concat(Array.from(live.questions.values()).map((q) => ({ n: seqOf(q), q })))
+      .sort((a, b) => a.n - b.n);
+    const busy = !!(live.floor || live.voice);
+    countPill.textContent = `${queue.length} waiting`;
+    live.drafts = live.drafts || {};
+    const focused = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('answer-input') ? document.activeElement.closest('form').dataset.answerFor : null;
+    let html = '';
+    if (live.voice) {
+      html += `
+      <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:8px;">
+        <div><div style="font-weight:600;">🎤 Answer ${esc(live.voice.name)}'s question out loud</div>${live.voice.text ? `<p style="margin-top:4px;">${esc(live.voice.text)}</p>` : ''}<div class="meta">The class can hear you.</div></div>
+        <button class="btn btn-accent btn-sm" id="live-voice-done">✔ Done answering</button>
+      </div>`;
+    } else if (!live.floor && queue.length) {
+      const cur = queue[0];
+      if (cur.hand) {
+        const h = cur.hand;
+        html += `
+        <div class="list-row" style="align-items:center; gap:8px;">
+          <div><div style="font-weight:600;">✋ ${esc(h.studentName)}</div><div class="meta">${h.kind === 'answer' ? 'wants to answer' : 'has a question'}</div></div>
+          <button class="btn btn-accent btn-sm" data-allow="${esc(h.studentSocketId)}">🎤 Allow to speak</button>
+        </div>`;
+      } else {
+        const q = cur.q;
+        html += `
+        <div class="list-row" style="align-items:flex-start; flex-direction:column; gap:8px;" data-question-row="${esc(q.id)}">
+          <div><div style="font-weight:600;">${q.kind === 'answer' ? '✍' : '💬'} ${esc(q.studentName)} ${q.kind === 'answer' ? 'answered' : 'asked'}</div><p style="margin-top:4px;">${esc(q.text)}</p></div>
+          <form class="answer-form" data-answer-for="${esc(q.id)}" style="display:flex; gap:8px; width:100%;">
+            <input type="text" class="answer-input" placeholder="Type your answer…" value="${esc(live.drafts[q.id] || '')}" style="flex:1;">
+            <button class="btn btn-primary btn-sm" type="submit">Send</button>
+          </form>
+          <button class="btn btn-ghost btn-sm voice-btn" type="button" style="width:100%;">🎤 Answer by voice instead</button>
+        </div>`;
+      }
+    }
+    const waiting = queue.slice(busy ? 0 : 1);
+    if (waiting.length) {
+      const names = waiting.slice(0, 3).map((w) => esc((w.hand ? w.hand.studentName : w.q.studentName))).join(', ');
+      html += `<div class="meta" style="padding:6px 0;">⏳ ${waiting.length} more waiting — ${names}${waiting.length > 3 ? '…' : ''}</div>`;
+    }
+    box.innerHTML = html || '<p class="muted">Nothing yet. When a student raises a hand or types a question, it shows up here.</p>';
+
+    const voiceDone = document.getElementById('live-voice-done');
+    if (voiceDone) voiceDone.addEventListener('click', () => {
+      const v = live.voice;
+      live.voice = null;
+      // A typed question is closed on the server too, and the class sees that it was answered out loud.
+      if (v && v.questionId) live.socket.emit('live:answer-question', { liveClassId: live.liveClassId, questionId: v.questionId, answer: 'Answered out loud in class 🎤' });
+      renderQuestionQueue();
+    });
     box.querySelectorAll('.answer-form').forEach((form) => {
+      const input = form.querySelector('.answer-input');
+      input.addEventListener('input', () => { live.drafts[form.dataset.answerFor] = input.value; });
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        const input = form.querySelector('.answer-input');
         if (!input.value.trim()) return;
         live.socket.emit('live:answer-question', { liveClassId: live.liveClassId, questionId: form.dataset.answerFor, answer: input.value.trim() });
         live.questions.delete(form.dataset.answerFor);
+        delete live.drafts[form.dataset.answerFor];
         renderQuestionQueue();
       });
-      form.querySelector('.done-btn').addEventListener('click', () => { live.questions.delete(form.dataset.answerFor); renderQuestionQueue(); });
+      if (focused === form.dataset.answerFor) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    });
+    box.querySelectorAll('.voice-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('[data-question-row]');
+        const id = row && row.dataset.questionRow;
+        const q = id && live.questions.get(id);
+        if (!q) return;
+        live.questions.delete(id);
+        live.voice = { name: q.studentName, text: q.text, questionId: q.id };
+        renderQuestionQueue();
+      });
     });
     box.querySelectorAll('[data-allow]').forEach((btn) => {
       btn.addEventListener('click', () => live.socket.emit('live:allow', { liveClassId: live.liveClassId, studentSocketId: btn.dataset.allow }));
@@ -2177,8 +2238,11 @@
     });
     socket.on('live:floor', (floor) => {
       if (!live) return;
+      const prev = live.floor;
       live.floor = floor || null;
-      if (isHost) renderSpeakingList(); else renderHandZone();
+      // A student has just finished asking out loud: the lecturer answers out loud and taps "Done answering".
+      if (isHost && prev && !floor && prev.kind !== 'answer' && Date.now() > (live.noVoiceUntil || 0)) live.voice = { name: prev.name, text: '' };
+      if (isHost) { renderSpeakingList(); renderQuestionQueue(); } else renderHandZone();
     });
     socket.on('live:class-question', ({ question }) => {
       if (!live) return;
@@ -2623,6 +2687,17 @@
   // user's own avatar only (Digital ID, My Dashboard) -- shows the uploaded photo once
   // set, falling back to initials. `id` must be unique per render since a screen can
   // show it more than once (it currently never does, but this keeps it safe).
+  // Mounts the shared Digital ID card for the signed-in person into #lzx-id-host.
+  function mountMyDigitalId() {
+    const host = document.getElementById('lzx-id-host');
+    if (!host) return;
+    LZX.digitalId(host, {
+      user: state.user, school: state.school, department: state.department, api, esc, toast,
+      photoPath: '/auth/me/avatar',
+      onUser: (user) => { state.user = user; saveSession(state.token, user); },
+    });
+  }
+
   function selfAvatarHtml(id) {
     const u = state.user;
     return u.avatarUrl
@@ -2672,25 +2747,7 @@
     const u = state.user;
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
-      <div class="id-card" style="margin-bottom:28px;">
-        <div class="id-top"><span>Learnza</span><span>Student</span></div>
-        <div class="id-row">
-          ${selfAvatarHtml('avatar-individual-id')}
-          <div>
-            <div class="id-value">${esc(u.fullName)}</div>
-            <div class="id-field tabular" style="margin-top:4px;">${esc(shownEmail(u.email))}</div>
-          </div>
-        </div>
-        <div class="id-grid">
-          <div><div class="id-field">Phone</div><div>${esc(u.phone || '—')}</div></div>
-          <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
-          <div><div class="id-field">Institution type</div><div>${esc(INSTITUTION_TYPE_LABELS[u.institutionType] || '—')}</div></div>
-          <div><div class="id-field">Attended institution</div><div>${esc(u.attendedSchoolName || '—')}</div></div>
-          <div><div class="id-field">Department</div><div>${esc(u.attendedDepartment || '—')}</div></div>
-          <div><div class="id-field">Course of study</div><div>${esc(u.courseOfStudy || '—')}</div></div>
-          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
-        </div>
-      </div>
+      <div id="lzx-id-host"></div>
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Learnza account</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
@@ -2699,7 +2756,7 @@
         <li class="clickable" id="cred-library" style="cursor:pointer;"><span>e-Library access</span><span class="pill pill-pass">Granted</span></li>
       </ul>
     `;
-    wireSelfAvatarUpload('avatar-individual-id');
+    mountMyDigitalId();
     document.getElementById('cred-courses').addEventListener('click', () => navigate('individual-courses'));
     document.getElementById('cred-subscription').addEventListener('click', () => navigate('billing'));
     document.getElementById('cred-library').addEventListener('click', () => navigate('library'));
@@ -2756,7 +2813,35 @@
     });
   }
 
+  // Non-academic staff and school admins: the card is the whole page.
+  function renderPlainDigitalId() {
+    view.innerHTML = '<div class="page-head"><h1>Digital ID</h1></div><div id="lzx-id-host"></div>';
+    mountMyDigitalId();
+  }
+
+  // Non-academic staff (librarians, registry, bursary...) had no screens before; this is their home.
+  async function renderStaffDashboard() {
+    const u = state.user;
+    view.innerHTML = `
+      <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="card" id="dash-profile-card" style="padding:20px; margin-bottom:22px; cursor:pointer;">
+        <div style="display:flex; align-items:center; gap:16px;">
+          ${selfAvatarHtml('avatar-staff-dash')}
+          <div>${profileLines().map((l, i) => i === 0 ? `<div style="font-weight:700;">${l}</div>` : `<div class="meta">${l}</div>`).join('')}${u.position ? `<div class="meta">${esc(u.position)}</div>` : ''}</div>
+        </div>
+      </div>
+      <div class="grid-cards">
+        <button class="card course-card" id="staff-go-id" style="text-align:left; cursor:pointer;"><div class="code">🪪</div><div class="meta">Your Digital ID</div></button>
+        <button class="card course-card" id="staff-go-lib" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">e-Library</div></button>
+      </div>`;
+    wireSelfAvatarUpload('avatar-staff-dash');
+    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('staff-go-id').addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('staff-go-lib').addEventListener('click', () => navigate('library'));
+  }
+
   async function renderDigitalId() {
+    if (state.user.role === 'ADMIN' || state.user.role === 'STAFF') return renderPlainDigitalId();
     if (state.user.role === 'LECTURER') return renderLecturerDigitalId();
     if (state.user.isIndividual) return renderIndividualDigitalId();
     const [{ courses }, { results }, { results: formalResults }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
@@ -2773,23 +2858,7 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
-      <div class="id-card" style="margin-bottom:28px;">
-        <div class="id-top"><span>Learnza${state.school ? ` · ${esc(state.school.name)}` : ''}</span><span>Student</span></div>
-        <div class="id-row">
-          ${selfAvatarHtml('avatar-student-id')}
-          <div>
-            <div class="id-value">${esc(u.fullName)}</div>
-            <div class="id-field tabular" style="margin-top:4px;">${esc(u.matricNumber || 'Matric number pending')}</div>
-          </div>
-        </div>
-        <div class="id-grid">
-          <div><div class="id-field">Department</div><div>${state.department ? esc(state.department.name) : '—'}</div></div>
-          <div><div class="id-field">Level</div><div>${levelLabel(u.yearOfStudy) || '—'}</div></div>
-          <div><div class="id-field">Email</div><div>${esc(shownEmail(u.email))}</div></div>
-          <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
-          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
-        </div>
-      </div>
+      <div id="lzx-id-host"></div>
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Digital credentials</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
@@ -2868,7 +2937,7 @@
       </div>
     `;
 
-    wireSelfAvatarUpload('avatar-student-id');
+    mountMyDigitalId();
     document.getElementById('cred-courses').addEventListener('click', () => navigate(state.user.isIndividual ? 'individual-courses' : 'courses'));
     view.querySelectorAll('[data-open-result]').forEach((row) => {
       row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'digital-id' }));
@@ -5184,26 +5253,9 @@
     const u = state.user;
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
-      <div class="id-card" style="margin-bottom:28px;">
-        <div class="id-top"><span>Learnza${state.school ? ` · ${esc(state.school.name)}` : ''}</span><span>Lecturer</span></div>
-        <div class="id-row">
-          ${selfAvatarHtml('avatar-lect-id')}
-          <div>
-            <div class="id-value">${esc(u.fullName)}</div>
-            <div class="id-field tabular" style="margin-top:4px;">${esc(u.staffId || 'Staff ID pending')}</div>
-          </div>
-        </div>
-        <div class="id-grid">
-          <div><div class="id-field">Department</div><div>${department ? esc(department.name) : '—'}</div></div>
-          <div><div class="id-field">Courses taught</div><div>${courses.length}</div></div>
-          <div><div class="id-field">Email</div><div>${esc(shownEmail(u.email))}</div></div>
-          <div><div class="id-field">Phone</div><div>${esc(u.phone || '—')}</div></div>
-          <div><div class="id-field">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
-          <div><div class="id-field">Member since</div><div>${new Date(u.createdAt).toLocaleDateString()}</div></div>
-        </div>
-      </div>
+      <div id="lzx-id-host"></div>
     `;
-    wireSelfAvatarUpload('avatar-lect-id');
+    mountMyDigitalId();
   }
 
   // "My Students" -- banner per class (course), matching My Courses -- clicking one
@@ -5315,6 +5367,7 @@
     const data = await api(`/lect/students/${studentId}`);
     view.innerHTML = `
       <div class="page-head"><h1>${esc(data.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to class</button></div>
+      <div id="lzx-id-host" style="margin-bottom:6px;"></div>
       <div class="card" style="padding:24px; max-width:640px; margin-bottom:22px;">
         <div class="id-grid">
           <div><div class="meta">Matric No.</div><div class="tabular">${esc(data.matricNumber || '—')}</div></div>
@@ -5342,6 +5395,11 @@
         </div>
       ` : ''}
     `;
+    LZX.digitalId(document.getElementById('lzx-id-host'), {
+      user: { id: data.id, role: 'STUDENT', fullName: data.fullName, matricNumber: data.matricNumber, yearOfStudy: data.yearOfStudy, avatarUrl: data.avatarUrl, createdAt: data.createdAt, schoolId: true },
+      school: state.school, department: { name: data.department }, api, esc, toast,
+      photoPath: `/lect/students/${data.id}/photo`,
+    });
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-class-roster', { courseId, courseTitle, courseCode }));
   }
 
@@ -6485,6 +6543,7 @@
     const { [cfg.detailKey]: u } = await api(`${cfg.base}/${state.view.userId}`);
     view.innerHTML = `
       <div class="page-head"><h1>${esc(u.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back</button></div>
+      <div id="lzx-id-host" style="margin-bottom:6px;"></div>
       <div class="card" style="padding:24px; max-width:560px;">
         <div class="id-grid" style="margin-bottom:8px;">
           <div><div class="meta">${cfg.idLabel}</div><div>${esc(u[cfg.idField] || '—')}</div></div>
@@ -6505,6 +6564,10 @@
       </div>
       <div id="edit-box" style="max-width:560px;" hidden></div>
     `;
+    LZX.digitalId(document.getElementById('lzx-id-host'), {
+      user: u, school: state.school, department: u.department, api, esc, toast,
+      photoPath: `/admin/users/${u.id}/photo`,
+    });
     document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory-list', { directoryType: state.view.directoryType }));
     const academicBtn = document.getElementById('academic-record-btn');
     if (academicBtn) academicBtn.addEventListener('click', () => navigate('academic-record', { studentId: u.id }));

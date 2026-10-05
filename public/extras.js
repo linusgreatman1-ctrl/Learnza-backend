@@ -317,6 +317,168 @@
     }
   }
 
+  // ---------------------------------------------------------------- Digital ID
+  // One card for every kind of account — student, independent learner, lecturer, non-academic
+  // staff, school admin — same layout as PassNow's: role badge, photo (tap to add or change),
+  // name, the facts we actually hold, and a QR code. Nothing is invented: a field we do not
+  // have is left out. "Save as picture" draws the card straight to a PNG.
+  const QR_LIB = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+  const ROLE_LABEL = { STUDENT: 'Student', LECTURER: 'Lecturer', STAFF: 'Staff', ADMIN: 'School Admin' };
+  let qrLoading = null;
+  function loadQr() {
+    if (window.qrcode) return Promise.resolve(window.qrcode);
+    if (!qrLoading) qrLoading = new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = QR_LIB; el.onload = () => resolve(window.qrcode); el.onerror = () => { qrLoading = null; reject(new Error('qr')); };
+      document.head.appendChild(el);
+    });
+    return qrLoading;
+  }
+  const initialsOf = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
+  function idNumber(u) {
+    if (u.role === 'STUDENT' && u.matricNumber) return u.matricNumber;
+    if (u.role !== 'STUDENT' && u.staffId) return u.staffId;
+    return 'LZ-' + String(u.id || '').replace(/[^a-z0-9]/gi, '').slice(-8).toUpperCase();
+  }
+  function levelOf(u) { return u.yearOfStudy ? u.yearOfStudy * 100 + 'L' : ''; }
+  function idFacts(u, ctx) {
+    const f = [['ID No.', idNumber(u)]];
+    const inst = (ctx.school && ctx.school.name) || u.attendedSchoolName || (u.schoolId ? '' : 'Independent learner');
+    if (inst) f.push(['Institution', inst]);
+    const dept = (ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment;
+    if (dept) f.push(['Department', dept]);
+    if (u.role === 'STUDENT' && levelOf(u)) f.push(['Level', levelOf(u)]);
+    if (u.role === 'STUDENT' && u.courseOfStudy) f.push(['Programme', u.courseOfStudy]);
+    if (u.role === 'STAFF' && u.position) f.push(['Position', u.position]);
+    if (ctx.school && ctx.school.state) f.push(['State', ctx.school.state]);
+    if (u.createdAt) f.push(['Member since', new Date(u.createdAt).getFullYear()]);
+    return f;
+  }
+  function idSubLine(u, ctx) {
+    const dept = (ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment;
+    if (u.role === 'STUDENT') return [dept, levelOf(u)].filter(Boolean).join(' · ') || 'Learnza student';
+    if (u.role === 'LECTURER') return dept ? 'Lecturer · ' + dept : 'Teaching staff';
+    if (u.role === 'STAFF') return u.position || 'Non-academic staff';
+    return 'School administration';
+  }
+  const qrText = (u) => 'LEARNZA|' + u.role + '|' + u.id + '|' + idNumber(u);
+
+  // ctx: { user, school, department, api, esc, toast, photoPath, onUser, readOnly }
+  //   photoPath  where a new photo is POSTed ('/auth/me/avatar' for your own card)
+  //   onUser     called with the updated user after a photo is saved
+  function digitalId(host, ctx) {
+    const { esc, toast, api } = ctx;
+    const u = ctx.user;
+    const canPhoto = !!ctx.photoPath;
+    host.innerHTML = `
+      <div class="lzx-id" id="lzx-id-card">
+        <div class="lzx-id-top"><div class="lzx-id-brand">Learn<b>za</b> · Digital ID</div><div class="lzx-id-role">${esc(ROLE_LABEL[u.role] || 'Member')}</div></div>
+        <div class="lzx-id-mid">
+          <div class="lzx-id-pic" ${canPhoto ? 'id="lzx-id-pic" title="Tap to add or change the photo"' : ''}>${u.avatarUrl ? `<img alt="" src="${esc(u.avatarUrl)}">` : esc(initialsOf(u.fullName))}${canPhoto ? '<span class="lzx-id-cam">📷</span>' : ''}</div>
+          <div><div class="lzx-id-name">${esc(u.fullName)}</div><div class="lzx-id-sub">${esc(idSubLine(u, ctx))}</div></div>
+        </div>
+        <div class="lzx-id-grid">${idFacts(u, ctx).map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+        <div class="lzx-id-qr" id="lzx-id-qr"></div>
+      </div>
+      <div class="lzx-id-foot"><button class="btn btn-ghost btn-sm" id="lzx-id-save">⬇ Save as picture</button><small>${canPhoto ? 'Tap the photo to add or change it. ' : ''}Show this ID or its QR code when asked.</small></div>`;
+
+    loadQr().then((qrcode) => {
+      const box = host.querySelector('#lzx-id-qr');
+      if (!box) return;
+      const q = qrcode(0, 'M'); q.addData(qrText(u)); q.make();
+      box.innerHTML = q.createSvgTag({ cellSize: 3, margin: 0, scalable: true });
+    }).catch(() => { const box = host.querySelector('#lzx-id-qr'); if (box) box.style.display = 'none'; });
+
+    if (canPhoto) host.querySelector('#lzx-id-pic').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*'; input.hidden = true;
+      document.body.appendChild(input);
+      input.addEventListener('change', async () => {
+        const file = input.files[0];
+        input.remove();
+        if (!file) return;
+        try {
+          const blob = await squarePhoto(file);
+          const fd = new FormData();
+          fd.append('avatar', blob, 'photo.jpg');
+          const r = await api(ctx.photoPath, { method: 'POST', body: fd });
+          if (r.user) { ctx.user = r.user; if (ctx.onUser) ctx.onUser(r.user); }
+          toast('📸 Photo saved');
+          digitalId(host, Object.assign({}, ctx, { user: r.user || u }));
+        } catch (err) { toast(err.message || 'Could not use that photo.'); }
+      });
+      input.click();
+    });
+    host.querySelector('#lzx-id-save').addEventListener('click', () => saveCard(u, ctx).catch(() => toast('Could not save the picture.')));
+  }
+
+  // Crops to a centred square and shrinks, so the upload is small (the server accepts 5 MB).
+  function squarePhoto(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\//.test(file.type)) return reject(new Error('Please choose an image file.'));
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const side = Math.min(img.width, img.height), out = Math.min(480, side);
+        const c = document.createElement('canvas'); c.width = out; c.height = out;
+        c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not read that photo.'))), 'image/jpeg', 0.86);
+      };
+      img.onerror = () => reject(new Error('Could not read that photo.'));
+      img.src = url;
+    });
+  }
+
+  // Draws the card to a PNG so it needs no extra library, and downloads it.
+  async function saveCard(u, ctx) {
+    const W = 1011, H = 638;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0f1b2e'); bg.addColorStop(.55, '#16355c'); bg.addColorStop(1, '#5a3d0e');
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    const stripe = g.createLinearGradient(0, 0, W, 0); stripe.addColorStop(0, '#e3ac4c'); stripe.addColorStop(.5, '#4a8cff'); stripe.addColorStop(1, '#e3ac4c');
+    g.fillStyle = stripe; g.fillRect(0, H - 16, W, 16);
+    g.fillStyle = '#fff'; g.font = '800 34px Sora, sans-serif'; g.fillText('Learn', 48, 74);
+    const lw = g.measureText('Learn').width; g.fillStyle = '#e3ac4c'; g.fillText('za', 48 + lw, 74);
+    g.fillStyle = '#fff'; g.font = '700 26px sans-serif'; g.fillText('Digital ID', 48 + lw + g.measureText('za').width + 18, 74);
+    g.font = '800 22px sans-serif';
+    const role = (ROLE_LABEL[u.role] || 'Member').toUpperCase(); const rw = g.measureText(role).width + 40;
+    g.fillStyle = 'rgba(255,255,255,.16)'; g.beginPath(); if (g.roundRect) g.roundRect(W - 48 - rw, 38, rw, 46, 23); else g.rect(W - 48 - rw, 38, rw, 46); g.fill();
+    g.fillStyle = '#fff'; g.fillText(role, W - 48 - rw + 20, 70);
+    g.font = '800 46px Sora, sans-serif'; g.fillText(String(u.fullName || '').slice(0, 30), 270, 200);
+    g.font = '600 26px sans-serif'; g.fillStyle = 'rgba(255,255,255,.75)'; g.fillText(idSubLine(u, ctx).slice(0, 44), 270, 246);
+    let y = 380, col = 0;
+    idFacts(u, ctx).forEach(([k, v]) => {
+      const px = 48 + col * 330;
+      g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '700 18px sans-serif'; g.fillText(String(k).toUpperCase(), px, y);
+      g.fillStyle = '#fff'; g.font = '700 26px sans-serif'; g.fillText(String(v).slice(0, 22), px, y + 34);
+      col++; if (col === 2) { col = 0; y += 90; }
+    });
+    await new Promise((done) => {
+      const initials = () => { g.fillStyle = '#c1861f'; g.fillRect(48, 130, 190, 190); g.fillStyle = '#fff'; g.font = '800 72px Sora, sans-serif'; g.textAlign = 'center'; g.fillText(initialsOf(u.fullName), 143, 252); g.textAlign = 'left'; };
+      if (!u.avatarUrl) { initials(); return done(); }
+      const im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = () => { g.drawImage(im, 48, 130, 190, 190); done(); };
+      im.onerror = () => { initials(); done(); };
+      im.src = u.avatarUrl;
+    });
+    try {
+      const qrcode = await loadQr();
+      const q = qrcode(0, 'M'); q.addData(qrText(u)); q.make();
+      const n = q.getModuleCount(), size = 190, cell = Math.floor(size / n), off = Math.floor((size - cell * n) / 2);
+      g.fillStyle = '#fff'; g.fillRect(W - 48 - 214, H - 16 - 24 - 214, 214, 214);
+      g.fillStyle = '#000';
+      for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) g.fillRect(W - 48 - 202 + off + k * cell, H - 16 - 24 - 202 + off + r * cell, cell, cell);
+    } catch { /* offline: the card is still useful without the QR */ }
+    const a = document.createElement('a');
+    a.download = 'Learnza-ID-' + String(u.fullName || 'me').replace(/[^a-z0-9]+/gi, '-') + '.png';
+    a.href = c.toDataURL('image/png');
+    document.body.appendChild(a); a.click(); a.remove();
+    ctx.toast('⬇ ID saved');
+  }
+
   // ---------------------------------------------------------------- installable app (PWA)
   // Registers the service worker, shows a ribbon while offline, and — by checking
   // /version.json — offers a refresh when a new version has been deployed.
@@ -367,5 +529,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId };
 })();

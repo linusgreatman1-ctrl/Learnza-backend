@@ -138,3 +138,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .muted { color: var(--ink-soft); }
 .hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+
+/* Digital ID card (shared by both apps; built in extras.js) */
+.lzx-id { position: relative; max-width: 440px; border-radius: 20px; padding: 18px 18px 16px; color: #fff; overflow: hidden; background: linear-gradient(135deg, #0f1b2e 0%, #16355c 55%, #5a3d0e 100%); box-shadow: 0 14px 40px rgba(15, 27, 46, .35); }
+.lzx-id::before { content: ''; position: absolute; right: -60px; top: -60px; width: 210px; height: 210px; border-radius: 50%; background: radial-gradient(circle, rgba(227, 172, 76, .32), transparent 70%); }
+.lzx-id::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 7px; background: linear-gradient(90deg, #e3ac4c, #4a8cff, #e3ac4c); }
+.lzx-id-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; position: relative; }
+.lzx-id-brand { font: 800 14px Sora, sans-serif; letter-spacing: .3px; }
+.lzx-id-brand b { color: #e3ac4c; }
+.lzx-id-role { font: 800 10.5px 'Plus Jakarta Sans', sans-serif; letter-spacing: .8px; text-transform: uppercase; background: rgba(255, 255, 255, .14); border-radius: 100px; padding: 4px 11px; }
+.lzx-id-mid { display: flex; gap: 14px; align-items: center; position: relative; }
+.lzx-id-pic { flex: 0 0 78px; width: 78px; height: 78px; border-radius: 16px; background: linear-gradient(135deg, #e3ac4c, #c1861f); display: flex; align-items: center; justify-content: center; font: 800 28px Sora, sans-serif; color: #1b1406; overflow: hidden; position: relative; }
+.lzx-id-pic img { width: 100%; height: 100%; object-fit: cover; }
+#lzx-id-pic { cursor: pointer; }
+.lzx-id-cam { position: absolute; right: 3px; bottom: 3px; width: 26px; height: 26px; border-radius: 50%; background: rgba(10, 20, 40, .78); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.lzx-id-name { font: 800 19px Sora, sans-serif; line-height: 1.25; word-break: break-word; }
+.lzx-id-sub { font-size: 12.5px; color: rgba(255, 255, 255, .7); margin-top: 3px; }
+.lzx-id-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 16px; padding-right: 86px; padding-bottom: 6px; position: relative; min-height: 80px; }
+.lzx-id-grid span { display: block; font-size: 10px; letter-spacing: .7px; text-transform: uppercase; color: rgba(255, 255, 255, .5); }
+.lzx-id-grid b { display: block; font: 700 13.5px 'Plus Jakarta Sans', sans-serif; margin-top: 1px; word-break: break-word; }
+.lzx-id-qr { position: absolute; right: 16px; bottom: 20px; width: 74px; height: 74px; background: #fff; border-radius: 10px; padding: 5px; }
+.lzx-id-qr svg { width: 100%; height: 100%; display: block; }
+.lzx-id-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 24px; max-width: 440px; }
+.lzx-id-foot small { opacity: .6; font-size: 11.5px; flex-basis: 100%; }

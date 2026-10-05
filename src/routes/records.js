@@ -242,6 +242,10 @@ async function computeAcademicRecord(student) {
     : null;
 
   return {
+    id: student.id,
+    avatarUrl: student.avatarUrl,
+    createdAt: student.createdAt,
+    yearOfStudy: student.yearOfStudy,
     fullName: student.fullName,
     email: student.email,
     phone: student.phone,

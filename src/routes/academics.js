@@ -6,6 +6,7 @@ const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const { getCurrentSemesterId } = require('../semester');
 const { computeAcademicRecord } = require('./records');
 const { notifyMany } = require('../services/notification.service');
+const photoUpload = memoryUpload(5);
 const { loadCourse, hasSchool, departmentsInSchool } = require('../scope');
 
 const router = express.Router();
@@ -156,6 +157,20 @@ router.get('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (re
   const student = await prisma.user.findUnique({ where: { id: req.params.id }, include: { department: true } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
   res.json(await computeAcademicRecord(student));
+});
+
+// A lecturer can add or change the photo on the Digital ID of a student in one of their classes.
+router.post('/lect/students/:id/photo', requireAuth, requireRole('LECTURER'), photoUpload.single('avatar'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an image first.' });
+  if (!hasSchool(req.user)) return res.status(404).json({ error: 'Student not found' });
+  const enrolled = await prisma.enrollment.findFirst({
+    where: { studentId: req.params.id, student: { schoolId: req.user.schoolId, role: 'STUDENT' }, course: { department: { schoolId: req.user.schoolId }, OR: [{ lecturers: { some: { lecturerId: req.user.id } } }, { lessons: { some: { authorId: req.user.id } } }] } },
+  });
+  if (!enrolled) return res.status(404).json({ error: 'Student not found in any of your classes.' });
+  let url;
+  try { ({ url } = await saveUpload(req.file)); } catch { return res.status(502).json({ error: 'Upload failed. Please try again.' }); }
+  const updated = await prisma.user.update({ where: { id: enrolled.studentId }, data: { avatarUrl: url } });
+  res.json({ user: { id: updated.id, avatarUrl: updated.avatarUrl } });
 });
 
 // A quick broadcast to everyone enrolled in one class -- a regular in-app
