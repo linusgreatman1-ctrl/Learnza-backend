@@ -3636,9 +3636,10 @@
     let qIdx = 0;
     let corrections = null; // set once graded; null while still answering
     let score = null, total = null;
-    // Same timing rule as every paper (objective 15 minutes per 20, theory 1h30 per 5) -- auto-submits
-    // (grading whatever's answered so far) when time runs out instead of running forever.
-    const durationMin = paperMinutes(questions);
+    // The time the server gives this assessment (a system-written paper: 15 minutes for Section A,
+    // 1h30 for Section B; otherwise 1 minute per question) -- auto-submits (grading whatever's
+    // answered so far) when time runs out instead of running forever.
+    const durationMin = assessment.minutes || Math.max(1, questions.length);
     const deadline = Date.now() + durationMin * 60000;
 
     view.innerHTML = `
@@ -4703,12 +4704,7 @@
   // SEMESTER_EXAM for the Semester Exam pages); otherwise students see everything
   // except PAST_QUESTION and SEMESTER_EXAM (those have their own dedicated pages) and
   // lecturers see everything they've created.
-  // Every paper is timed the same way: 20 objective questions in 15 minutes, 5 theory questions
-  // in 1 hour 30 (the server decides; this only mirrors it for screens that show the time early).
-  function paperMinutes(questions) {
-    const theory = questions.filter((q) => q.questionType === 'THEORY').length;
-    return Math.max(1, Math.ceil((questions.length - theory) * 0.75 + theory * 18));
-  }
+  // The server decides how long an assessment gets; these only word it.
   function fmtMins(m) {
     if (m < 60) return m + ' minute' + (m === 1 ? '' : 's');
     const h = Math.floor(m / 60), r = m % 60;
@@ -6053,7 +6049,7 @@
       <div class="field"><label>Title</label><input type="text" id="na-title" value="${esc(existing ? existing.title : '')}" required></div>
       ${typeFieldHtml}
       <p class="meta" id="na-cap-note" style="margin-bottom:10px;"></p>
-      <p class="meta" style="margin-bottom:14px;">Time is set automatically: 15 minutes for 20 objective questions, 1 hour 30 for 5 theory questions (a test can have up to 20 objective and 5 theory questions).</p>
+      <p class="meta" style="margin-bottom:14px;">Students get 1 minute per question automatically — no need to set a duration.</p>
       <div id="na-questions">${existing ? existing.questions.map((q, i) => questionBlock(i, q)).join('') : questionBlock(0)}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="na-add-q" style="margin-bottom:14px;">+ Add question</button>
       ${existing && existing.sentAt ? `
@@ -6406,10 +6402,51 @@
     return departments.map((d) => `<option value="${d.id}" ${d.id === selectedId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
   }
 
-  async function courseOptionsHtml(selectedIds) {
+  // Courses are typed, not ctrl-clicked: start typing a course code or title, pick it from the
+  // matches and it joins the list above the box; ✕ takes one off again. Used by the add and edit
+  // forms for students and lecturers.
+  let pickerCourses = [];
+  async function coursePickerHtml(id, label, selectedIds) {
     const { courses } = await api('/admin/courses');
-    const selected = new Set(selectedIds || []);
-    return courses.map((c) => `<option value="${c.id}" ${selected.has(c.id) ? 'selected' : ''}>${esc(c.department.name)} — ${esc(c.code)}</option>`).join('');
+    pickerCourses = courses;
+    return `<div class="field"><label>${label}</label>
+      <div class="cp" id="${id}" data-selected="${esc((selectedIds || []).join(','))}">
+        <div class="cp-chips"></div>
+        <input type="text" class="cp-input" placeholder="Type a course code or title, e.g. CS201…" autocomplete="off">
+        <div class="cp-list" hidden></div>
+      </div>
+    </div>`;
+  }
+  const courseName = (c) => `${c.code} — ${c.title}`;
+  function wireCoursePickers(root) {
+    root.querySelectorAll('.cp').forEach((cp) => {
+      const chosen = new Set((cp.dataset.selected || '').split(',').filter(Boolean));
+      const chips = cp.querySelector('.cp-chips'), input = cp.querySelector('.cp-input'), list = cp.querySelector('.cp-list');
+      cp.getValue = () => Array.from(chosen);
+      const byId = (id) => pickerCourses.find((c) => c.id === id);
+      const drawChips = () => {
+        chips.innerHTML = Array.from(chosen).map((id) => { const c = byId(id); return c ? `<span class="cp-chip">${esc(courseName(c))}<button type="button" data-rm="${esc(id)}" aria-label="Remove">✕</button></span>` : ''; }).join('') || '<span class="muted" style="font-size:.85rem;">No course chosen yet.</span>';
+        chips.querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { chosen.delete(b.dataset.rm); drawChips(); }));
+      };
+      const matches = () => {
+        const q = input.value.trim().toLowerCase();
+        return pickerCourses.filter((c) => !chosen.has(c.id) && (!q || courseName(c).toLowerCase().includes(q) || (c.department && c.department.name.toLowerCase().includes(q)))).slice(0, 8);
+      };
+      const drawList = () => {
+        const m = matches();
+        list.innerHTML = m.map((c) => `<button type="button" class="cp-opt" data-add="${esc(c.id)}">${esc(courseName(c))}<span class="muted"> · ${esc(c.department ? c.department.name : '')}</span></button>`).join('') || '<div class="muted" style="padding:8px 10px;">No matching course.</div>';
+        list.hidden = false;
+        list.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('mousedown', (e) => { e.preventDefault(); chosen.add(b.dataset.add); input.value = ''; drawChips(); drawList(); input.focus(); }));
+      };
+      input.addEventListener('input', drawList);
+      input.addEventListener('focus', drawList);
+      input.addEventListener('blur', () => { setTimeout(() => { list.hidden = true; }, 120); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); const first = matches()[0]; if (first) { chosen.add(first.id); input.value = ''; drawChips(); drawList(); } }
+        if (e.key === 'Backspace' && !input.value && chosen.size) { chosen.delete(Array.from(chosen).pop()); drawChips(); }
+      });
+      drawChips();
+    });
   }
 
   // ================= ADMIN: DASHBOARD + ADMIN MANAGEMENT =================
@@ -6607,18 +6644,19 @@
           return `<div class="field"><label>${f.label}</label><select id="add-${f.key}" ${f.required ? 'required' : ''}><option value="">Select…</option>${opts}</select></div>`;
         }
         if (f.type === 'courses') {
-          return `<div class="field"><label>${f.label} <span class="muted">(ctrl/cmd-click for more than one)</span></label><select id="add-${f.key}" multiple size="5">${await courseOptionsHtml()}</select></div>`;
+          return await coursePickerHtml(`add-${f.key}`, f.label, []);
         }
         return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="add-${f.key}" ${f.required ? 'required' : ''}></div>`;
       }));
       box.innerHTML = `<form id="add-form" class="card" style="padding:20px; margin-bottom:18px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">${cfg.generatesAccessCode ? 'Add & generate access code' : 'Add'}</button></form>`;
       box.hidden = false;
+      wireCoursePickers(box);
       document.getElementById('add-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const body = {};
         for (const f of cfg.addFields) {
           const el = document.getElementById(`add-${f.key}`);
-          body[f.key] = f.type === 'courses' ? Array.from(el.selectedOptions).map((o) => o.value) : el.value.trim();
+          body[f.key] = f.type === 'courses' ? el.getValue() : el.value.trim();
         }
         try {
           const { user, accessCode } = await api(cfg.base, { method: 'POST', body });
@@ -6694,18 +6732,19 @@
           return `<div class="field"><label>${f.label}</label><select id="edit-${f.key}" ${f.required ? 'required' : ''}><option value="">Select…</option>${opts}</select></div>`;
         }
         if (f.type === 'courses') {
-          return `<div class="field"><label>${f.label} <span class="muted">(ctrl/cmd-click for more than one)</span></label><select id="edit-${f.key}" multiple size="5">${await courseOptionsHtml((u.courses || []).map((c) => c.id))}</select></div>`;
+          return await coursePickerHtml(`edit-${f.key}`, f.label, (u.courses || []).map((c) => c.id));
         }
         return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="edit-${f.key}" value="${esc(f.key === 'email' ? shownEmail(u.email) : (u[f.key] || ''))}" ${f.required ? 'required' : ''}></div>`;
       }));
       box.innerHTML = `<form id="edit-form" class="card" style="padding:20px; margin-top:6px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">Save changes</button></form>`;
       box.hidden = false;
+      wireCoursePickers(box);
       document.getElementById('edit-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const body = {};
         for (const f of cfg.editFields) {
           const el = document.getElementById(`edit-${f.key}`);
-          body[f.key] = f.type === 'courses' ? Array.from(el.selectedOptions).map((o) => o.value) : el.value.trim();
+          body[f.key] = f.type === 'courses' ? el.getValue() : el.value.trim();
         }
         try {
           await api(`${cfg.base}/${u.id}`, { method: 'PATCH', body });

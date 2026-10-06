@@ -24,8 +24,8 @@ function dayKey(d) { return new Date(d).toISOString().slice(0, 10); }
 router.get('/analytics', async (req, res) => {
   const days = Math.min(180, Math.max(7, parseInt(req.query.days, 10) || 30));
   const since = new Date();
-  since.setHours(0, 0, 0, 0);
-  since.setDate(since.getDate() - (days - 1));
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - (days - 1));
 
   const [signups, signIns, revenue, coinRevenue, ai, submissions, live, usersByRole, topSchools, tickets] = await Promise.all([
     prisma.$queryRaw`SELECT date_trunc('day', "createdAt") AS d, ("schoolId" IS NOT NULL) AS school, count(*)::int AS n FROM "User" WHERE "createdAt" >= ${since} AND role <> 'SUPER_ADMIN' GROUP BY 1, 2`,
@@ -43,7 +43,7 @@ router.get('/analytics', async (req, res) => {
   // Fill every day of the range so a quiet day shows as zero, not as a gap.
   const addSeries = (a, b) => a.map((v, i) => v + b[i]);
   const labels = [];
-  for (let i = 0; i < days; i++) { const d = new Date(since); d.setDate(d.getDate() + i); labels.push(dayKey(d)); }
+  for (let i = 0; i < days; i++) { const d = new Date(since); d.setUTCDate(d.getUTCDate() + i); labels.push(dayKey(d)); }
   const series = (rows, pick = () => true) => {
     const m = new Map();
     for (const r of rows || []) if (pick(r)) m.set(dayKey(r.d), (m.get(dayKey(r.d)) || 0) + Number(r.n));
@@ -108,7 +108,67 @@ router.delete('/lessons/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------------------------------------------------------------- elections (read-only oversight)
+// Every school's elections, with the count. The owner cannot create, edit or open one -- the school
+// admin runs those -- and, as everywhere, a ballot is secret: totals and turnout only.
+router.get('/elections', async (req, res) => {
+  const { stateOf } = require('./elections').helpers;
+  const { page, size } = pageOf(req);
+  const search = String(req.query.search || '').trim();
+  const where = { status: { not: 'DRAFT' } };
+  if (search) where.title = { contains: search, mode: 'insensitive' };
+  if (req.query.schoolId) where.schoolId = String(req.query.schoolId);
+  const [total, rows] = await Promise.all([
+    prisma.election.count({ where }),
+    prisma.election.findMany({
+      where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size,
+      include: { school, _count: { select: { positions: true, ballots: true } } },
+    }),
+  ]);
+  const state = req.query.state ? String(req.query.state) : null;
+  const elections = rows.map((e) => ({
+    id: e.id, title: e.title, kind: e.kind, voters: e.voters, state: stateOf(e), opensAt: e.opensAt, closesAt: e.closesAt,
+    schoolName: e.school ? e.school.name : null, positions: e._count.positions, ballots: e._count.ballots, createdAt: e.createdAt,
+  })).filter((e) => !state || e.state === state);
+  res.json({ total, page, pageSize: size, elections });
+});
+
+router.get('/elections/:id', async (req, res) => {
+  const { stateOf, tally, turnout } = require('./elections').helpers;
+  const e = await prisma.election.findUnique({ where: { id: req.params.id }, include: { school } });
+  if (!e || e.status === 'DRAFT') return res.status(404).json({ error: 'Election not found' });
+  const [positions, counts] = await Promise.all([tally(e), turnout(e)]);
+  res.json({
+    election: { id: e.id, title: e.title, description: e.description, kind: e.kind, voters: e.voters, state: stateOf(e), opensAt: e.opensAt, closesAt: e.closesAt, schoolName: e.school ? e.school.name : null },
+    turnout: counts, positions,
+  });
+});
+
 // ---------------------------------------------------------------- courses
+// The owner can correct a course's code, title and level (a typo, a wrong level) -- the school admin
+// still owns everything else about it. Self-study courses can have their title corrected too.
+router.patch('/courses/:id', async (req, res) => {
+  const clean = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+  if (req.query.kind === 'self') {
+    const own = await prisma.individualCourse.findUnique({ where: { id: req.params.id } });
+    if (!own) return res.status(404).json({ error: 'Course not found' });
+    const title = clean(req.body.title, 120);
+    if (!title) return res.status(400).json({ error: 'A course needs a title.' });
+    const updated = await prisma.individualCourse.update({ where: { id: own.id }, data: { title } });
+    await logAction(req, 'COURSE_EDITED', 'IndividualCourse', own.id, { from: own.title, to: title });
+    return res.json({ course: updated });
+  }
+  const course = await prisma.course.findUnique({ where: { id: req.params.id } });
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const data = {};
+  if (req.body.code !== undefined) { data.code = clean(req.body.code, 30); if (!data.code) return res.status(400).json({ error: 'A course needs a code.' }); }
+  if (req.body.title !== undefined) { data.title = clean(req.body.title, 120); if (!data.title) return res.status(400).json({ error: 'A course needs a title.' }); }
+  if (req.body.level !== undefined) data.level = clean(req.body.level, 30) || course.level;
+  const updated = await prisma.course.update({ where: { id: course.id }, data });
+  await logAction(req, 'COURSE_EDITED', 'Course', course.id, data);
+  res.json({ course: updated });
+});
+
 router.get('/courses', async (req, res) => {
   const { page, size } = pageOf(req);
   const search = String(req.query.search || '').trim();
@@ -142,7 +202,7 @@ router.get('/courses', async (req, res) => {
   res.json({
     total, page, pageSize: size,
     courses: rows.map((c) => ({
-      id: c.id, code: c.code, title: c.title, level: c.level, department: c.department.name,
+      id: c.id, code: c.code, title: c.title, level: c.level, semester: c.semester, department: c.department.name,
       schoolName: c.department.school ? c.department.school.name : null,
       students: c._count.enrollments, lessons: c._count.lessons, assessments: c._count.assessments,
       lecturers: byCourse.get(c.id) || [],

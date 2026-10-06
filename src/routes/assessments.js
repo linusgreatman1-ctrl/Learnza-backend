@@ -8,11 +8,11 @@ const { loadCourse, loadAssessment, plainCourse, loadSubmission, mayModify } = r
 
 const router = express.Router();
 
-// Every timed assessment (CA/Test/Mock/Semester Exam/Past Question practice) is timed by
-// the same paper rule -- 15 minutes for 20 objective questions, 1h30 for 5 theory questions
-// (utils/paper.js) -- not the lecturer-set durationMin field, which is kept on the model but no
-// longer used for the actual time limit.
-const { minutesFor, withTiming, TIMING_INCLUDE, OBJECTIVE_PER_PAPER, THEORY_PER_PAPER } = require('../utils/paper');
+// A lecturer's test/exam gets 1 minute per question -- not the lecturer-set durationMin field, which
+// is kept on the model but not used for the time limit. The papers the system writes for students
+// (mock exams, past questions) carry their own times: Section A 15 minutes, Section B 1h30
+// (utils/paper.js).
+const { timingFor, withTiming, TIMING_INCLUDE } = require('../utils/paper');
 
 router.get('/courses/:id/assessments', requireAuth, loadCourse(), async (req, res) => {
   const assessments = await prisma.assessment.findMany({
@@ -26,14 +26,7 @@ router.get('/courses/:id/assessments', requireAuth, loadCourse(), async (req, re
   res.json({ assessments: assessments.map(withTiming) });
 });
 
-// A paper is at most 20 objective and 5 theory questions.
-function tooManyQuestions(questions) {
-  const theory = questions.filter((q) => q && q.questionType === 'THEORY').length;
-  const objective = questions.length - theory;
-  if (objective > OBJECTIVE_PER_PAPER) return `A test can have at most ${OBJECTIVE_PER_PAPER} objective questions.`;
-  if (theory > THEORY_PER_PAPER) return `A test can have at most ${THEORY_PER_PAPER} theory questions.`;
-  return null;
-}
+const MAX_QUESTIONS = { PAST_QUESTION: 20, DEFAULT: 10 };
 
 function questionCreateData(questions) {
   return questions.map((q, i) => ({
@@ -52,8 +45,10 @@ router.post('/courses/:id/assessments', requireAuth, requireRole('LECTURER', 'AD
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Title and at least one question are required' });
   }
-  const tooMany = tooManyQuestions(questions);
-  if (tooMany) return res.status(400).json({ error: tooMany });
+  const max = MAX_QUESTIONS[type] || MAX_QUESTIONS.DEFAULT;
+  if (questions.length > max) {
+    return res.status(400).json({ error: `${type === 'PAST_QUESTION' ? 'Past question sets' : 'Tests'} can have at most ${max} questions.` });
+  }
   const semesterId = await getCurrentSemesterId(req.user.schoolId);
   const assessment = await prisma.assessment.create({
     data: {
@@ -116,8 +111,10 @@ router.put('/assessments/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), lo
   if (!title || !Array.isArray(questions) || questions.length === 0) {
     return res.status(400).json({ error: 'Title and at least one question are required' });
   }
-  const tooMany = tooManyQuestions(questions);
-  if (tooMany) return res.status(400).json({ error: tooMany });
+  const max = MAX_QUESTIONS[assessment.type] || MAX_QUESTIONS.DEFAULT;
+  if (questions.length > max) {
+    return res.status(400).json({ error: `${assessment.type === 'PAST_QUESTION' ? 'Past question sets' : 'Tests'} can have at most ${max} questions.` });
+  }
 
   await prisma.question.deleteMany({ where: { assessmentId: assessment.id } });
   // Editing a still-unsent draft can choose to send it now instead ("Save and Send");
@@ -157,7 +154,7 @@ router.get('/assessments/:id', requireAuth, loadAssessment({ include: { question
       options: q.options ? JSON.parse(q.options) : null,
       order: q.order,
     }));
-    return res.json({ assessment: { ...assessment, questions }, mySubmission });
+    return res.json({ assessment: { ...assessment, questions, minutes: timingFor(assessment, assessment.questions) }, mySubmission });
   }
   res.json({ assessment });
 });
@@ -166,7 +163,7 @@ router.get('/assessments/:id', requireAuth, loadAssessment({ include: { question
 // measured from here, not from whenever the client happens to POST the answers.
 router.post('/assessments/:id/start', requireAuth, requireRole('STUDENT'), loadAssessment({ include: { questions: { select: { questionType: true } } } }), async (req, res) => {
   const assessment = req.assessment;
-  const durationMin = minutesFor(assessment.questions);
+  const durationMin = timingFor(assessment);
 
   const existing = await prisma.submission.findUnique({
     where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: req.user.id } },
@@ -190,7 +187,7 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), load
   if (existing && existing.submittedAt) return res.status(409).json({ error: 'You have already submitted this assessment' });
   if (!existing || !existing.startedAt) return res.status(400).json({ error: 'Start the assessment before submitting.' });
 
-  const deadline = new Date(existing.startedAt.getTime() + minutesFor(assessment.questions) * 60000 + 15000); // 15s grace for network lag
+  const deadline = new Date(existing.startedAt.getTime() + timingFor(assessment) * 60000 + 15000); // 15s grace for network lag
   if (new Date() > deadline) return res.status(400).json({ error: 'Time is up for this assessment.' });
 
   const objectiveQuestions = assessment.questions.filter((q) => q.questionType !== 'THEORY');

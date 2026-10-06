@@ -2394,9 +2394,10 @@
     let qIdx = 0;
     let corrections = null; // set once graded; null while still answering
     let score = null, total = null;
-    // Same timing rule as every paper (objective 15 minutes per 20, theory 1h30 per 5) -- auto-submits
-    // (grading whatever's answered so far) when time runs out instead of running forever.
-    const durationMin = paperMinutes(questions);
+    // The time the server gives this assessment (a system-written paper: 15 minutes for Section A,
+    // 1h30 for Section B; otherwise 1 minute per question) -- auto-submits (grading whatever's
+    // answered so far) when time runs out instead of running forever.
+    const durationMin = assessment.minutes || Math.max(1, questions.length);
     const deadline = Date.now() + durationMin * 60000;
 
     view.innerHTML = `
@@ -3428,12 +3429,7 @@
   // SEMESTER_EXAM for the Semester Exam pages); otherwise students see everything
   // except PAST_QUESTION and SEMESTER_EXAM (those have their own dedicated pages) and
   // lecturers see everything they've created.
-  // Every paper is timed the same way: 20 objective questions in 15 minutes, 5 theory questions
-  // in 1 hour 30 (the server decides; this only mirrors it for screens that show the time early).
-  function paperMinutes(questions) {
-    const theory = questions.filter((q) => q.questionType === 'THEORY').length;
-    return Math.max(1, Math.ceil((questions.length - theory) * 0.75 + theory * 18));
-  }
+  // The server decides how long an assessment gets; these only word it.
   function fmtMins(m) {
     if (m < 60) return m + ' minute' + (m === 1 ? '' : 's');
     const h = Math.floor(m / 60), r = m % 60;

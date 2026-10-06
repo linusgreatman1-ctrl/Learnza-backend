@@ -308,6 +308,22 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('voting before the start time is refused', r.status === 409 && sb.election.state === 'UPCOMING', r.data);
 
   // ================================================================ generated practice
+  console.log('== owner panel: elections and course edits ==');
+  r = await call('GET', '/api/super/elections', { token: SUPER });
+  const seen = (r.data.elections || []).find((x) => x.id === el.id);
+  check("the owner sees every school's elections (not drafts)", r.status === 200 && seen && seen.schoolName === A.name && seen.ballots >= 2, r.data);
+  r = await call('GET', '/api/super/elections', { token: A.admin });
+  check('a school admin cannot use the owner view', r.status === 403);
+  r = await call('GET', '/api/super/elections/' + el.id, { token: SUPER });
+  check('the owner sees candidate counts and turnout, with the group split', r.status === 200 && r.data.positions[0].candidates.some((c) => c.votes > 0) && r.data.turnout.students && JSON.stringify(r.data).indexOf('voterId') === -1, r.data);
+  r = await call('PATCH', '/api/super/courses/' + course.id, { token: SUPER, body: { title: '  World   History II ', level: '200L' } });
+  check('the owner can correct a course title and level (spacing tidied)', r.status === 200 && r.data.course.title === 'World History II' && r.data.course.level === '200L' && r.data.course.code === 'HIS101', r.data);
+  r = await call('PATCH', '/api/super/courses/' + course.id, { token: SUPER, body: { title: '' } });
+  check('a course cannot be left without a title', r.status === 400);
+  r = await call('PATCH', '/api/super/courses/' + course.id, { token: A.admin, body: { title: 'x' } });
+  check('a school admin cannot use the owner course edit', r.status === 403);
+  await call('PATCH', '/api/super/courses/' + course.id, { token: SUPER, body: { title: 'World History', level: '100L' } });
+
   console.log('== practice written for each course ==');
   // The school is a polytechnic: its papers are set the NBTE way (Section B is 5 x 8 = 40 marks).
   const schoolA = await prisma.school.findFirst({ where: { name: A.name } });
@@ -347,18 +363,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   r = await call('GET', `/api/assessments/${sectionB(mocks)[0].id}/my-review`, { token: stu1.token });
   check('afterwards the model answers (marking guide) are shown for self-marking', r.status === 200 && r.data.review.length === 5 && r.data.review.every((q) => q.modelAnswer), r.data.review && r.data.review[0]);
 
-  // A lecturer's own test follows the same limits: at most 20 objective and 5 theory questions.
+  // A lecturer's own tests are the lecturer's: the usual limits, 1 minute per question -- the 20 + 5
+  // paper structure is only for the papers the system writes for students.
   const obj = (n) => Array.from({ length: n }, (_, i) => ({ questionType: 'OBJECTIVE', text: 'Q' + i, options: ['a', 'b', 'c', 'd'], correctIndex: 0 }));
   const th = (n) => Array.from({ length: n }, (_, i) => ({ questionType: 'THEORY', text: 'T' + i, modelAnswer: 'x' }));
-  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Too long', type: 'CA', questions: obj(21) } });
-  check('a test cannot have more than 20 objective questions', r.status === 400);
-  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Too much theory', type: 'CA', questions: [...obj(1), ...th(6)] } });
-  check('...or more than 5 theory questions', r.status === 400);
-  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Full paper', type: 'CA', questions: [...obj(20), ...th(5)] } });
-  check('20 objective + 5 theory is accepted', r.status === 200, r.data);
+  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Too long', type: 'CA', questions: obj(11) } });
+  check('a lecturer test keeps its own limit (10 questions)', r.status === 400);
+  r = await call('POST', `/api/courses/${course.id}/assessments`, { token: lec1.token, body: { title: 'Lecturer test', type: 'CA', questions: [...obj(6), ...th(2)] } });
+  check('a lecturer can set a test with objective and theory questions', r.status === 200, r.data);
   r = await call('GET', `/api/courses/${course.id}/assessments`, { token: stu1.token });
-  const full = r.data.assessments.find((a) => a.title === 'Full paper');
-  check('a mixed test is timed 15 + 90 = 105 minutes', full && full.minutes === 105, full && full.minutes);
+  const own = r.data.assessments.find((a) => a.title === 'Lecturer test');
+  check("...timed 1 minute per question (8), not the system papers' timing", own && own.minutes === 8 && !own.section, own && [own.minutes, own.section]);
   r = await call('GET', `/api/courses/${course.id}/assessments`, { token: lec1.token });
   check("lecturers do not see (or manage) the system's sets", r.data.assessments.every((a) => !a.generated && a.title !== 'x') && !r.data.assessments.some((a) => /Mock Exam|Past Questions Practice/.test(a.title)), r.data.assessments.map((a) => a.title));
   const stuAs = await call('GET', `/api/courses/${course.id}/assessments`, { token: stu2.token });

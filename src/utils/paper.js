@@ -1,9 +1,11 @@
 // How a written paper is set and timed at Nigerian higher institutions.
 //
-// One rule everywhere in the app (tests, mock exams, past-question practice, semester exams):
+// The papers the SYSTEM writes for students (CBT mock exams, past-question practice, the semester
+// exam of a self-study course, practice questions) are set like this:
 //   Section A  20 objective questions   15 minutes   (0.75 minute each)
 //   Section B   5 theory questions      1 hour 30    (18 minutes each)
-// A test with a different number of questions gets time in the same proportion.
+// Tests, quizzes, assignments and semester exams that a LECTURER sets are the lecturer's own: any
+// number of questions, timed at 1 minute per question as before.
 //
 // What differs between institutions is the share of the marks the semester examination carries
 // and how the theory questions are worded. The profiles below are written from the regulators'
@@ -22,7 +24,15 @@ const THEORY_PER_PAPER = 5;
 const OBJECTIVE_MINUTES_EACH = 15 / OBJECTIVE_PER_PAPER;   // 0.75
 const THEORY_MINUTES_EACH = 90 / THEORY_PER_PAPER;         // 18
 
-// Minutes allowed for a set of questions (each needs a questionType of 'THEORY' or anything else).
+// Minutes allowed for an assessment: the paper's own time if the system wrote it as a paper section,
+// otherwise 1 minute per question (what lecturers' tests have always had).
+function timingFor(assessment, questions) {
+  const list = questions || assessment.questions || [];
+  if (assessment.section && assessment.durationMin) return assessment.durationMin;
+  return Math.max(1, list.length);
+}
+
+// The paper rule for a set of questions (each needs a questionType of 'THEORY' or anything else).
 function minutesFor(questions) {
   const list = Array.isArray(questions) ? questions : [];
   const theory = list.filter((q) => q.questionType === 'THEORY').length;
@@ -67,9 +77,9 @@ function withTiming(a) {
   const qs = a.questions || [];
   const theory = qs.filter((q) => q.questionType === 'THEORY').length;
   const { questions, ...rest } = a;
-  return { ...rest, objectiveCount: qs.length - theory, theoryCount: theory, minutes: minutesFor(qs) };
+  return { ...rest, objectiveCount: qs.length - theory, theoryCount: theory, minutes: timingFor(a, qs) };
 }
 // Questions are pulled for their type only (no text or answers) so a list stays light.
 const TIMING_INCLUDE = { _count: { select: { questions: true } }, questions: { select: { questionType: true } } };
 
-module.exports = { withTiming, TIMING_INCLUDE, OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, minutesFor, PROFILES, profileFor, totalMarks };
+module.exports = { timingFor, withTiming, TIMING_INCLUDE, OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, minutesFor, PROFILES, profileFor, totalMarks };

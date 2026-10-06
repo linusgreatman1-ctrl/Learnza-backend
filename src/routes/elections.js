@@ -297,4 +297,7 @@ router.post('/:id/vote', ...voter, async (req, res) => {
   res.json({ ok: true, positionsVoted: rows.length });
 });
 
+// The owner's panel (routes/superInsights.js) reads elections across every school with these.
+router.helpers = { stateOf, summary, tally, turnout };
+
 module.exports = router;

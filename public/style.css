@@ -184,3 +184,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .lzx-bar { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; margin-top: 6px; }
 .lzx-bar > div { height: 100%; background: #c1861f; }
 .lzx-pay-ps { background: #0ba4db; color: #fff; }
+
+/* course picker: type to search, pick to add, ✕ to remove (school admin add / edit forms) */
+.cp { position: relative; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 8px; }
+.cp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cp-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-soft); color: var(--accent-text); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: .88rem; }
+.cp-chip button { border: none; background: transparent; color: inherit; cursor: pointer; width: 22px; height: 22px; border-radius: 50%; line-height: 1; }
+.cp-chip button:hover { background: rgba(128, 128, 128, .25); }
+.cp-input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--paper-raised); color: var(--ink); font: inherit; }
+.cp-list { position: absolute; left: 8px; right: 8px; top: 100%; margin-top: 4px; z-index: 30; max-height: 240px; overflow: auto; background: var(--paper-raised); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+.cp-opt { display: block; width: 100%; text-align: left; border: none; background: transparent; color: inherit; padding: 10px 12px; cursor: pointer; font: inherit; }
+.cp-opt:hover, .cp-opt:focus { background: var(--accent-soft); }

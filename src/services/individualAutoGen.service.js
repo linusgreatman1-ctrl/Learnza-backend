@@ -56,6 +56,8 @@ async function generateOne(course, studentId, type) {
           authorId: studentId,
           title: draft.title || `${course.title} — Weekly Test`,
           type: 'CA',
+          // the system writes this one for the learner, so it is timed like a paper's Section A
+          section: 'OBJECTIVE',
           durationMin: 15,
           questions: {
             create: (draft.questions || []).map((q, i) => ({

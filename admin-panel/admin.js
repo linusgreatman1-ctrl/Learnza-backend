@@ -178,7 +178,7 @@
     conversations: () => renderAi('logs'), teacher: () => renderAi('sessions'), demonstrations: renderDemonstrations,
     payments: () => renderPayments('payments'), coins: () => renderPayments('coins'), subscriptions: () => renderPayments('subs'),
     gamification: renderGamification, attendance: renderAttendance, results: renderResults, records: renderRecords,
-    users: renderUsers, teachers: renderTeachers, schools: renderSchools,
+    users: renderUsers, teachers: renderTeachers, elections: renderElections, schools: renderSchools,
     announcements: renderAnnouncements, 'bulk-email': () => renderBulk('EMAIL'), 'bulk-sms': () => renderBulk('SMS'),
     tickets: () => renderSupport('tickets'), reviews: renderReviews, chat: () => renderSupport('chat'),
     live: renderLive, library: renderLibrary, 'access-codes': renderAccessCodes, editor: renderCodeEditor, preview: renderPreview, codes: renderCodes,
@@ -968,8 +968,21 @@
       if (tab === 'school') $('co-school').innerHTML = await schoolOptions();
       const box = $('co-list');
       await listView(box, (p) => '/courses?kind=' + tab + '&page=' + p + '&search=' + encodeURIComponent($('co-search').value.trim()) + (tab === 'school' ? '&schoolId=' + $('co-school').value : ''), (d) => tab === 'school'
-        ? table(['Course', 'School', 'Department', 'Level', 'Students', 'Lecturers', 'Lessons', 'Tests'], d.courses.map((c) => '<tr><td><strong>' + esc(c.code) + '</strong> ' + esc(c.title) + '</td><td>' + esc(c.schoolName || '—') + '</td><td>' + esc(c.department) + '</td><td>' + esc(c.level) + '</td><td class="tabular">' + c.students + '</td><td>' + esc(c.lecturers.join(', ') || '—') + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td></tr>').join(''), 'No courses yet.')
-        : table(['Course', 'Learner', 'Lessons', 'Tests', 'Created'], d.courses.map((c) => '<tr><td><strong>' + esc(c.title) + '</strong></td><td>' + esc(c.owner) + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td>' + fmtDate(c.createdAt) + '</td></tr>').join(''), 'No self-study courses yet.'));
+        ? table(['Course', 'School', 'Department', 'Level', 'Students', 'Lecturers', 'Lessons', 'Tests', ''], d.courses.map((c) => '<tr><td><strong>' + esc(c.code) + ' — ' + esc(c.title) + '</strong></td><td>' + esc(c.schoolName || '—') + '</td><td>' + esc(c.department) + '</td><td>' + esc(c.level) + '</td><td class="tabular">' + c.students + '</td><td>' + esc(c.lecturers.join(', ') || '—') + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td><button class="btn-ghost btn-sm" data-edit-course="' + c.id + '" data-code="' + esc(c.code) + '" data-title="' + esc(c.title) + '" data-level="' + esc(c.level) + '">✏️ Edit</button></td></tr>').join(''), 'No courses yet.')
+        : table(['Course', 'Learner', 'Lessons', 'Tests', 'Created', ''], d.courses.map((c) => '<tr><td><strong>' + esc(c.title) + '</strong></td><td>' + esc(c.owner) + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td>' + fmtDate(c.createdAt) + '</td><td><button class="btn-ghost btn-sm" data-edit-course="' + c.id + '" data-self="1" data-title="' + esc(c.title) + '">✏️ Edit</button></td></tr>').join(''), 'No self-study courses yet.'));
+      box.addEventListener('drawn', () => box.querySelectorAll('[data-edit-course]').forEach((b) => b.addEventListener('click', () => {
+        const self = !!b.dataset.self;
+        const m = modal('<div class="modal-head"><h3>Edit course</h3><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+          '<form id="ce-form">' + (self ? '' : '<div class="row"><div><label>Course code</label><input id="ce-code" value="' + esc(b.dataset.code) + '" required></div><div><label>Level</label><input id="ce-level" value="' + esc(b.dataset.level) + '"></div></div>') +
+          '<label>Course title</label><input id="ce-title" value="' + esc(b.dataset.title) + '" required>' +
+          '<div style="margin-top:14px"><button type="submit" class="btn-gold">Save changes</button></div></form>');
+        m.el.querySelector('#ce-form').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const body = { title: m.el.querySelector('#ce-title').value.trim() };
+          if (!self) { body.code = m.el.querySelector('#ce-code').value.trim(); body.level = m.el.querySelector('#ce-level').value.trim(); }
+          try { await api('/courses/' + b.dataset.editCourse + (self ? '?kind=self' : ''), { method: 'PATCH', body }); toast('Course updated'); m.close(); box.reload(); } catch (err) { toast(err.message); }
+        });
+      })));
       const reload = debounce(() => box.reload(true));
       $('co-search').addEventListener('input', reload);
       if ($('co-school')) $('co-school').addEventListener('change', () => box.reload(true));
@@ -1019,7 +1032,7 @@
 
   // ---------------- teachers ----------------
   async function renderTeachers() {
-    view.innerHTML = '<div class="view-head"><div><h1>Teachers</h1><div class="muted">Lecturers and non-academic staff at every school.</div></div></div>' +
+    view.innerHTML = '<div class="view-head"><div><h1>Lecturers</h1><div class="muted">Lecturers and non-academic staff at every school.</div></div></div>' +
       searchBar('te-search', 'Search name or staff ID…', null, '<select id="te-school"></select><select id="te-role"><option value="">Lecturers &amp; staff</option><option value="LECTURER">Lecturers</option><option value="STAFF">Non-academic staff</option></select>') + '<div id="te-list"></div>';
     $('te-school').innerHTML = await schoolOptions();
     const box = $('te-list');
@@ -1027,6 +1040,29 @@
       table(['Name', 'School', 'Department', 'Role', 'Courses', 'Lessons', 'Tests', 'Status'], d.teachers.map((t) => '<tr><td><strong>' + esc(t.fullName) + '</strong><div class="small muted">' + esc(t.staffId || t.email || '') + '</div></td><td>' + esc(t.school ? t.school.name : '—') + '</td><td>' + esc(t.department || t.position || '—') + '</td><td>' + (t.role === 'LECTURER' ? 'Lecturer' : 'Staff') + '</td><td class="tabular">' + t.courses + '</td><td class="tabular">' + t.lessons + '</td><td class="tabular">' + t.tests + '</td><td><span class="pill ' + (t.status === 'ACTIVE' ? 'ok' : 'bad') + '">' + esc(t.status) + '</span></td></tr>').join(''), 'No teachers yet.'));
     const reload = debounce(() => box.reload(true));
     $('te-search').addEventListener('input', reload); $('te-school').addEventListener('change', () => box.reload(true)); $('te-role').addEventListener('change', () => box.reload(true));
+  }
+
+  // ---------------- elections (read-only) ----------------
+  async function renderElections() {
+    view.innerHTML = '<div class="view-head"><div><h1>Elections</h1><div class="muted">Student union (SUG) and lecturer elections run by each school. You see the count and turnout, never who voted for whom. Click an election for the full result.</div></div></div>' +
+      searchBar('el-search', 'Search elections…', null, '<select id="el-school"></select><select id="el-state"><option value="">All</option><option value="OPEN">Open</option><option value="UPCOMING">Upcoming</option><option value="CLOSED">Closed</option></select>') + '<div id="el-list"></div>';
+    $('el-school').innerHTML = await schoolOptions();
+    const box = $('el-list');
+    const pill = (s) => '<span class="pill ' + (s === 'OPEN' ? 'ok' : s === 'UPCOMING' ? 'warn' : '') + '">' + esc(s) + '</span>';
+    box.addEventListener('drawn', () => box.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', async () => {
+      const d = await api('/elections/' + tr.dataset.id);
+      const t = d.turnout;
+      const who = (x, label) => (x ? '<div>' + label + ': <strong>' + x.voted + '</strong> of ' + x.eligible + ' voted</div>' : '');
+      const m = modal('<div class="modal-head"><div><h3 style="margin:0">' + esc(d.election.title) + '</h3><div class="muted small">' + esc(d.election.schoolName || '') + ' · ' + (d.election.kind === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers') + ' · ' + pill(d.election.state) + '</div></div><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+        '<div class="kv"><div class="k">Turnout</div><div>' + (who(t.students, 'Students') + who(t.lecturers, 'Lecturers') || '—') + '</div><div class="k">Opens</div><div>' + fmtDateTime(d.election.opensAt) + '</div><div class="k">Closes</div><div>' + fmtDateTime(d.election.closesAt) + '</div></div>' +
+        d.positions.map((p) => '<h3 style="margin-top:18px">' + esc(p.title) + ' <span class="muted small">' + p.totalVotes + ' vote' + (p.totalVotes === 1 ? '' : 's') + (p.tied ? ' · tied' : '') + '</span></h3>' +
+          p.candidates.map((c) => '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;gap:12px"><span>' + (c.leading ? '🏆 ' : '') + '<strong>' + esc(c.name) + '</strong></span><span class="tabular">' + c.votes + ' · ' + c.percent + '%' + (c.byStudents || c.byLecturers ? ' <span class="muted small">(students ' + c.byStudents + ', lecturers ' + c.byLecturers + ')</span>' : '') + '</span></div><div style="height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;margin-top:4px"><div style="height:100%;width:' + c.percent + '%;background:#c1861f"></div></div></div>').join('')).join(''));
+      void m;
+    })));
+    await listView(box, (p) => '/elections?page=' + p + '&search=' + encodeURIComponent($('el-search').value.trim()) + '&schoolId=' + $('el-school').value + '&state=' + $('el-state').value, (d) =>
+      table(['Election', 'School', 'Type', 'Who votes', 'Positions', 'Ballots', 'Status', 'Closes'], d.elections.map((e) => '<tr class="clickable" data-id="' + e.id + '"><td><strong>' + esc(e.title) + '</strong></td><td>' + esc(e.schoolName || '—') + '</td><td>' + (e.kind === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers') + '</td><td>' + esc(e.voters.toLowerCase()) + '</td><td class="tabular">' + e.positions + '</td><td class="tabular">' + e.ballots + '</td><td>' + pill(e.state) + '</td><td>' + fmtDateTime(e.closesAt) + '</td></tr>').join(''), 'No elections yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('el-search').addEventListener('input', reload); $('el-school').addEventListener('change', () => box.reload(true)); $('el-state').addEventListener('change', () => box.reload(true));
   }
 
   // ---------------- academic records ----------------
