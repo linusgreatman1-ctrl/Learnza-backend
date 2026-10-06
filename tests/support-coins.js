@@ -33,8 +33,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const dept = r.data.department;
   r = await call('POST', '/api/admin/courses', { token: admin, body: { departmentId: dept.id, code: 'LAW101', title: 'Intro Law' } });
   const course = r.data.course;
+  r = await call('POST', '/api/admin/lecturers', { token: admin, body: { fullName: 'Law Lecturer', departmentId: dept.id, courseIds: [course.id] } });
+  const lawLec = (await call('POST', '/api/auth/login-with-code', { body: { fullName: 'Law Lecturer', schoolName: name, accessCode: r.data.accessCode } })).data.token;
   const mk = async (n, matric) => {
-    const c = await call('POST', '/api/admin/students', { token: admin, body: { fullName: n, matricNumber: matric, departmentId: dept.id, courseIds: [course.id] } });
+    const c = await call('POST', '/api/lect/students', { token: lawLec, body: { fullName: n, matricNumber: matric, courseIds: [course.id] } });
     const l = await call('POST', '/api/auth/login-with-code', { body: { fullName: n, schoolName: name, accessCode: c.data.accessCode } });
     return { token: l.data.token, id: c.data.user.id };
   };

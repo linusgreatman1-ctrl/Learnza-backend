@@ -8,6 +8,7 @@ const { computeAcademicRecord } = require('./records');
 const { notifyMany } = require('../services/notification.service');
 const photoUpload = memoryUpload(5);
 const { loadCourse, hasSchool, departmentsInSchool } = require('../scope');
+const adminRoutes = require('./admin');
 
 const router = express.Router();
 const upload = memoryUpload(80); // videos run larger than library documents
@@ -127,7 +128,7 @@ router.get('/courses/:id/addable-students', requireAuth, requireRole('LECTURER',
 
 // A lecturer (or admin) adds an existing student of their own school to a class: picked from
 // the list above (studentId), or typed in by matric number. Never creates accounts -- that
-// is the school admin's job in the directory.
+// happens in "Add a new student" (POST /lect/students) below.
 router.post('/courses/:id/enroll-student', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), async (req, res) => {
   const { studentId, matricNumber } = req.body;
   const matric = typeof matricNumber === 'string' ? matricNumber.trim() : '';
@@ -144,6 +145,73 @@ router.post('/courses/:id/enroll-student', requireAuth, requireRole('LECTURER', 
   if (existing) return res.status(409).json({ error: student.fullName + ' is already in this class.' });
   await prisma.enrollment.create({ data: { studentId: student.id, courseId: req.course.id } });
   res.json({ student: { id: student.id, fullName: student.fullName, matricNumber: student.matricNumber } });
+});
+
+// ---- Only lecturers add students: for their own department(s) and classes. The school admin
+// can view and edit them afterwards (Staff & Student Directory) but does not create them.
+
+// What a lecturer may put a new student into: their own department, the departments their
+// classes belong to, and the classes they teach.
+async function lecturerScope(user) {
+  const courses = await prisma.course.findMany({
+    where: { department: { schoolId: user.schoolId }, lecturers: { some: { lecturerId: user.id } } },
+    select: { id: true, code: true, title: true, level: true, departmentId: true, department: { select: { id: true, name: true } } },
+    orderBy: { code: 'asc' },
+  });
+  const depts = new Map(courses.map((c) => [c.department.id, c.department.name]));
+  if (user.departmentId && !depts.has(user.departmentId)) {
+    const own = await prisma.department.findFirst({ where: { id: user.departmentId, schoolId: user.schoolId }, select: { id: true, name: true } });
+    if (own) depts.set(own.id, own.name);
+  }
+  return {
+    departments: [...depts].map(([id, name]) => ({ id, name, mine: id === user.departmentId })),
+    courses: courses.map(({ department, ...c }) => c),
+  };
+}
+
+router.get('/lect/add-student-options', requireAuth, requireRole('LECTURER'), async (req, res) => {
+  if (!hasSchool(req.user)) return res.status(404).json({ error: 'Not found' });
+  res.json(await lecturerScope(req.user));
+});
+
+router.post('/lect/students', requireAuth, requireRole('LECTURER'), async (req, res) => {
+  if (!hasSchool(req.user)) return res.status(404).json({ error: 'Not found' });
+  const scope = await lecturerScope(req.user);
+  if (!scope.departments.length) return res.status(400).json({ error: 'You are not in a department yet. Ask your school admin to put you in one, or to assign you a class.' });
+  const departmentId = req.body.departmentId ? String(req.body.departmentId) : (scope.departments.find((d) => d.mine) || scope.departments[0]).id;
+  if (!scope.departments.some((d) => d.id === departmentId)) return res.status(403).json({ error: 'You can only add students to your own department or the departments of your classes.' });
+  const courseIds = adminRoutes.parseCourseIds(req.body);
+  const mine = new Set(scope.courses.map((c) => c.id));
+  if (courseIds.some((id) => !mine.has(id))) return res.status(403).json({ error: 'You can only put a student into classes you teach.' });
+  await adminRoutes.createStudent(req, res, { departmentId, courseIds });
+});
+
+// A lecturer edits a student they added, or one in their classes: contact details, matric
+// number, level, and which of the lecturer's OWN classes they are in.
+router.patch('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (req, res) => {
+  if (!hasSchool(req.user)) return res.status(404).json({ error: 'Not found' });
+  const student = await prisma.user.findFirst({
+    where: { id: req.params.id, role: 'STUDENT', schoolId: req.user.schoolId, OR: [{ addedById: req.user.id }, { enrollments: { some: { course: { lecturers: { some: { lecturerId: req.user.id } } } } } }] },
+  });
+  if (!student) return res.status(404).json({ error: 'Student not found among your students.' });
+  const data = {};
+  for (const key of ['fullName', 'phone', 'matricNumber']) if (req.body[key] !== undefined) data[key] = String(req.body[key] || '').trim() || null;
+  if (data.fullName === null) return res.status(400).json({ error: 'A student needs a name.' });
+  if (data.matricNumber === null) return res.status(400).json({ error: 'A student needs a matric number.' });
+  if (data.matricNumber) {
+    const dup = await prisma.user.findFirst({ where: { schoolId: req.user.schoolId, role: 'STUDENT', NOT: { id: student.id }, matricNumber: { equals: data.matricNumber, mode: 'insensitive' } } });
+    if (dup) return res.status(409).json({ error: 'A student with that matric number already exists in your school.' });
+  }
+  if (req.body.yearOfStudy !== undefined) data.yearOfStudy = parseInt(req.body.yearOfStudy, 10) || null;
+  const updated = await prisma.user.update({ where: { id: student.id }, data });
+  if (req.body.courseIds !== undefined) {
+    const scope = await lecturerScope(req.user);
+    const mine = scope.courses.map((c) => c.id);
+    const wanted = adminRoutes.parseCourseIds(req.body).filter((id) => mine.includes(id));
+    await prisma.enrollment.deleteMany({ where: { studentId: student.id, courseId: { in: mine, notIn: wanted } } });
+    if (wanted.length) await prisma.enrollment.createMany({ data: wanted.map((courseId) => ({ studentId: student.id, courseId })), skipDuplicates: true });
+  }
+  res.json({ user: { id: updated.id, fullName: updated.fullName, matricNumber: updated.matricNumber, phone: updated.phone, yearOfStudy: updated.yearOfStudy } });
 });
 
 // Comprehensive detail for one of the lecturer's own students -- reuses the same

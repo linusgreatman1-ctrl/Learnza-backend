@@ -38,8 +38,9 @@ const photoForm = () => { const f = new FormData(); f.append('avatar', new Blob(
   const lecA = (await call('POST', '/api/admin/lecturers', { token: A.admin, body: { fullName: 'Dr ID ' + RUN, departmentId: dept.id, staffId: 'STF/1', courseIds: [c1.id] } })).data;
   const lecOther = (await call('POST', '/api/admin/lecturers', { token: A.admin, body: { fullName: 'Dr Other ' + RUN, departmentId: dept.id, courseIds: [c2.id] } })).data;
   const staff = (await call('POST', '/api/admin/non-academic-staff', { token: A.admin, body: { fullName: 'Lib ' + RUN, position: 'Librarian' } })).data;
-  const stu = (await call('POST', '/api/admin/students', { token: A.admin, body: { fullName: 'Stu ' + RUN, matricNumber: 'L/1', departmentId: dept.id, yearOfStudy: 2, courseIds: [c1.id] } })).data;
   const login = async (school, name, code) => (await call('POST', '/api/auth/login-with-code', { body: { fullName: name, schoolName: school.name, accessCode: code } }));
+  const lecAToken = (await login(A, 'Dr ID ' + RUN, lecA.accessCode)).data.token;
+  const stu = (await call('POST', '/api/lect/students', { token: lecAToken, body: { fullName: 'Stu ' + RUN, matricNumber: 'L/1', yearOfStudy: 2, courseIds: [c1.id] } })).data;
 
   console.log('== every kind of account can sign in and has what its card needs ==');
   const sStaff = await login(A, 'Lib ' + RUN, staff.accessCode);

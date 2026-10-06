@@ -41,18 +41,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const B = await mkSchool('B');
   const dept = (await call('POST', '/api/admin/departments', { token: A.admin, body: { name: 'History', code: 'HIS' } })).data.department;
   const course = (await call('POST', '/api/admin/courses', { token: A.admin, body: { departmentId: dept.id, code: 'HIS101', title: 'World History' } })).data.course;
+  // Students are added by a lecturer (school.lecturer), everyone else by the school admin.
   const person = async (school, path, body, role) => {
-    const c = await call('POST', path, { token: school.admin, body });
+    const c = await call('POST', path, { token: path === '/api/lect/students' ? school.lecturer : school.admin, body });
     const l = await call('POST', '/api/auth/login-with-code', { body: { fullName: body.fullName, schoolName: school.name, accessCode: c.data.accessCode } });
     return { token: l.data.token, id: c.data.user.id, name: body.fullName, role };
   };
-  const stu1 = await person(A, '/api/admin/students', { fullName: 'Voter One ' + RUN, matricNumber: 'H/1', departmentId: dept.id, yearOfStudy: 1, courseIds: [course.id] }, 'STUDENT');
-  const stu2 = await person(A, '/api/admin/students', { fullName: 'Voter Two ' + RUN, matricNumber: 'H/2', departmentId: dept.id, yearOfStudy: 1, courseIds: [course.id] }, 'STUDENT');
-  const stu3 = await person(A, '/api/admin/students', { fullName: 'Candidate Three ' + RUN, matricNumber: 'H/3', departmentId: dept.id, yearOfStudy: 2 }, 'STUDENT');
   const lec1 = await person(A, '/api/admin/lecturers', { fullName: 'Lec One ' + RUN, departmentId: dept.id, courseIds: [course.id] }, 'LECTURER');
   const lec2 = await person(A, '/api/admin/lecturers', { fullName: 'Lec Two ' + RUN, departmentId: dept.id }, 'LECTURER');
+  A.lecturer = lec1.token;
+  const stu1 = await person(A, '/api/lect/students', { fullName: 'Voter One ' + RUN, matricNumber: 'H/1', yearOfStudy: 1, courseIds: [course.id] }, 'STUDENT');
+  const stu2 = await person(A, '/api/lect/students', { fullName: 'Voter Two ' + RUN, matricNumber: 'H/2', yearOfStudy: 1, courseIds: [course.id] }, 'STUDENT');
+  const stu3 = await person(A, '/api/lect/students', { fullName: 'Candidate Three ' + RUN, matricNumber: 'H/3', yearOfStudy: 2 }, 'STUDENT');
   const deptB = (await call('POST', '/api/admin/departments', { token: B.admin, body: { name: 'Law', code: 'LAW' } })).data.department;
-  const stuB = await person(B, '/api/admin/students', { fullName: 'Other School ' + RUN, matricNumber: 'B/1', departmentId: deptB.id }, 'STUDENT');
+  B.lecturer = (await person(B, '/api/admin/lecturers', { fullName: 'Lec B ' + RUN, departmentId: deptB.id }, 'LECTURER')).token;
+  const stuB = await person(B, '/api/lect/students', { fullName: 'Other School ' + RUN, matricNumber: 'B/1' }, 'STUDENT');
   const indieEmail = `commerce${RUN}@example.com`;
   r = await call('POST', '/api/auth/register-individual', { body: { fullName: 'Indie ' + RUN, email: indieEmail, password: 'secret12', institutionType: 'MONOTECHNIC' } });
   const indie = { token: r.data.token, id: r.data.user.id };

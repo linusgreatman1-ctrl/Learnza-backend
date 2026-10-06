@@ -8,7 +8,8 @@ const { AsyncLocalStorage } = require('async_hooks');
 const counting = process.env.LZ_QUERY_COUNT === '1';
 const requestStats = new AsyncLocalStorage();
 
-let prisma = new PrismaClient();
+// Transactions get 15 s (default 5 s): a slow moment on the database must not fail a sign-up halfway.
+let prisma = new PrismaClient({ transactionOptions: { timeout: 15000, maxWait: 10000 } });
 
 if (counting) {
   // A client extension runs inside the calling request's async context (Prisma's own query

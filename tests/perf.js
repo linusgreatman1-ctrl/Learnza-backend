@@ -35,9 +35,9 @@ async function build(SUPER, label, size) {
   const dept = (await call('POST', '/api/admin/departments', { token: admin, body: { name: 'Dept', code: 'D' + label } })).data.department;
   const courses = await pool(Array.from({ length: size.courses }), 3, (_, i) => call('POST', '/api/admin/courses', { token: admin, body: { departmentId: dept.id, code: `C${label}${i}`, title: `Course ${i}` } }).then((r) => r.data.course));
   const lecturers = await pool(Array.from({ length: size.lecturers }), 3, (_, i) => call('POST', '/api/admin/lecturers', { token: admin, body: { fullName: `Lec ${label} ${i}`, departmentId: dept.id, courseIds: courses.map((c) => c.id) } }).then((r) => r.data));
-  const students = await pool(Array.from({ length: size.students }), 4, (_, i) => call('POST', '/api/admin/students', { token: admin, body: { fullName: `Stu ${label} ${i}`, matricNumber: `${label}/${i}`, departmentId: dept.id, yearOfStudy: 1, courseIds: courses.map((c) => c.id) } }).then((r) => r.data));
   const login = async (n, code) => (await call('POST', '/api/auth/login-with-code', { body: { fullName: n, schoolName: name, accessCode: code } })).data.token;
   const lecToken = await login(`Lec ${label} 0`, lecturers[0].accessCode);
+  const students = await pool(Array.from({ length: size.students }), 4, (_, i) => call('POST', '/api/lect/students', { token: lecToken, body: { fullName: `Stu ${label} ${i}`, matricNumber: `${label}/${i}`, yearOfStudy: 1, courseIds: courses.map((c) => c.id) } }).then((r) => r.data));
   const stuToken = await login(`Stu ${label} 0`, students[0].accessCode);
   // some activity so the lists have rows: results, attendance, an assessment, a group, a lesson
   const c0 = courses[0];

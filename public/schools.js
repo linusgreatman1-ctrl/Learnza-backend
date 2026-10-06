@@ -5353,8 +5353,8 @@
     const { courses } = await ensureLectCourses();
     const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
     view.innerHTML = `
-      <div class="page-head"><h1>My Students</h1></div>
-      <p class="muted" style="margin-bottom:18px;">Pick a class to see its students.</p>
+      <div class="page-head"><h1>My Students</h1><button class="btn btn-accent btn-sm" id="new-student-btn">+ Add a new student</button></div>
+      <p class="muted" style="margin-bottom:18px;">Pick a class to see its students. Only lecturers add students: you add them to your department and classes, give each one their access code, and they sign in with it.</p>
       <div class="grid-cards">
         ${courses.map((c, i) => `
           <div class="card course-card" data-open="${c.id}" data-title="${esc(c.title)}" data-code="${esc(c.code)}" style="cursor:pointer;">
@@ -5368,6 +5368,7 @@
     view.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-class-roster', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
     });
+    document.getElementById('new-student-btn').addEventListener('click', () => openNewStudentDialog(null));
   }
 
   async function renderLecturerClassRoster() {
@@ -5403,7 +5404,8 @@
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,94vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
       <h3 style="margin-bottom:6px;">Add students to ${esc(courseTitle || 'this class')}</h3>
-      <p class="muted" style="font-size:13px; margin-bottom:14px;">Search your school's students by name or matric number and add them to the class. Students are created by your school admin (Staff &amp; Student Directory).</p>
+      <p class="muted" style="font-size:13px; margin-bottom:10px;">Search your school's students by name or matric number and add them to the class.</p>
+      <button class="btn btn-accent btn-sm" id="as-new" style="margin-bottom:12px;">+ New student (not on Learnza yet)</button>
       <div class="field"><input type="text" id="as-search" placeholder="Search by name or matric number…" autocomplete="off"></div>
       <div id="as-results" style="margin:8px 0 14px;"></div>
       <button class="btn btn-ghost" id="as-close">Done</button>
@@ -5416,6 +5418,7 @@
     function close() { backdrop.remove(); container.remove(); if (added) render(); }
     container.querySelector('#as-close').addEventListener('click', close);
     backdrop.addEventListener('click', close);
+    container.querySelector('#as-new').addEventListener('click', () => { backdrop.remove(); container.remove(); openNewStudentDialog(courseId); });
 
     const results = container.querySelector('#as-results');
     async function search() {
@@ -5445,6 +5448,58 @@
     let timer;
     container.querySelector('#as-search').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
     search();
+  }
+
+  // A lecturer adds a brand-new student to their department and classes. The student gets an
+  // access code, shown here once, which the lecturer passes on; they sign in with it.
+  async function openNewStudentDialog(courseId) {
+    let opts;
+    try { opts = await api('/lect/add-student-options'); } catch (err) { toast(err.message); return; }
+    if (!opts.departments.length) { toast('You are not in a department yet. Ask your school admin to put you in one first.'); return; }
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(520px,94vw); height:fit-content; max-height:88vh; overflow-y:auto; padding:24px; z-index:200;';
+    const levels = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n * 100}L</option>`).join('');
+    box.innerHTML = `
+      <h3 style="margin-bottom:6px;">Add a new student</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">They join your department and the classes you tick. You'll get their access code to give them.</p>
+      <form id="ns-form">
+        <div class="field"><label>Full name</label><input id="ns-name" required></div>
+        <div class="field"><label>Matric number</label><input id="ns-matric" required></div>
+        <div class="field"><label>Department</label><select id="ns-dept">${opts.departments.map((d) => `<option value="${d.id}" ${d.mine ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>Level</label><select id="ns-level" required><option value="">Select…</option>${levels}</select></div>
+        <div class="field"><label>Your classes</label>${opts.courses.map((c) => `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:4px 0;"><input type="checkbox" value="${c.id}" ${c.id === courseId ? 'checked' : ''} style="width:auto;"> ${esc(c.code)} — ${esc(c.title)}</label>`).join('') || '<p class="muted" style="font-size:13px;">You have no classes yet; the student will join your department only.</p>'}</div>
+        <div class="field"><label>Phone number (optional)</label><input id="ns-phone" type="tel"></div>
+        <div class="field"><label>Email (optional)</label><input id="ns-email" type="email"></div>
+        <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Add student</button><button class="btn btn-ghost" type="button" id="ns-cancel">Cancel</button></div>
+      </form>`;
+    document.body.appendChild(backdrop);
+    document.body.appendChild(box);
+    const close = () => { backdrop.remove(); box.remove(); };
+    backdrop.addEventListener('click', close);
+    box.querySelector('#ns-cancel').addEventListener('click', close);
+    box.querySelector('#ns-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.submitter || box.querySelector('[type=submit]');
+      btn.disabled = true;
+      try {
+        const r = await api('/lect/students', { method: 'POST', body: {
+          fullName: box.querySelector('#ns-name').value.trim(), matricNumber: box.querySelector('#ns-matric').value.trim(),
+          departmentId: box.querySelector('#ns-dept').value, yearOfStudy: box.querySelector('#ns-level').value,
+          phone: box.querySelector('#ns-phone').value.trim(), email: box.querySelector('#ns-email').value.trim(),
+          courseIds: [...box.querySelectorAll('input[type=checkbox]:checked')].map((i) => i.value),
+        } });
+        box.innerHTML = `
+          <h3 style="margin-bottom:8px;">${esc(r.user.fullName)} has been added</h3>
+          <p class="muted" style="margin-bottom:12px;">Give them this access code. They sign in to Learnza for Schools with their full name, your school's name and this code.</p>
+          <div class="code tabular" style="font-size:1.6rem; letter-spacing:.12em; margin-bottom:16px;">${esc(r.accessCode)}</div>
+          <div style="display:flex; gap:10px;"><button class="btn btn-ghost" id="ns-copy">Copy code</button><button class="btn btn-primary" id="ns-done">Done</button></div>`;
+        box.querySelector('#ns-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(r.accessCode); toast('Copied'); } catch { toast(r.accessCode); } });
+        box.querySelector('#ns-done').addEventListener('click', () => { close(); render(); });
+      } catch (err) { btn.disabled = false; toast(err.message); }
+    });
   }
 
   // Comprehensive detail for one student in the lecturer's class -- reuses the exact
@@ -6377,15 +6432,9 @@
         { key: 'lift-suspension', label: 'Lift suspension', show: (u) => u.status === 'SUSPENDED' },
         { key: 'expel', label: 'Expel', show: (u) => u.status !== 'EXPELLED' },
       ],
-      addFields: [
-        { key: 'fullName', label: 'Full name', required: true },
-        { key: 'matricNumber', label: 'Matric number', required: true },
-        { key: 'departmentId', label: 'Department', type: 'department', required: true },
-        { key: 'yearOfStudy', label: 'Level', type: 'year', required: true },
-        { key: 'courseIds', label: 'Course(s)', type: 'courses' },
-        { key: 'email', label: 'Email (optional)', type: 'email' },
-        { key: 'phone', label: 'Phone number', type: 'tel' },
-      ],
+      // Students are added by their lecturers (My Students); the admin views and edits them.
+      addFields: null,
+      addNote: 'Students are added by their lecturers, from My Students. You can view and edit them here.',
       editFields: [
         { key: 'fullName', label: 'Full name', required: true },
         { key: 'matricNumber', label: 'Matric number', required: true },
@@ -6587,7 +6636,7 @@
       <div class="page-head">
         <h1>${cfg.label}</h1>
         <div style="display:flex; gap:10px;">
-          <button class="btn btn-accent btn-sm" id="add-btn">+ Add</button>
+          ${cfg.addFields ? '<button class="btn btn-accent btn-sm" id="add-btn">+ Add</button>' : ''}
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
@@ -6617,7 +6666,8 @@
       wireRows();
     });
     document.getElementById('back-btn').addEventListener('click', () => navigate('admin-directory'));
-    document.getElementById('add-btn').addEventListener('click', async () => {
+    if (cfg.addNote) document.getElementById('back-btn').closest('.page-head').insertAdjacentHTML('afterend', `<p class="hint-box" style="margin-bottom:14px;">${esc(cfg.addNote)}</p>`);
+    if (cfg.addFields) document.getElementById('add-btn').addEventListener('click', async () => {
       const box = document.getElementById('add-box');
       box.hidden = !box.hidden;
       if (box.hidden) return;

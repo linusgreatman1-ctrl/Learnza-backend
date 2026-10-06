@@ -92,6 +92,7 @@ model User {
   yearOfStudy    Int?      // school students' level (1,2,3 -> 100L/200L/300L); individual learners set their own at registration too
   notificationsMuted Boolean @default(false) // Settings: "Mute notifications" -- suppresses new in-app notifications, doesn't delete existing ones
   avatarUrl      String?   // Settings/Digital ID: profile picture, uploaded from device -- replaces the initials circle when set
+  addedById      String?   // students: the lecturer who added them (only lecturers add students)
   createdAt      DateTime  @default(now())
 
   disciplinaryRecords DisciplinaryRecord[] @relation("DisciplinaryStudent")

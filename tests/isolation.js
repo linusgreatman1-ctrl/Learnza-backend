@@ -74,16 +74,35 @@ async function loginCode(school, fullName, accessCode) {
   r = await call('POST', '/api/admin/lecturers', { token: A.admin, body: { fullName: 'Dr Four', departmentId: deptA.id, email: `THREE${RUN}@example.com` } });
   check('duplicate email (any case) -> 409', r.status === 409, r);
 
+  console.log('== only lecturers add students; the school admin views and edits them ==');
   r = await call('POST', '/api/admin/students', { token: A.admin, body: { fullName: 'Student One', matricNumber: 'AB/001', departmentId: deptA.id, yearOfStudy: 1 } });
-  check('admin adds a student with no email', r.status === 200 && r.data.accessCode, r);
-  const s1 = r.data;
-  r = await call('POST', '/api/admin/students', { token: A.admin, body: { fullName: 'Student Two', matricNumber: 'AB/002', departmentId: deptA2.id, yearOfStudy: 2 } });
-  const s2 = r.data;
-  r = await call('POST', '/api/admin/students', { token: A.admin, body: { fullName: 'Dup', matricNumber: 'ab/001', departmentId: deptA.id } });
-  check('same matric number (any case) in the same school -> 409', r.status === 409, r);
-
-  console.log('== lecturer signs in and adds students to the class ==');
+  check('a school admin cannot add a student', r.status === 403, r);
   const lecToken = await loginCode(A, 'Dr Ada Obi', lecA.accessCode);
+  r = await call('GET', '/api/lect/add-student-options', { token: lecToken });
+  check("the lecturer's options are their own department and classes", r.status === 200 && r.data.departments.length === 1 && r.data.departments[0].id === deptA.id && r.data.courses.length === 1 && r.data.courses[0].id === courseA.id, r.data);
+  r = await call('POST', '/api/lect/students', { token: lecToken, body: { fullName: 'Student One', matricNumber: 'AB/001', yearOfStudy: 1 } });
+  check('the lecturer adds a student with no email', r.status === 201 && r.data.accessCode && r.data.user.departmentId === deptA.id && r.data.user.addedById === lecA.user.id, r);
+  const s1 = r.data;
+  r = await call('POST', '/api/lect/students', { token: lecToken, body: { fullName: 'Wrong Dept', matricNumber: 'AB/009', departmentId: deptA2.id } });
+  check("a lecturer cannot add a student to another department", r.status === 403, r);
+  r = await call('POST', '/api/lect/students', { token: lecToken, body: { fullName: 'Dup', matricNumber: 'ab/001' } });
+  check('same matric number (any case) in the same school -> 409', r.status === 409, r);
+  r = await call('POST', '/api/admin/lecturers', { token: A.admin, body: { fullName: 'Dr Bio', departmentId: deptA2.id } });
+  const bioToken = await loginCode(A, 'Dr Bio', r.data.accessCode);
+  r = await call('POST', '/api/lect/students', { token: bioToken, body: { fullName: 'Student Two', matricNumber: 'AB/002', yearOfStudy: 2 } });
+  check("a lecturer with no classes adds to their own department", r.status === 201 && r.data.user.departmentId === deptA2.id, r);
+  const s2 = r.data;
+  r = await call('PATCH', `/api/admin/students/${s1.user.id}`, { token: A.admin, body: { phone: '08011112222' } });
+  check('the school admin can still edit a student', r.status === 200 && r.data.user.phone === '08011112222', r);
+  r = await call('GET', '/api/admin/students', { token: A.admin });
+  check('...and sees them in the directory', r.status === 200 && r.data.students.length === 2, r.data.students && r.data.students.length);
+  r = await call('PATCH', `/api/lect/students/${s1.user.id}`, { token: lecToken, body: { matricNumber: 'AB/001A' } });
+  check('the lecturer who added a student can edit them', r.status === 200 && r.data.user.matricNumber === 'AB/001A', r);
+  r = await call('PATCH', `/api/lect/students/${s1.user.id}`, { token: bioToken, body: { fullName: 'hacked' } });
+  check("another lecturer cannot edit a student who isn't theirs", r.status === 404, r);
+  await call('PATCH', `/api/lect/students/${s1.user.id}`, { token: lecToken, body: { matricNumber: 'AB/001' } });
+
+  console.log('== lecturer adds students to the class ==');
   r = await call('GET', `/api/courses/${courseA.id}/addable-students`, { token: lecToken });
   check('picker lists both school students', r.status === 200 && r.data.students.length === 2, r);
   check('same-department student is listed first', r.data.students[0].id === s1.user.id, r.data.students.map((s) => s.fullName));
@@ -127,9 +146,9 @@ async function loginCode(school, fullName, accessCode) {
   const courseB = r.data.course;
   r = await call('POST', '/api/admin/lecturers', { token: B.admin, body: { fullName: 'Dr Bee', departmentId: deptB.id, courseIds: [courseB.id] } });
   const lecBToken = await loginCode(B, 'Dr Bee', r.data.accessCode);
-  r = await call('POST', '/api/admin/students', { token: B.admin, body: { fullName: 'Bee Student', matricNumber: 'AB/001', departmentId: deptB.id } });
+  r = await call('POST', '/api/lect/students', { token: lecBToken, body: { fullName: 'Bee Student', matricNumber: 'AB/001' } });
   const sB = r.data;
-  check('B can reuse a matric number that A uses (matric is unique per school)', r.status === 200, r);
+  check('B can reuse a matric number that A uses (matric is unique per school)', r.status === 201, r);
   const stuBToken = await loginCode(B, 'Bee Student', sB.accessCode);
 
   const notFound = async (label, method, path, body, token = lecBToken) => {
@@ -173,8 +192,12 @@ async function loginCode(school, fullName, accessCode) {
   check('B admin cannot add a lecturer into A department', r.status === 400, r);
   r = await call('POST', '/api/admin/lecturers', { token: B.admin, body: { fullName: 'Sneaky 2', departmentId: deptB.id, courseIds: [courseA.id] } });
   check('B admin cannot assign A course to a lecturer', r.status === 400, r);
-  r = await call('POST', '/api/admin/students', { token: B.admin, body: { fullName: 'Sneaky 3', matricNumber: 'ZZ/1', departmentId: deptB.id, courseIds: [courseA.id] } });
-  check('B admin cannot enrol a new student in an A course', r.status === 400, r);
+  r = await call('POST', '/api/lect/students', { token: lecBToken, body: { fullName: 'Sneaky 3', matricNumber: 'ZZ/1', courseIds: [courseA.id] } });
+  check('a B lecturer cannot put a new student in an A course', r.status === 403, r);
+  r = await call('POST', '/api/lect/students', { token: lecBToken, body: { fullName: 'Sneaky 4', matricNumber: 'ZZ/2', departmentId: deptA.id } });
+  check('...or in an A department', r.status === 403, r);
+  r = await call('PATCH', `/api/lect/students/${s1.user.id}`, { token: lecBToken, body: { fullName: 'hacked' } });
+  check('...or edit an A student', r.status === 404, r);
   r = await call('PATCH', `/api/admin/lecturers/${r.data && lecA.user.id}`, { token: B.admin, body: { departmentId: deptB.id } });
   check('B admin cannot move an A lecturer', r.status === 404, r);
   r = await call('GET', `/api/departments/${deptA.id}/courses`, { token: lecBToken });

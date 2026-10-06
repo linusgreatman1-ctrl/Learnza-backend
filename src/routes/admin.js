@@ -257,7 +257,7 @@ router.get('/student-activity', async (req, res) => {
 // school's name) plus a stored password nobody needs to know. Returns the created user,
 // or null after sending an error response itself, so callers can do post-creation work
 // (attaching courses) before sending their own final response.
-async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [] }) {
+async function createSchoolUser(req, res, { role, extraFields = {}, requiredFields = [], courseIds: givenCourseIds }) {
   const { fullName, phone, password } = req.body;
   const name = typeof fullName === 'string' ? fullName.trim() : '';
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
@@ -278,7 +278,7 @@ async function createSchoolUser(req, res, { role, extraFields = {}, requiredFiel
     res.status(400).json({ error: 'That department does not exist in your school. Pick one from the list.' });
     return null;
   }
-  const courseIds = parseCourseIds(req.body);
+  const courseIds = givenCourseIds || parseCourseIds(req.body);
   if (courseIds.length && !(await coursesInSchool(courseIds, req.user.schoolId))) {
     res.status(400).json({ error: 'One of the chosen courses does not exist in your school.' });
     return null;
@@ -349,21 +349,28 @@ router.post('/non-academic-staff', async (req, res) => {
   res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
 });
 
-router.post('/students', async (req, res) => {
-  const { matricNumber, departmentId, yearOfStudy } = req.body;
+// Students are added by their lecturers (My Students), for the lecturer's own department and
+// classes -- the school admin views and edits them here but does not create them.
+router.post('/students', (req, res) => {
+  res.status(403).json({ error: 'Students are added by their lecturers, from My Students. You can view and edit them here.', code: 'LECTURERS_ADD_STUDENTS' });
+});
+
+// Used by routes/academics.js when a lecturer adds a student.
+async function createStudent(req, res, { departmentId, courseIds }) {
+  const { matricNumber, yearOfStudy } = req.body;
   const created = await createSchoolUser(req, res, {
     role: 'STUDENT',
-    requiredFields: ['matricNumber', 'departmentId'],
-    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null },
+    requiredFields: ['matricNumber'],
+    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, addedById: req.user.id },
+    courseIds,
   });
   if (!created) return;
-  const courseIds = parseCourseIds(req.body);
   if (courseIds.length) {
     await prisma.enrollment.createMany({ data: courseIds.map((courseId) => ({ studentId: created.user.id, courseId })), skipDuplicates: true });
   }
   const { passwordHash, ...safe } = created.user;
-  res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
-});
+  res.status(201).json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
+}
 
 // ---- Admin management: a school can have more than one admin account (e.g. the
 // registrar plus a deputy) -- this is how additional ones get added, on top of the
@@ -648,5 +655,8 @@ router.get('/courses', async (req, res) => {
   });
   res.json({ courses });
 });
+
+router.createStudent = createStudent;
+router.parseCourseIds = parseCourseIds;
 
 module.exports = router;

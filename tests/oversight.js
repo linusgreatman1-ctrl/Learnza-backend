@@ -38,8 +38,8 @@ const text = async (p) => { const r = await fetch(BASE + p); return { status: r.
   const dept = (await call('POST', '/api/admin/departments', { token: admin, body: { name: 'Biology', code: 'BIO' } })).data.department;
   const course = (await call('POST', '/api/admin/courses', { token: admin, body: { departmentId: dept.id, code: 'BIO101', title: 'Intro Biology' } })).data.course;
   const lec = (await call('POST', '/api/admin/lecturers', { token: admin, body: { fullName: LEC_NAME, departmentId: dept.id, courseIds: [course.id] } })).data;
-  const stu = (await call('POST', '/api/admin/students', { token: admin, body: { fullName: STU_NAME, matricNumber: 'O/1', departmentId: dept.id, yearOfStudy: 1, courseIds: [course.id] } })).data;
   const lecToken = (await call('POST', '/api/auth/login-with-code', { body: { fullName: LEC_NAME, schoolName: name, accessCode: lec.accessCode } })).data.token;
+  const stu = (await call('POST', '/api/lect/students', { token: lecToken, body: { fullName: STU_NAME, matricNumber: 'O/1', yearOfStudy: 1, courseIds: [course.id] } })).data;
   const stuToken = (await call('POST', '/api/auth/login-with-code', { body: { fullName: STU_NAME, schoolName: name, accessCode: stu.accessCode } })).data.token;
   await call('POST', `/api/courses/${course.id}/results`, { token: lecToken, body: { studentId: stu.user.id, term: 'First 2026', score: 72, grade: 'A', send: true } });
   await call('POST', `/api/courses/${course.id}/attendance`, { token: lecToken, body: { studentId: stu.user.id, status: 'PRESENT' } });
