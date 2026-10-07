@@ -178,7 +178,7 @@
     conversations: () => renderAi('logs'), teacher: () => renderAi('sessions'), demonstrations: renderDemonstrations,
     payments: () => renderPayments('payments'), coins: () => renderPayments('coins'), subscriptions: () => renderPayments('subs'),
     gamification: renderGamification, attendance: renderAttendance, results: renderResults, records: renderRecords,
-    users: renderUsers, teachers: renderTeachers, elections: renderElections, schools: renderSchools,
+    users: renderUsers, teachers: renderTeachers, fees: renderFees, elections: renderElections, schools: renderSchools,
     announcements: renderAnnouncements, 'bulk-email': () => renderBulk('EMAIL'), 'bulk-sms': () => renderBulk('SMS'),
     tickets: () => renderSupport('tickets'), reviews: renderReviews, chat: () => renderSupport('chat'),
     live: renderLive, library: renderLibrary, 'access-codes': renderAccessCodes, editor: renderCodeEditor, preview: renderPreview, codes: renderCodes,
@@ -199,8 +199,11 @@
   }
   $('nav').addEventListener('click', (e) => {
     const li = e.target.closest('li[data-view]');
-    if (li) go(li.dataset.view);
+    if (li) { $('app-screen').classList.remove('nav-open'); go(li.dataset.view); }
   });
+  // On a phone the menu slides in from the ☰ button.
+  $('nav-toggle').addEventListener('click', () => $('app-screen').classList.toggle('nav-open'));
+  $('nav-scrim').addEventListener('click', () => $('app-screen').classList.remove('nav-open'));
 
   function pager(page, total, pageSize, onPage) {
     const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -1042,9 +1045,34 @@
     $('te-search').addEventListener('input', reload); $('te-school').addEventListener('change', () => box.reload(true)); $('te-role').addEventListener('change', () => box.reload(true));
   }
 
+  // ---------------- school fees (read-only) ----------------
+  async function renderFees() {
+    const o = await api('/fees/overview');
+    const N = (k) => (Number(k || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 0 });
+    const STATUS = { PENDING: 'Waiting for the school', CONFIRMED: 'Confirmed', REJECTED: 'Rejected' };
+    view.innerHTML = '<div class="view-head"><div><h1>School Fees</h1><div class="muted">What students pay their institutions. <strong>View only</strong>: bank-transfer payments are confirmed by the school itself and card / USSD payments by the payment provider, so there is nothing here for Learnza staff to confirm, change or delete.</div></div></div>' +
+      '<div class="cards">' + cardStat(o.totals.schools, 'Schools') + cardStat(o.totals.schoolsWithBank, 'With bank details') + cardStat('₦' + N(o.totals.confirmedKobo), 'Confirmed') + cardStat('₦' + N(o.totals.pendingKobo), 'Waiting for schools') + cardStat(o.totals.payments, 'Payments') + '</div>' +
+      '<h3 style="margin-top:18px">By school</h3>' + table(['School', 'Fee bank account', 'Fee items', 'Confirmed (₦)', 'Confirmed', 'Waiting (₦)', 'Waiting'], o.schools.map((s) => '<tr><td><strong>' + esc(s.name) + '</strong><div class="small muted">' + esc(s.state || '') + '</div></td><td>' + (s.bank ? esc(s.bank.bankName) + ' · ' + esc(s.bank.accountName) + '<div class="small muted">' + esc(s.bank.accountNumber) + '</div>' : '<span class="muted">not added yet</span>') + '</td><td class="tabular">' + s.feeItems + '</td><td class="tabular">' + N(s.confirmedKobo) + '</td><td class="tabular">' + s.confirmedCount + '</td><td class="tabular">' + N(s.pendingKobo) + '</td><td class="tabular">' + s.pendingCount + '</td></tr>').join(''), 'No schools yet.') +
+      '<h3 style="margin-top:18px">Payments</h3>' +
+      searchBar('fe-search', 'Search student name…', null, '<select id="fe-school">' + '<option value="">All schools</option>' + o.schools.map((s) => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('') + '</select><select id="fe-status"><option value="">All</option><option value="PENDING">Waiting for the school</option><option value="CONFIRMED">Confirmed</option><option value="REJECTED">Rejected</option></select>') + '<div id="fe-list"></div>';
+    const box = $('fe-list');
+    box.addEventListener('drawn', () => box.querySelectorAll('tr.clickable').forEach((tr) => tr.addEventListener('click', async () => {
+      const { payment: p } = await api('/fees/payments/' + tr.dataset.id);
+      const m = modal('<div class="modal-head"><div><h3 style="margin:0">Payment · ' + esc(p.studentName) + '</h3><div class="muted small">' + esc(p.schoolName) + (p.department ? ' · ' + esc(p.department) : '') + (p.level ? ' · ' + esc(p.level) : '') + ' · ' + esc(STATUS[p.status] || p.status) + '</div></div><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+        table(['Paying for', 'Amount (₦)'], p.items.map((i) => '<tr><td>' + esc(i.title) + '</td><td class="tabular">' + N(i.amountKobo) + '</td></tr>').join('') + '<tr><td><strong>Total</strong></td><td class="tabular"><strong>' + N(p.amountKobo) + '</strong></td></tr>') +
+        '<div class="kv" style="margin-top:12px"><div class="k">Method</div><div>' + esc(p.method === 'ONLINE' ? 'online (' + (p.provider === 'PAYSTACK' ? 'Paystack' : 'Flutterwave') + ')' : String(p.method).replace('_', ' ').toLowerCase()) + '</div><div class="k">Reference</div><div>' + esc(p.reference || '—') + '</div><div class="k">Paid by</div><div>' + esc(p.depositorName || '—') + '</div><div class="k">Receipt</div><div>' + esc(p.receiptNo || '—') + '</div><div class="k">Sent by</div><div>' + esc(String(p.submittedBy).toLowerCase()) + '</div>' + (p.schoolBank ? '<div class="k">School account</div><div>' + esc(p.schoolBank.bankName) + ' ' + esc(p.schoolBank.accountNumber) + '</div>' : '') + (p.rejectReason ? '<div class="k">Rejected because</div><div>' + esc(p.rejectReason) + '</div>' : '') + (p.note ? '<div class="k">Note</div><div>' + esc(p.note) + '</div>' : '') + '</div>' +
+        (p.proofUrl ? '<img alt="Receipt photo" src="' + esc(p.proofUrl) + '" style="max-width:100%;border-radius:8px;margin-top:12px;border:1px solid #d6dae6">' : ''));
+      void m;
+    })));
+    await listView(box, (pg) => '/fees/payments?page=' + pg + '&q=' + encodeURIComponent($('fe-search').value.trim()) + '&schoolId=' + $('fe-school').value + '&status=' + $('fe-status').value, (d) =>
+      table(['When', 'School', 'Student', 'Paying for', 'Amount (₦)', 'Method', 'Status'], d.items.map((p) => '<tr class="clickable" data-id="' + p.id + '"><td>' + fmtDateTime(p.createdAt) + '</td><td>' + esc(p.schoolName) + '</td><td><strong>' + esc(p.studentName) + '</strong><div class="small muted">' + esc([p.matricNumber, p.department, p.level].filter(Boolean).join(' · ')) + '</div></td><td>' + esc(clip(p.items.map((i) => i.title).join(', '), 70)) + '</td><td class="tabular">' + N(p.amountKobo) + '</td><td>' + esc(p.method === 'ONLINE' ? 'online' : String(p.method).replace('_', ' ').toLowerCase()) + '</td><td>' + esc(STATUS[p.status] || p.status) + '</td></tr>').join(''), 'No payments yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('fe-search').addEventListener('input', reload); $('fe-school').addEventListener('change', () => box.reload(true)); $('fe-status').addEventListener('change', () => box.reload(true));
+  }
+
   // ---------------- elections (read-only) ----------------
   async function renderElections() {
-    view.innerHTML = '<div class="view-head"><div><h1>Elections</h1><div class="muted">Student union (SUG) and lecturer elections run by each school. You see the count and turnout, never who voted for whom. Click an election for the full result.</div></div></div>' +
+    view.innerHTML = '<div class="view-head"><div><h1>Elections</h1><div class="muted">Student union (SUG), class representative and lecturer elections run by each school. You see the count and turnout, never who voted for whom. Click an election for the full result.</div></div></div>' +
       searchBar('el-search', 'Search elections…', null, '<select id="el-school"></select><select id="el-state"><option value="">All</option><option value="OPEN">Open</option><option value="UPCOMING">Upcoming</option><option value="CLOSED">Closed</option></select>') + '<div id="el-list"></div>';
     $('el-school').innerHTML = await schoolOptions();
     const box = $('el-list');
@@ -1053,14 +1081,14 @@
       const d = await api('/elections/' + tr.dataset.id);
       const t = d.turnout;
       const who = (x, label) => (x ? '<div>' + label + ': <strong>' + x.voted + '</strong> of ' + x.eligible + ' voted</div>' : '');
-      const m = modal('<div class="modal-head"><div><h3 style="margin:0">' + esc(d.election.title) + '</h3><div class="muted small">' + esc(d.election.schoolName || '') + ' · ' + (d.election.kind === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers') + ' · ' + pill(d.election.state) + '</div></div><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
+      const m = modal('<div class="modal-head"><div><h3 style="margin:0">' + esc(d.election.title) + '</h3><div class="muted small">' + esc(d.election.schoolName || '') + ' · ' + (d.election.kind === 'STUDENT_SUG' ? 'Student union (SUG)' : d.election.kind === 'CLASS_REP' ? 'Class representative' + (d.election.courseName ? ' · ' + esc(d.election.courseName) : '') : 'Lecturers') + ' · ' + pill(d.election.state) + '</div></div><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
         '<div class="kv"><div class="k">Turnout</div><div>' + (who(t.students, 'Students') + who(t.lecturers, 'Lecturers') || '—') + '</div><div class="k">Opens</div><div>' + fmtDateTime(d.election.opensAt) + '</div><div class="k">Closes</div><div>' + fmtDateTime(d.election.closesAt) + '</div></div>' +
         d.positions.map((p) => '<h3 style="margin-top:18px">' + esc(p.title) + ' <span class="muted small">' + p.totalVotes + ' vote' + (p.totalVotes === 1 ? '' : 's') + (p.tied ? ' · tied' : '') + '</span></h3>' +
           p.candidates.map((c) => '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;gap:12px"><span>' + (c.leading ? '🏆 ' : '') + '<strong>' + esc(c.name) + '</strong></span><span class="tabular">' + c.votes + ' · ' + c.percent + '%' + (c.byStudents || c.byLecturers ? ' <span class="muted small">(students ' + c.byStudents + ', lecturers ' + c.byLecturers + ')</span>' : '') + '</span></div><div style="height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;margin-top:4px"><div style="height:100%;width:' + c.percent + '%;background:#c1861f"></div></div></div>').join('')).join(''));
       void m;
     })));
     await listView(box, (p) => '/elections?page=' + p + '&search=' + encodeURIComponent($('el-search').value.trim()) + '&schoolId=' + $('el-school').value + '&state=' + $('el-state').value, (d) =>
-      table(['Election', 'School', 'Type', 'Who votes', 'Positions', 'Ballots', 'Status', 'Closes'], d.elections.map((e) => '<tr class="clickable" data-id="' + e.id + '"><td><strong>' + esc(e.title) + '</strong></td><td>' + esc(e.schoolName || '—') + '</td><td>' + (e.kind === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers') + '</td><td>' + esc(e.voters.toLowerCase()) + '</td><td class="tabular">' + e.positions + '</td><td class="tabular">' + e.ballots + '</td><td>' + pill(e.state) + '</td><td>' + fmtDateTime(e.closesAt) + '</td></tr>').join(''), 'No elections yet.'));
+      table(['Election', 'School', 'Type', 'Who votes', 'Positions', 'Ballots', 'Status', 'Closes'], d.elections.map((e) => '<tr class="clickable" data-id="' + e.id + '"><td><strong>' + esc(e.title) + '</strong></td><td>' + esc(e.schoolName || '—') + '</td><td>' + (e.kind === 'STUDENT_SUG' ? 'Student union (SUG)' : e.kind === 'CLASS_REP' ? 'Class representative' + (e.courseName ? ' · ' + esc(e.courseName) : '') : 'Lecturers') + '</td><td>' + esc(e.voters.toLowerCase()) + '</td><td class="tabular">' + e.positions + '</td><td class="tabular">' + e.ballots + '</td><td>' + pill(e.state) + '</td><td>' + fmtDateTime(e.closesAt) + '</td></tr>').join(''), 'No elections yet.'));
     const reload = debounce(() => box.reload(true));
     $('el-search').addEventListener('input', reload); $('el-school').addEventListener('change', () => box.reload(true)); $('el-state').addEventListener('change', () => box.reload(true));
   }

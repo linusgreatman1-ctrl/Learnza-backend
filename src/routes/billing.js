@@ -89,6 +89,14 @@ router.get('/verify/:reference', requireAuth, requireRole('STUDENT'), async (req
   const { reference } = req.params;
   const payment = await prisma.payment.findUnique({ where: { reference } });
   const purchase = payment ? null : await prisma.coinPurchase.findUnique({ where: { reference } });
+  if (!payment && !purchase) {
+    // School fees paid through Paystack come back here too: ask the gateway and settle the fee payment.
+    const fee = await prisma.feePayment.findFirst({ where: { reference, method: 'ONLINE', studentId: req.user.id } });
+    if (!fee) return res.status(404).json({ error: 'Payment not found' });
+    if (fee.status !== 'CONFIRMED' && (fee.provider === 'FLUTTERWAVE' || fee.provider === 'PAYSTACK')) await payments.verifyAndSettle(reference, fee.provider);
+    const fresh = await prisma.feePayment.findUnique({ where: { id: fee.id } });
+    return res.json({ status: fresh.status === 'CONFIRMED' ? 'SUCCESS' : fresh.status, kind: 'fee', receiptNo: fresh.receiptNo });
+  }
   const record = payment || purchase;
   if (!record || record.userId !== req.user.id) return res.status(404).json({ error: 'Payment not found' });
   const kind = payment ? 'plan' : 'coins';

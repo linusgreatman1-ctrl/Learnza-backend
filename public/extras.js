@@ -331,7 +331,7 @@
     try { sessionStorage.removeItem('lzx_pay'); history.replaceState(null, '', location.pathname + location.hash); } catch { /* ignore */ }
     try {
       const r = await api('/billing/verify/' + encodeURIComponent(ref));
-      toast(r.status === 'SUCCESS' ? (r.kind === 'coins' ? '✅ Coins added!' : '✅ Payment successful! Your plan is now active.') : 'Payment received — confirming with Paystack, this can take a moment.');
+      toast(r.status === 'SUCCESS' ? (r.kind === 'coins' ? '✅ Coins added!' : r.kind === 'fee' ? '✅ Fee payment received. Receipt ' + (r.receiptNo || '') : '✅ Payment successful! Your plan is now active.') : 'Payment received — confirming with Paystack, this can take a moment.');
       if (r.status === 'SUCCESS' && rerender) rerender();
     } catch { /* not our payment, or not signed in: nothing to report */ }
   }
@@ -684,7 +684,9 @@
   // between student and lecturer voters and who has turned out, but never who voted for whom.
   const stateLabel = { DRAFT: 'Draft', UPCOMING: 'Starts soon', OPEN: 'Voting open', CLOSED: 'Closed' };
   const statePill = (s) => (s === 'OPEN' ? 'pill-pass' : s === 'CLOSED' ? 'pill-muted' : 'pill-accent');
-  const kindLabel = (k) => (k === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers\' election');
+  const kindLabel = (k, courseName) => (k === 'CLASS_REP' ? 'Class representative' + (courseName ? ' · ' + courseName : '') : k === 'STUDENT_SUG' ? 'Student union (SUG)' : 'Lecturers\' election');
+  // the admin's election calls, or the lecturer's class-representative ones
+  const base = (ctx) => (ctx.mode === 'class' ? '/elections/class' : '/elections/manage');
   const votersLabel = (v) => ({ STUDENTS: 'students vote', LECTURERS: 'lecturers vote', BOTH: 'students and lecturers vote' }[v]);
   const when = (d) => (d ? fmt(d) : null);
   function candidateFace(esc, c, size) {
@@ -723,7 +725,7 @@
       ${list.length ? list.map((e) => `
         <div class="card" style="margin-bottom:12px;cursor:pointer;" data-open="${e.id}">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-            <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
+            <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind, e.courseName))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
             <div style="text-align:right;"><span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span>${e.hasVoted ? '<div class="meta" style="margin-top:6px;">✓ You voted</div>' : e.state === 'OPEN' ? '<div class="meta" style="margin-top:6px;color:#c1861f;font-weight:700;">Vote now →</div>' : ''}</div>
           </div>
         </div>`).join('') : '<div class="card"><p class="muted">There are no elections for you right now. When your school opens one, you will be notified here.</p></div>'}`;
@@ -738,7 +740,7 @@
     view.innerHTML = `
       <div class="page-head"><h1>${esc(e.title)}</h1><button class="btn btn-ghost btn-sm" id="el-back">← All elections</button></div>
       ${e.description ? `<p class="muted" style="margin-bottom:14px;">${esc(e.description)}</p>` : ''}
-      <div class="meta" style="margin-bottom:16px;">${esc(kindLabel(e.kind))} · ${esc(votersLabel(e.voters))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''} · <span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
+      <div class="meta" style="margin-bottom:16px;">${esc(kindLabel(e.kind, e.courseName))} · ${esc(votersLabel(e.voters))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''} · <span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
       ${e.hasVoted ? '<div class="hint-box" style="margin-bottom:16px;">✅ Your vote has been counted. Thank you for taking part. Your ballot is secret — nobody can see who you voted for.</div>' : ''}
       ${e.state === 'UPCOMING' ? `<div class="hint-box" style="margin-bottom:16px;">Voting opens ${esc(when(e.opensAt) || 'soon')}.</div>` : ''}
       ${d.positions.map((p) => `
@@ -791,14 +793,14 @@
   // ---- the school admin
   async function electionsAdmin(view, ctx) {
     const { api, esc, toast } = ctx;
-    const { elections: list } = await api('/elections/manage');
+    const { elections: list } = await api(base(ctx) + '');
     view.innerHTML = `
-      <div class="page-head"><h1>Elections</h1><button class="btn btn-accent btn-sm" id="el-new">+ New election</button></div>
-      <p class="muted" style="margin-bottom:16px;">Run a student union (SUG) election or an election among lecturers. Voters get a notification when you open it, vote once, and the ballot is secret — you see each candidate's votes and who has turned out, never who voted for whom.</p>
+      <div class="page-head"><h1>${ctx.mode === 'class' ? 'Class Rep Voting' : 'Elections'}</h1><button class="btn btn-accent btn-sm" id="el-new">+ ${ctx.mode === 'class' ? 'New class rep vote' : 'New election'}</button></div>
+      <p class="muted" style="margin-bottom:16px;">${ctx.mode === 'class' ? 'Choose one of your courses and add the students standing for class representative. Only the students enrolled in that course can vote. They are told when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.' : 'Run a student union (SUG) election or an election among lecturers. Voters get a notification when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.'}</p>
       ${list.length ? list.map((e) => `
         <div class="card" style="margin-bottom:12px;">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-            <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind))} · ${esc(votersLabel(e.voters))} · ${e.positions} position${e.positions === 1 ? '' : 's'} · ${e.ballots} ballot${e.ballots === 1 ? '' : 's'} cast${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
+            <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind, e.courseName))} · ${esc(votersLabel(e.voters))} · ${e.positions} position${e.positions === 1 ? '' : 's'} · ${e.ballots} ballot${e.ballots === 1 ? '' : 's'} cast${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
             <div><span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
@@ -806,32 +808,32 @@
             ${e.state !== 'DRAFT' ? `<button class="btn btn-primary btn-sm" data-results="${e.id}">📊 View votes</button>` : ''}
             ${e.state === 'OPEN' || e.state === 'UPCOMING' ? `<button class="btn btn-ghost btn-sm" data-close="${e.id}">⏹ Close voting</button>` : ''}
           </div>
-        </div>`).join('') : '<div class="card"><p class="muted">No elections yet. Start one with “New election”.</p></div>'}`;
+        </div>`).join('') : `<div class="card"><p class="muted">Nothing here yet. Start one with “${ctx.mode === 'class' ? 'New class rep vote' : 'New election'}”.</p></div>`}`;
     view.querySelector('#el-new').addEventListener('click', () => electionForm(view, ctx, null));
     const act = (sel, fn) => view.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b)));
     act('[data-edit]', (b) => electionForm(view, ctx, b.dataset.edit));
     act('[data-results]', (b) => electionResults(view, ctx, b.dataset.results));
     act('[data-open]', async (b) => {
       if (!confirm('Open voting now? Everyone who can vote is notified straight away. After this the election can no longer be edited.')) return;
-      try { const r = await api(`/elections/manage/${b.dataset.open}/open`, { method: 'POST' }); toast(`Voting is open — ${r.notified} people notified`); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
+      try { const r = await api(`${base(ctx)}/${b.dataset.open}/open`, { method: 'POST' }); toast(`Voting is open — ${r.notified} people notified`); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
     });
     act('[data-close]', async (b) => {
       if (!confirm('Close voting now? Nobody can vote after this.')) return;
-      try { await api(`/elections/manage/${b.dataset.close}/close`, { method: 'POST' }); toast('Voting closed'); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
+      try { await api(`${base(ctx)}/${b.dataset.close}/close`, { method: 'POST' }); toast('Voting closed'); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
     });
     act('[data-del]', async (b) => {
       if (!confirm('Delete this draft election?')) return;
-      try { await api(`/elections/manage/${b.dataset.del}`, { method: 'DELETE' }); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
+      try { await api(`${base(ctx)}/${b.dataset.del}`, { method: 'DELETE' }); electionsAdmin(view, ctx); } catch (err) { toast(err.message); }
     });
   }
 
   async function electionResults(view, ctx, id) {
     const { api, esc, toast } = ctx;
-    const d = await api(`/elections/manage/${id}/results`);
+    const d = await api(`${base(ctx)}/${id}/results`);
     const e = d.election;
     view.innerHTML = `
       <div class="page-head"><h1>${esc(e.title)}</h1><button class="btn btn-ghost btn-sm" id="el-back">← Elections</button></div>
-      <div class="meta" style="margin-bottom:12px;">${esc(kindLabel(e.kind))} · ${esc(votersLabel(e.voters))} · <span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
+      <div class="meta" style="margin-bottom:12px;">${esc(kindLabel(e.kind, e.courseName))} · ${esc(votersLabel(e.voters))} · <span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
         <label style="display:flex;gap:8px;align-items:center;font-weight:500;"><input type="checkbox" id="el-vis" ${e.resultsVisible ? 'checked' : ''}> Let voters see the result once voting closes</label>
         <button class="btn btn-ghost btn-sm" id="el-refresh">↻ Refresh count</button>
@@ -843,27 +845,34 @@
     view.querySelector('#el-back').addEventListener('click', () => electionsAdmin(view, ctx));
     view.querySelector('#el-refresh').addEventListener('click', () => electionResults(view, ctx, id));
     view.querySelector('#el-vis').addEventListener('change', async (ev) => {
-      try { await api(`/elections/manage/${id}/results-visible`, { method: 'POST', body: { visible: ev.target.checked } }); toast(ev.target.checked ? 'Voters will see the result' : 'Result hidden from voters'); } catch (err) { toast(err.message); }
+      try { await api(`${base(ctx)}/${id}/results-visible`, { method: 'POST', body: { visible: ev.target.checked } }); toast(ev.target.checked ? 'Voters will see the result' : 'Result hidden from voters'); } catch (err) { toast(err.message); }
     });
   }
 
   async function electionForm(view, ctx, editId) {
     const { api, esc, toast } = ctx;
-    let model = { title: '', description: '', kind: 'STUDENT_SUG', voters: 'STUDENTS', opensAt: '', closesAt: '', resultsVisible: false, positions: [{ title: '', candidates: [] }] };
+    const classMode = ctx.mode === 'class';
+    let courses = [];
+    if (classMode) courses = (await api('/elections/class/courses')).courses;
+    let model = classMode
+      ? { title: '', description: '', kind: 'CLASS_REP', voters: 'STUDENTS', courseId: courses.length === 1 ? courses[0].id : '', opensAt: '', closesAt: '', resultsVisible: false, positions: [{ title: 'Class Representative', candidates: [] }] }
+      : { title: '', description: '', kind: 'STUDENT_SUG', voters: 'STUDENTS', opensAt: '', closesAt: '', resultsVisible: false, positions: [{ title: '', candidates: [] }] };
     if (editId) {
-      const d = await api('/elections/manage/' + editId);
+      const d = await api(base(ctx) + '/' + editId);
       const e = d.election;
       const local = (x) => (x ? new Date(new Date(x).getTime() - new Date(x).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
-      model = { title: e.title, description: e.description || '', kind: e.kind, voters: e.voters, opensAt: local(e.opensAt), closesAt: local(e.closesAt), resultsVisible: e.resultsVisible, positions: d.positions.map((p) => ({ title: p.title, candidates: p.candidates.map((c) => ({ userId: c.userId, name: c.name, manifesto: c.manifesto || '' })) })) };
+      model = { title: e.title, description: e.description || '', kind: e.kind, voters: e.voters, courseId: e.courseId || '', opensAt: local(e.opensAt), closesAt: local(e.closesAt), resultsVisible: e.resultsVisible, positions: d.positions.map((p) => ({ title: p.title, candidates: p.candidates.map((c) => ({ userId: c.userId, name: c.name, manifesto: c.manifesto || '' })) })) };
     }
     function draw() {
       view.innerHTML = `
-        <div class="page-head"><h1>${editId ? 'Edit election' : 'New election'}</h1><button class="btn btn-ghost btn-sm" id="ef-cancel">Cancel</button></div>
+        <div class="page-head"><h1>${editId ? (classMode ? 'Edit class rep vote' : 'Edit election') : (classMode ? 'New class rep vote' : 'New election')}</h1><button class="btn btn-ghost btn-sm" id="ef-cancel">Cancel</button></div>
         <div class="card" style="margin-bottom:14px;">
-          <div class="field"><label>Title</label><input id="ef-title" maxlength="120" value="${esc(model.title)}" placeholder="e.g. SUG Election 2026/2027"></div>
+          <div class="field"><label>Title</label><input id="ef-title" maxlength="120" value="${esc(model.title)}" placeholder="${classMode ? 'e.g. Class Rep — CSC 201' : 'e.g. SUG Election 2026/2027'}"></div>
           <div class="field"><label>Description (optional)</label><textarea id="ef-desc" rows="2" maxlength="600">${esc(model.description)}</textarea></div>
-          <div class="field"><label>Who is standing?</label><select id="ef-kind"><option value="STUDENT_SUG" ${model.kind === 'STUDENT_SUG' ? 'selected' : ''}>Students — student union (SUG) election</option><option value="LECTURER" ${model.kind === 'LECTURER' ? 'selected' : ''}>Lecturers — lecturers' election</option></select></div>
-          <div class="field"><label>Who votes?</label><select id="ef-voters"><option value="STUDENTS" ${model.voters === 'STUDENTS' ? 'selected' : ''}>Students</option><option value="LECTURERS" ${model.voters === 'LECTURERS' ? 'selected' : ''}>Lecturers</option><option value="BOTH" ${model.voters === 'BOTH' ? 'selected' : ''}>Students and lecturers</option></select></div>
+          ${classMode
+            ? `<div class="field"><label>Which course is voting?</label><select id="ef-course"><option value="">Choose a course…</option>${courses.map((c) => `<option value="${c.id}" ${c.id === model.courseId ? 'selected' : ''}>${esc(c.code)} — ${esc(c.title)} (${c.students} student${c.students === 1 ? '' : 's'})</option>`).join('')}</select>${courses.length ? '' : '<div class="meta" style="color:#b45309;margin-top:4px;">You are not assigned to a course yet. Ask your school admin to assign you one.</div>'}<div class="meta" style="margin-top:4px;">Only the students enrolled in this course can stand and vote.</div></div>`
+            : `<div class="field"><label>Who is standing?</label><select id="ef-kind"><option value="STUDENT_SUG" ${model.kind === 'STUDENT_SUG' ? 'selected' : ''}>Students — student union (SUG) election</option><option value="LECTURER" ${model.kind === 'LECTURER' ? 'selected' : ''}>Lecturers — lecturers' election</option></select></div>
+          <div class="field"><label>Who votes?</label><select id="ef-voters"><option value="STUDENTS" ${model.voters === 'STUDENTS' ? 'selected' : ''}>Students</option><option value="LECTURERS" ${model.voters === 'LECTURERS' ? 'selected' : ''}>Lecturers</option><option value="BOTH" ${model.voters === 'BOTH' ? 'selected' : ''}>Students and lecturers</option></select></div>`}
           <div class="field"><label>Voting opens (optional — leave empty to start when you press Open)</label><input id="ef-opens" type="datetime-local" value="${esc(model.opensAt)}"></div>
           <div class="field"><label>Voting closes (optional — leave empty to close it yourself)</label><input id="ef-closes" type="datetime-local" value="${esc(model.closesAt)}"></div>
           <label style="display:flex;gap:8px;align-items:center;font-weight:500;"><input type="checkbox" id="ef-vis" ${model.resultsVisible ? 'checked' : ''}> Let voters see the result once voting closes</label>
@@ -877,7 +886,7 @@
                 <textarea class="ef-cman" data-pi="${pi}" data-ci="${ci}" rows="2" placeholder="Manifesto / short bio (optional)" maxlength="600" style="width:100%;margin-top:6px;">${esc(c.manifesto || '')}</textarea>
               </div>`).join('')}
             <div style="margin-top:10px;position:relative;">
-              <input class="ef-find" data-pi="${pi}" placeholder="🔎 Add a candidate from your school (search by name or ID)…" style="width:100%;">
+              <input class="ef-find" data-pi="${pi}" placeholder="🔎 ${classMode ? 'Add a candidate from the course (search by name or ID)…' : 'Add a candidate from your school (search by name or ID)…'}" style="width:100%;">
               <div class="ef-found" data-found="${pi}" style="position:absolute;left:0;right:0;z-index:20;background:var(--paper-raised,#fff);color:var(--ink,#142033);border:1px solid rgba(128,128,128,.4);border-radius:10px;max-height:220px;overflow:auto;" hidden></div>
             </div>
             <button class="btn btn-ghost btn-sm" data-addname="${pi}" style="margin-top:8px;">+ Add a candidate by name</button>
@@ -888,7 +897,7 @@
     }
     function readForm() {
       model.title = view.querySelector('#ef-title').value; model.description = view.querySelector('#ef-desc').value;
-      model.kind = view.querySelector('#ef-kind').value; model.voters = view.querySelector('#ef-voters').value;
+      if (classMode) model.courseId = view.querySelector('#ef-course').value; else { model.kind = view.querySelector('#ef-kind').value; model.voters = view.querySelector('#ef-voters').value; }
       model.opensAt = view.querySelector('#ef-opens').value; model.closesAt = view.querySelector('#ef-closes').value;
       model.resultsVisible = view.querySelector('#ef-vis').checked;
       view.querySelectorAll('.ef-ptitle').forEach((i) => { model.positions[i.dataset.pi].title = i.value; });
@@ -897,7 +906,8 @@
     }
     function wire() {
       view.querySelector('#ef-cancel').addEventListener('click', () => electionsAdmin(view, ctx));
-      view.querySelector('#ef-kind').addEventListener('change', (e) => {
+      if (classMode) view.querySelector('#ef-course').addEventListener('change', () => { readForm(); model.positions.forEach((p) => { p.candidates = p.candidates.filter((c) => !c.userId); }); draw(); });
+      else view.querySelector('#ef-kind').addEventListener('change', (e) => {
         readForm();
         // picking the kind sets the natural voters; candidates picked for the other kind no longer fit
         model.voters = e.target.value === 'STUDENT_SUG' ? 'STUDENTS' : 'LECTURERS';
@@ -914,9 +924,10 @@
         const box = view.querySelector(`[data-found="${input.dataset.pi}"]`);
         const q = input.value.trim();
         if (q.length < 2) { box.hidden = true; return; }
+        if (classMode && !model.courseId) { toast('Choose the course first.'); input.value = ''; return; }
         timer = setTimeout(async () => {
           try {
-            const { people } = await api(`/elections/manage/candidates?kind=${model.kind}&q=${encodeURIComponent(q)}`);
+            const { people } = await api(`${base(ctx)}/candidates?${classMode ? 'courseId=' + encodeURIComponent(model.courseId) : 'kind=' + model.kind}&q=${encodeURIComponent(q)}`);
             box.innerHTML = people.map((p) => `<div class="list-row" data-pick="${p.id}" style="cursor:pointer;padding:8px 12px;"><div><div style="font-weight:600;">${esc(p.name)}</div><div class="meta">${esc(p.detail)}</div></div></div>`).join('') || '<p class="muted" style="padding:10px;">Nobody matches.</p>';
             box.hidden = false;
             box.querySelectorAll('[data-pick]').forEach((row) => row.addEventListener('click', () => {
@@ -933,18 +944,361 @@
       view.querySelector('#ef-save').addEventListener('click', async () => {
         readForm();
         const body = {
-          title: model.title, description: model.description, kind: model.kind, voters: model.voters, resultsVisible: model.resultsVisible,
+          title: model.title, description: model.description, kind: model.kind, voters: model.voters, courseId: classMode ? model.courseId : undefined, resultsVisible: model.resultsVisible,
           opensAt: model.opensAt ? new Date(model.opensAt).toISOString() : null, closesAt: model.closesAt ? new Date(model.closesAt).toISOString() : null,
           positions: model.positions.map((p) => ({ title: p.title, candidates: p.candidates.map((c) => ({ userId: c.userId || undefined, name: c.name, manifesto: c.manifesto })) })),
         };
         try {
-          await api(editId ? '/elections/manage/' + editId : '/elections/manage', { method: editId ? 'PUT' : 'POST', body });
-          toast('Election saved — open it when you are ready.');
+          await api(editId ? base(ctx) + '/' + editId : base(ctx) + '', { method: editId ? 'PUT' : 'POST', body });
+          toast(classMode ? 'Saved — open the vote when you are ready.' : 'Election saved — open it when you are ready.');
           electionsAdmin(view, ctx);
         } catch (err) { toast(err.message); }
       });
     }
     draw();
+  }
+
+  // ---------------------------------------------------------------- school fees
+  // Students see the fees for their level and department, the school's own bank details, and what is paid
+  // and owing; they pay by card / USSD / bank transfer through the payment window (confirmed at once, with
+  // a receipt) or transfer to the school's account and tell the school (the school confirms). The school
+  // admin sets the bank details and fees, confirms payments, records cash, and sees who has paid.
+  const FEE_CHIP = { PAID: ['pill-pass', 'Paid ✓'], PARTIAL: ['pill-accent', 'Part paid'], PENDING: ['pill-muted', 'Awaiting school'], UNPAID: ['pill-danger', 'Unpaid'], NO_FEES: ['pill-muted', 'No fees'] };
+  const FEE_PAY = { CONFIRMED: ['pill-pass', 'Confirmed'], PENDING: ['pill-muted', 'Waiting'], REJECTED: ['pill-danger', 'Not accepted'] };
+  const toKobo = (t) => { const n = parseFloat(String(t).replace(/[₦,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
+  const money = (kobo) => '₦' + (Number(kobo || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
+  const onDate = (d) => (d ? new Date(d).toLocaleDateString([], { dateStyle: 'medium' }) : '');
+  const methodLabel = (p) => (p.method === 'ONLINE' ? 'online (' + (p.provider === 'PAYSTACK' ? 'Paystack' : 'Flutterwave') + ')' : String(p.method).replace('_', ' ').toLowerCase());
+
+  function feeModal(html) {
+    const bg = document.createElement('div');
+    bg.className = 'lzx-pay-bg';
+    bg.innerHTML = '<div class="lzx-pay" role="dialog"><div class="lzx-pay-body">' + html + '</div></div>';
+    document.body.appendChild(bg);
+    const close = () => bg.remove();
+    bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
+    return { el: bg.firstElementChild, close };
+  }
+  // a receipt photo is cropped down so it is quick to send
+  function shrinkPhoto(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) return resolve(null);
+      if (!/^image\//.test(file.type)) return reject(new Error('The receipt must be a photo.'));
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, 1000 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = () => reject(new Error('Could not read that photo.'));
+      img.src = url;
+    });
+  }
+  const receiptHtml = (esc, d, p) => {
+    const status = { CONFIRMED: '✅ Confirmed by the school', PENDING: '⏳ Waiting for the school to confirm', REJECTED: '❌ Not accepted by the school' }[p.status];
+    return `<div id="lzx-receipt"><div style="text-align:center;margin-bottom:10px;"><div style="font:800 17px Sora,sans-serif;">${esc(d.school.name)}</div><div class="meta">Fee payment ${p.receiptNo ? 'receipt' : 'record'}</div></div>
+      <div style="font-size:.88rem;line-height:1.7;"><div><b>Student:</b> ${esc(d.student.name)}${d.student.matricNumber ? ' (' + esc(d.student.matricNumber) + ')' : ''}</div>${p.receiptNo ? `<div><b>Receipt no:</b> ${esc(p.receiptNo)}</div>` : ''}<div><b>Date:</b> ${esc(onDate(p.paidOn || p.createdAt))}</div><div><b>Method:</b> ${esc(methodLabel(p))}</div>${p.reference ? `<div><b>Reference:</b> ${esc(p.reference)}</div>` : ''}${p.depositorName ? `<div><b>Paid by:</b> ${esc(p.depositorName)}</div>` : ''}</div>
+      <div style="border-top:1px dashed rgba(128,128,128,.5);border-bottom:1px dashed rgba(128,128,128,.5);margin:10px 0;padding:8px 0;">${p.items.map((i) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span>${esc(i.title)}</span><b>${money(i.amountKobo)}</b></div>`).join('')}<div style="display:flex;justify-content:space-between;border-top:1px solid rgba(128,128,128,.3);margin-top:6px;padding-top:6px;"><b>Total</b><b>${money(p.amountKobo)}</b></div></div>
+      <div style="text-align:center;font-weight:800;">${status}</div>${p.rejectReason ? `<div style="text-align:center;color:#b42318;margin-top:4px;">${esc(p.rejectReason)}</div>` : ''}</div>`;
+  };
+  function printReceipt() {
+    const el = document.getElementById('lzx-receipt'); if (!el) return;
+    const w = window.open('', '_blank'); if (!w) return;
+    w.document.write('<!doctype html><title>Receipt</title><body style="font-family:system-ui,sans-serif;max-width:420px;margin:24px auto">' + el.innerHTML + '</body>');
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+  }
+
+  // ---- the student
+  async function feesStudent(view, ctx) {
+    const { api, esc, toast } = ctx;
+    const d = await api('/fees/mine');
+    const cat = {}; d.categories.forEach((c) => { cat[c.id] = c; });
+    const sel = {}; const others = [];
+    const t = d.totals, pct = t.dueKobo ? Math.min(100, Math.round((t.paidKobo / t.dueKobo) * 100)) : 0;
+    const picked = () => Object.keys(sel).reduce((a, k) => a + sel[k], 0) + others.reduce((a, o) => a + o.amountKobo, 0);
+    const count = () => Object.keys(sel).length + others.length;
+    const itemsPayload = () => Object.keys(sel).map((id) => ({ feeId: id, amountKobo: sel[id] })).concat(others.map((o) => ({ title: o.title, amountKobo: o.amountKobo })));
+    const itemsShown = () => Object.keys(sel).map((id) => { const f = d.fees.find((x) => x.id === id); return { title: f.title, amountKobo: sel[id] }; }).concat(others.map((o) => ({ title: o.title, amountKobo: o.amountKobo })));
+
+    function paint() {
+      const feeRow = (f) => {
+        const open = f.balanceKobo > 0, on = sel[f.id] != null, chip = FEE_CHIP[f.status];
+        const meta = [f.semester, f.session, f.dueDate ? 'due ' + onDate(f.dueDate) : null].filter(Boolean).map(esc).join(' · ');
+        return `<div class="list-row" style="align-items:center;gap:10px;">
+          ${open ? `<input type="checkbox" data-sel="${f.id}" ${on ? 'checked' : ''} style="width:20px;height:20px;flex:0 0 auto;">` : '<span style="width:20px;display:inline-block;"></span>'}
+          <div style="font-size:1.4rem;">${(cat[f.category] || cat.OTHER).icon}</div>
+          <div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(f.title)}</div><div class="meta">${meta ? meta + ' · ' : ''}${money(f.amountKobo)}${f.paidKobo && open ? ' · paid ' + money(f.paidKobo) : ''}</div>
+            ${on ? `<div style="margin-top:6px;"><span class="meta">Paying now ₦ </span><input data-amt="${f.id}" value="${sel[f.id] / 100}" inputmode="decimal" style="width:120px;text-align:right;"></div>` : ''}</div>
+          <span class="pill ${chip[0]}">${chip[1]}</span></div>`;
+      };
+      const normal = d.fees.filter((f) => f.category !== 'OTHER'), other = d.fees.filter((f) => f.category === 'OTHER');
+      view.innerHTML = `<div id="fee-root">
+        <div class="page-head"><h1>School Fees</h1></div>
+        <div class="card" style="margin-bottom:14px;background:linear-gradient(135deg,#0f1b2e,#16355c);color:#fff;">
+          <div class="meta" style="color:rgba(255,255,255,.7);">${esc(d.school.name)}${d.student.department ? ' · ' + esc(d.student.department) : ''}${d.student.level ? ' · ' + esc(d.student.level) : ''}</div>
+          <div style="font:800 2rem Sora,sans-serif;">${money(t.balanceKobo)}</div><div class="meta" style="color:rgba(255,255,255,.7);">still to pay of ${money(t.dueKobo)}</div>
+          <div class="lzx-bar" style="background:rgba(255,255,255,.2);"><div style="width:${pct}%;background:#35e08a;"></div></div>
+          <div class="meta" style="color:rgba(255,255,255,.7);">${money(t.paidKobo)} paid${t.pendingKobo ? ' · ' + money(t.pendingKobo) + ' waiting for the school to confirm' : ''}</div></div>
+        ${d.bank ? `<div class="hint-box" style="margin:0 0 14px;"><strong>🏦 The school's account</strong><div>${esc(d.bank.bankName)} · ${esc(d.bank.accountName)}</div><div style="font:800 1.3rem Sora,sans-serif;letter-spacing:1px;">${esc(d.bank.accountNumber)}</div>${d.bank.instructions ? `<div class="meta">${esc(d.bank.instructions)}</div>` : ''}<button class="btn btn-ghost btn-sm" id="fee-copy" style="margin-top:8px;">📋 Copy account number</button></div>`
+          : '<div class="hint-box" style="margin:0 0 14px;background:#fff8e1;"><strong>The school has not added its bank details yet.</strong> Ask the bursary. You can still see what is owed below and pay online.</div>'}
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><h3 style="flex:1;margin:0;">Your fees</h3>${d.fees.some((f) => f.balanceKobo > 0) ? '<button class="btn btn-ghost btn-sm" id="fee-all">Select all unpaid</button>' : ''}</div>
+        <div class="card" style="padding:4px 14px;margin-bottom:12px;">
+          ${normal.map(feeRow).join('')}${other.length ? `<div style="font-weight:700;margin:12px 0 2px;">➕ Other fees from the school</div>${other.map(feeRow).join('')}` : ''}
+          ${others.map((o, i) => `<div class="list-row" style="align-items:center;"><span style="width:20px;display:inline-block;"></span><div style="font-size:1.4rem;">➕</div><div style="flex:1;"><div style="font-weight:700;">${esc(o.title)}</div><div class="meta">Other fee · ${money(o.amountKobo)}</div></div><button class="btn btn-ghost btn-sm" data-rmother="${i}">Remove</button></div>`).join('')}
+          ${!d.fees.length ? '<p class="muted" style="padding:14px 0;">The school has not listed any fee for your level and department yet. If you need to pay something else, use <b>Other fees</b>.</p>' : ''}
+        </div>
+        <button class="btn btn-ghost" id="fee-other" style="width:100%;margin-bottom:12px;">➕ Other fees — pay something not listed</button>
+        <button class="btn btn-primary" id="fee-pay" style="width:100%;position:sticky;bottom:12px;" ${count() ? '' : 'disabled'}>${count() ? 'Pay ' + money(picked()) + ' (' + count() + ' item' + (count() === 1 ? '' : 's') + ')' : 'Tick the fees you are paying'}</button>
+        ${d.payments.length ? `<h3 style="margin:22px 0 4px;">🧾 Your payments</h3><div class="card" style="padding:4px 14px;">${d.payments.map((p) => `<div class="list-row" data-receipt="${p.id}" style="cursor:pointer;align-items:center;"><div><div style="font-weight:700;">${money(p.amountKobo)}</div><div class="meta">${esc(p.items.map((i) => i.title).join(', ').slice(0, 90))} · ${esc(onDate(p.createdAt))}</div>${p.status === 'REJECTED' && p.rejectReason ? `<div class="meta" style="color:#b42318;">${esc(p.rejectReason)}</div>` : ''}</div><span class="pill ${FEE_PAY[p.status][0]}">${FEE_PAY[p.status][1]}</span></div>`).join('')}</div>` : ''}</div>`;
+      wire();
+    }
+    function wire() {
+      const copy = view.querySelector('#fee-copy');
+      if (copy) copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(d.bank.accountNumber); toast('📋 Account number copied'); } catch { toast('Account number: ' + d.bank.accountNumber); } });
+      view.querySelectorAll('[data-sel]').forEach((c) => c.addEventListener('change', () => { const f = d.fees.find((x) => x.id === c.dataset.sel); if (c.checked) sel[f.id] = f.balanceKobo; else delete sel[f.id]; paint(); }));
+      view.querySelectorAll('[data-amt]').forEach((i) => i.addEventListener('input', () => {
+        const f = d.fees.find((x) => x.id === i.dataset.amt), k = toKobo(i.value);
+        if (!Number.isFinite(k) || k < 100) return;
+        sel[f.id] = Math.min(k, f.balanceKobo);
+        const b = view.querySelector('#fee-pay'); b.textContent = 'Pay ' + money(picked()) + ' (' + count() + ' item' + (count() === 1 ? '' : 's') + ')';
+      }));
+      view.querySelectorAll('[data-rmother]').forEach((b) => b.addEventListener('click', () => { others.splice(Number(b.dataset.rmother), 1); paint(); }));
+      const all = view.querySelector('#fee-all');
+      if (all) all.addEventListener('click', () => { d.fees.forEach((f) => { if (f.balanceKobo > 0) sel[f.id] = f.balanceKobo; }); paint(); });
+      view.querySelector('#fee-other').addEventListener('click', otherForm);
+      view.querySelector('#fee-pay').addEventListener('click', openPay);
+      view.querySelectorAll('[data-receipt]').forEach((r) => r.addEventListener('click', () => {
+        const p = d.payments.find((x) => x.id === r.dataset.receipt);
+        const m = feeModal(receiptHtml(esc, d, p) + '<button class="btn btn-primary" id="rc-print" style="width:100%;margin-top:14px;">🖨 Print / save</button><button class="btn btn-ghost" id="rc-close" style="width:100%;margin-top:8px;">Close</button>');
+        m.el.querySelector('#rc-print').addEventListener('click', printReceipt); m.el.querySelector('#rc-close').addEventListener('click', m.close);
+      }));
+    }
+    function otherForm() {
+      const m = feeModal(`<h3 style="margin-bottom:4px;">➕ Other fees</h3><p class="meta" style="margin-bottom:12px;">For anything the school asked you to pay that is not in the list: a field trip, a replacement ID card, a damaged item, a departmental levy…</p>
+        <div class="field"><label>What is it for?</label><input id="of-t" maxlength="120" placeholder="e.g. Replacement ID card"></div>
+        <div class="field"><label>Amount (₦)</label><input id="of-a" inputmode="decimal" placeholder="e.g. 2000"></div>
+        <button class="btn btn-primary" id="of-add" style="width:100%;">Add to my payment</button><button class="btn btn-ghost" id="of-x" style="width:100%;margin-top:8px;">Cancel</button>`);
+      m.el.querySelector('#of-x').addEventListener('click', m.close);
+      m.el.querySelector('#of-add').addEventListener('click', () => {
+        const title = m.el.querySelector('#of-t').value.trim(), k = toKobo(m.el.querySelector('#of-a').value);
+        if (!title) return toast('Say what the fee is for.');
+        if (!Number.isFinite(k) || k < 100) return toast('Enter the amount in naira.');
+        others.push({ title, amountKobo: k }); m.close(); paint();
+      });
+    }
+    function openPay() {
+      if (!count()) return;
+      const items = itemsShown(), total = picked(), today = new Date().toISOString().slice(0, 10);
+      const o = d.online;
+      const m = feeModal(`<h3 style="margin-bottom:8px;">Pay ${money(total)}</h3>
+        <div style="background:rgba(128,128,128,.12);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:.88rem;">${items.map((i) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span>${esc(i.title)}</span><b>${money(i.amountKobo)}</b></div>`).join('')}</div>
+        <div style="font-weight:800;margin-bottom:4px;">💳 Pay now by card, USSD or bank transfer</div>
+        <p class="meta" style="margin-bottom:8px;">A secure payment window opens. When it goes through you get your receipt straight away.</p>
+        ${o.flutterwave ? '<button class="lzx-pay-fw" id="fp-fw" style="margin-bottom:8px;"><span style="font-size:22px">🦋</span><div style="flex:1;text-align:left"><div style="font-weight:800;">Pay with Flutterwave</div><div style="font-size:11px;opacity:.65;">Card, Bank, USSD, Mobile Money</div></div><span>→</span></button>' : ''}
+        ${o.paystack ? '<button class="lzx-pay-fw lzx-pay-ps" id="fp-ps" style="margin-bottom:8px;"><span style="font-size:22px">💳</span><div style="flex:1;text-align:left"><div style="font-weight:800;">Pay with Paystack</div><div style="font-size:11px;opacity:.85;">Card, Bank, USSD, Bank Transfer</div></div><span>→</span></button>' : ''}
+        ${!o.flutterwave && !o.paystack ? '<p class="meta" style="margin-bottom:8px;">Online payment is not switched on yet. Pay into the school\'s account below and tell the school.</p>' : ''}
+        <div style="border-top:1px solid rgba(128,128,128,.3);margin-top:14px;padding-top:12px;font-weight:800;margin-bottom:6px;">🏦 Or: I paid into the school's account</div>
+        ${d.bank ? `<div class="lzx-pay-card"><div class="meta">Pay ${money(total)} to ${esc(d.bank.bankName)} · ${esc(d.bank.accountName)}</div><div style="font:800 1.3rem Sora,sans-serif;letter-spacing:1px;">${esc(d.bank.accountNumber)}</div></div>` : ''}
+        <p class="meta" style="margin-bottom:10px;">Make the transfer first, then fill this in. The school checks its bank statement and confirms your payment; you will get a receipt.</p>
+        <div class="field"><label>Transfer reference / teller number</label><input id="fp-ref" maxlength="80" placeholder="From your bank app or teller"></div>
+        <div class="field"><label>Name on the transfer</label><input id="fp-dep" maxlength="100" placeholder="Who sent the money"></div>
+        <div class="field"><label>Date paid</label><input id="fp-date" type="date" value="${today}" max="${today}"></div>
+        <div class="field"><label>Photo of the receipt (optional)</label><input id="fp-proof" type="file" accept="image/*"></div>
+        <div class="field"><label>Note (optional)</label><input id="fp-note" maxlength="300"></div>
+        <button class="btn btn-primary" id="fp-go" style="width:100%;">✅ I have paid ${money(total)}</button><button class="btn btn-ghost" id="fp-x" style="width:100%;margin-top:8px;">Cancel</button>`);
+      const q = (s) => m.el.querySelector(s);
+      q('#fp-x').addEventListener('click', m.close);
+      q('#fp-go').addEventListener('click', async () => {
+        const btn = q('#fp-go'); btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+          const proof = await shrinkPhoto(q('#fp-proof').files[0]);
+          await api('/fees/pay', { method: 'POST', body: { items: itemsPayload(), reference: q('#fp-ref').value, depositorName: q('#fp-dep').value, paidOn: q('#fp-date').value || null, note: q('#fp-note').value, proofUrl: proof || undefined } });
+          m.close(); toast('✅ Sent. The school will confirm it and you will get a receipt.'); feesStudent(view, ctx);
+        } catch (err) { btn.disabled = false; btn.textContent = 'Try again'; toast(err.message || 'Could not send that.'); }
+      });
+      const fw = q('#fp-fw'), ps = q('#fp-ps');
+      if (fw) fw.addEventListener('click', () => online('FLUTTERWAVE', m));
+      if (ps) ps.addEventListener('click', () => online('PAYSTACK', m));
+    }
+    async function online(provider, m) {
+      try {
+        if (provider === 'FLUTTERWAVE') await lib('flutterwave');
+        const init = await api('/fees/online/initiate', { method: 'POST', body: { provider, items: itemsPayload(), returnUrl: location.origin + location.pathname } });
+        m.close();
+        if (provider === 'PAYSTACK') {
+          try { sessionStorage.setItem('lzx_pay', JSON.stringify({ ref: init.reference, kind: 'fee' })); } catch { /* the return page also carries the reference */ }
+          location.href = init.authorizationUrl; return;
+        }
+        window.FlutterwaveCheckout({
+          public_key: d.online.flutterwavePublicKey, tx_ref: init.reference, amount: init.amount, currency: 'NGN', payment_options: 'card,banktransfer,ussd,mobilemoney',
+          customer: { email: init.email, name: init.name || 'Learnza student' }, customizations: { title: 'School fees', description: 'Fees for ' + init.name },
+          callback: () => { toast('Checking your payment…'); settle(init.reference, 0); }, onclose: () => {},
+        });
+      } catch (err) { toast(err.message || 'Could not start the payment. Please try again.'); }
+    }
+    // After the window says it went through, ask Learnza (which asks the gateway) a few times. If the gateway
+    // cannot be checked yet, the payment goes to the school as a normal "to confirm" payment instead of being lost.
+    async function settle(ref, attempt) {
+      try {
+        const r = await api('/fees/online/verify/' + encodeURIComponent(ref) + (attempt >= 3 ? '?completed=1' : ''));
+        if (r.status === 'CONFIRMED') { toast('✅ Payment received. Receipt ' + (r.receiptNo || '') + '.'); if (view.querySelector('#fee-root')) feesStudent(view, ctx); return; }
+        if (r.status === 'PENDING') { toast('✅ Payment sent. The school will confirm it shortly and you will get a receipt.'); if (view.querySelector('#fee-root')) feesStudent(view, ctx); return; }
+      } catch { /* try again below */ }
+      if (attempt < 4) setTimeout(() => settle(ref, attempt + 1), 3000);
+      else toast('We could not check that payment yet. If money left your account, tell the school the reference ' + ref + '.');
+    }
+    paint();
+  }
+
+  // ---- the school admin
+  async function feesAdmin(view, ctx) {
+    const { api, esc, toast } = ctx;
+    const ov = await api('/fees/admin/overview');
+    view.innerHTML = '<div class="page-head"><h1>Fee Payment</h1></div><div id="fa-sum"></div><div id="fa-tabs"></div>';
+    const sum = view.querySelector('#fa-sum');
+    const drawSummary = (o) => {
+      sum.innerHTML = `<div class="grid-cards" style="margin-bottom:14px;">
+        <div class="card course-card"><div class="code">${money(o.totals.collectedKobo)}</div><div class="meta">Collected</div></div>
+        <div class="card course-card"><div class="code">${money(o.totals.balanceKobo)}</div><div class="meta">Still owing</div></div>
+        <div class="card course-card"><div class="code">${o.pendingPayments}</div><div class="meta">Payments to confirm</div></div>
+        <div class="card course-card"><div class="code">${o.students.paid}/${o.students.total}</div><div class="meta">Students fully paid</div></div></div>
+        ${!o.hasBank ? '<div class="hint-box" style="margin-bottom:14px;"><strong>Add your institution\'s bank details first.</strong> Open the “Bank details” tab. Only your own students see them.</div>' : ''}`;
+    };
+    drawSummary(ov);
+    const state = { status: 'PENDING', q: '', sq: '' };
+    // a school with no bank details yet starts on that tab
+    const names = ov.hasBank ? [['payments', 'Payments'], ['students', 'Who has paid'], ['fees', 'Fees'], ['bank', 'Bank details']] : [['bank', 'Bank details'], ['payments', 'Payments'], ['students', 'Who has paid'], ['fees', 'Fees']];
+    tabs(view.querySelector('#fa-tabs'), esc, names, async (tab, body, alive) => {
+      const refresh = async () => { try { drawSummary(await api('/fees/admin/overview')); } catch { /* keep the old numbers */ } };
+      if (tab === 'payments') await paymentsTab(body, alive, refresh);
+      else if (tab === 'students') await studentsTab(body, alive, refresh);
+      else if (tab === 'fees') await feesTab(body, alive);
+      else await bankTab(body, alive, refresh);
+    });
+
+    async function paymentsTab(body, alive, refresh) {
+      body.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${[['PENDING', 'Waiting'], ['CONFIRMED', 'Confirmed'], ['REJECTED', 'Rejected'], ['ALL', 'All']].map(([k, l]) => `<button class="lzx-tab${state.status === k ? ' on' : ''}" data-st="${k}">${l}</button>`).join('')}</div><input id="fa-q" placeholder="Search student name…" value="${esc(state.q)}" style="width:100%;margin-bottom:10px;"><div id="fa-list"></div>`;
+      body.querySelectorAll('[data-st]').forEach((b) => b.addEventListener('click', () => { state.status = b.dataset.st; paymentsTab(body, alive, refresh); }));
+      let timer; body.querySelector('#fa-q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { state.q = e.target.value.trim(); drawList(); }, 300); });
+      const list = body.querySelector('#fa-list');
+      async function drawList() {
+        const d = await api('/fees/admin/payments?status=' + (state.status === 'ALL' ? '' : state.status) + '&q=' + encodeURIComponent(state.q));
+        if (!alive()) return;
+        list.innerHTML = d.payments.length ? d.payments.map((p) => `<div class="card" style="margin-bottom:8px;padding:12px 14px;">
+          <div style="display:flex;gap:10px;align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-weight:800;">${esc(p.studentName)} <span class="meta">${esc([p.department, p.level].filter(Boolean).join(' · '))}</span></div>
+          <div class="meta">${esc(p.items.map((i) => i.title + ' ' + money(i.amountKobo)).join(' · '))}</div>
+          <div class="meta">${esc(methodLabel(p))}${p.reference ? ' · ref ' + esc(p.reference) : ''}${p.depositorName ? ' · by ' + esc(p.depositorName) : ''} · ${esc(onDate(p.paidOn || p.createdAt))}${p.submittedByType === 'SCHOOL' ? ' · recorded by the school' : ''}</div>
+          ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ''}</div><div style="text-align:right;"><div style="font:800 1.05rem Sora,sans-serif;">${money(p.amountKobo)}</div><span class="pill ${FEE_PAY[p.status][0]}">${FEE_PAY[p.status][1]}</span></div></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${p.hasProof ? `<button class="btn btn-ghost btn-sm" data-proof="${p.id}">🖼 Receipt photo</button>` : ''}${p.status === 'PENDING' ? `<button class="btn btn-primary btn-sm" data-ok="${p.id}">✅ Confirm</button><button class="btn btn-ghost btn-sm" data-no="${p.id}">Reject</button>` : ''}${p.receiptNo ? `<span class="meta" style="align-self:center;">Receipt ${esc(p.receiptNo)}</span>` : ''}</div></div>`).join('')
+          : '<div class="card"><p class="muted">Nothing here.</p></div>';
+        list.querySelectorAll('[data-proof]').forEach((b) => b.addEventListener('click', async () => {
+          const { payment } = await api('/fees/admin/payments/' + b.dataset.proof);
+          const m = feeModal(`<img alt="Receipt photo" src="${esc(payment.proofUrl)}" style="max-width:100%;border-radius:10px;"><button class="btn btn-ghost" style="width:100%;margin-top:10px;" id="pf-x">Close</button>`);
+          m.el.querySelector('#pf-x').addEventListener('click', m.close);
+        }));
+        list.querySelectorAll('[data-ok]').forEach((b) => b.addEventListener('click', async () => {
+          if (!confirm('Confirm this payment? The student gets a receipt.')) return;
+          try { await api('/fees/admin/payments/' + b.dataset.ok + '/confirm', { method: 'POST', body: {} }); toast('✅ Confirmed'); await refresh(); drawList(); } catch (err) { toast(err.message); }
+        }));
+        list.querySelectorAll('[data-no]').forEach((b) => b.addEventListener('click', async () => {
+          const reason = prompt('Why is it not accepted? The student will see this.');
+          if (!reason) return;
+          try { await api('/fees/admin/payments/' + b.dataset.no + '/reject', { method: 'POST', body: { reason } }); toast('Rejected'); await refresh(); drawList(); } catch (err) { toast(err.message); }
+        }));
+      }
+      await drawList();
+    }
+
+    async function studentsTab(body, alive, refresh) {
+      body.innerHTML = `<input id="fs-q" placeholder="Search student name…" value="${esc(state.sq)}" style="width:100%;margin-bottom:10px;"><div id="fs-list"></div>`;
+      const list = body.querySelector('#fs-list');
+      async function drawList() {
+        const { students } = await api('/fees/admin/students?q=' + encodeURIComponent(state.sq));
+        if (!alive()) return;
+        list.innerHTML = students.length ? `<div class="card" style="padding:4px 14px;">${students.map((s) => { const c = FEE_CHIP[s.status]; return `<div class="list-row" style="align-items:center;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(s.name)}</div><div class="meta">${esc([s.matricNumber, s.department, s.level].filter(Boolean).join(' · '))}</div></div><div style="text-align:right;"><div style="font-weight:700;">${s.status === 'NO_FEES' ? '—' : money(s.balanceKobo) + ' owing'}</div><span class="pill ${c[0]}">${c[1]}</span></div><button class="btn btn-ghost btn-sm" data-rec="${s.id}">Record payment</button></div>`; }).join('')}</div>` : '<div class="card"><p class="muted">No students found.</p></div>';
+        list.querySelectorAll('[data-rec]').forEach((b) => b.addEventListener('click', () => recordFor(b.dataset.rec, refresh, drawList)));
+      }
+      let timer; body.querySelector('#fs-q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { state.sq = e.target.value.trim(); drawList(); }, 300); });
+      await drawList();
+    }
+    async function recordFor(studentId, refresh, redraw) {
+      let d;
+      try { d = await api('/fees/admin/students/' + studentId); } catch (err) { return toast(err.message); }
+      const open = d.fees.filter((f) => f.balanceKobo > 0), today = new Date().toISOString().slice(0, 10);
+      const m = feeModal(`<h3 style="margin-bottom:2px;">Record a payment</h3><p class="meta" style="margin-bottom:10px;">${esc(d.student.name)}${d.student.level ? ' · ' + esc(d.student.level) : ''} — cash at the bursar's, a POS payment, or a transfer you saw in the bank statement. It is confirmed at once and the student gets a receipt.</p>
+        ${open.length ? open.map((f) => `<div class="list-row" style="align-items:center;gap:10px;"><input type="checkbox" class="rc-on" data-id="${f.id}" style="width:20px;height:20px;"><div style="flex:1;"><div style="font-weight:700;">${esc(f.title)}</div><div class="meta">owing ${money(f.balanceKobo)}</div></div><input class="rc-amt" data-id="${f.id}" value="${f.balanceKobo / 100}" style="width:110px;text-align:right;"></div>`).join('') : '<p class="muted">No listed fee is owing. You can still record an “Other” payment below.</p>'}
+        <div class="list-row" style="align-items:center;gap:8px;margin-top:6px;"><input type="checkbox" id="rc-oth-on" style="width:20px;height:20px;"><input id="rc-oth-t" placeholder="Other: what for?" style="flex:1;"><input id="rc-oth-a" placeholder="₦" style="width:90px;text-align:right;"></div>
+        <div class="field" style="margin-top:10px;"><label>How was it paid?</label><select id="rc-m"><option value="CASH">Cash</option><option value="POS">POS</option><option value="BANK_TRANSFER">Bank transfer</option></select></div>
+        <div class="field"><label>Date</label><input id="rc-d" type="date" value="${today}" max="${today}"></div>
+        <div class="field"><label>Reference / teller number (optional)</label><input id="rc-ref" maxlength="80"></div>
+        <button class="btn btn-primary" id="rc-go" style="width:100%;">💾 Record payment</button><button class="btn btn-ghost" id="rc-x" style="width:100%;margin-top:8px;">Cancel</button>`);
+      const q = (s) => m.el.querySelector(s);
+      q('#rc-x').addEventListener('click', m.close);
+      q('#rc-go').addEventListener('click', async () => {
+        const items = [...m.el.querySelectorAll('.rc-on:checked')].map((c) => ({ feeId: c.dataset.id, amountKobo: toKobo(m.el.querySelector('.rc-amt[data-id="' + c.dataset.id + '"]').value) }));
+        if (q('#rc-oth-on').checked) items.push({ title: q('#rc-oth-t').value, amountKobo: toKobo(q('#rc-oth-a').value) });
+        if (!items.length) return toast('Tick what is being paid.');
+        try {
+          await api('/fees/admin/record', { method: 'POST', body: { studentId, items, method: q('#rc-m').value, paidOn: q('#rc-d').value, reference: q('#rc-ref').value } });
+          m.close(); toast('✅ Recorded'); await refresh(); redraw();
+        } catch (err) { toast(err.message); }
+      });
+    }
+
+    async function feesTab(body, alive) {
+      const d = await api('/fees/admin/fees');
+      if (!alive()) return;
+      const catOf = (id) => d.categories.find((c) => c.id === id) || d.categories[d.categories.length - 1];
+      const deptName = (id) => { const x = d.departments.find((y) => y.id === id); return x ? x.name : null; };
+      body.innerHTML = `<button class="btn btn-primary" id="ff-add" style="margin-bottom:10px;">➕ Add a fee</button><div class="card" style="padding:4px 14px;">${d.fees.map((f) => `<div class="list-row" style="align-items:center;gap:10px;"><div style="font-size:1.4rem;">${catOf(f.category).icon}</div><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(f.title)}${f.active ? '' : ' <span class="pill pill-muted">hidden</span>'}</div><div class="meta">${money(f.amountKobo)} · ${f.levels.length ? f.levels.map((l) => l * 100 + 'L').join(', ') : 'every level'}${f.departmentId ? ' · ' + esc(deptName(f.departmentId) || 'one department') : ' · every department'}${f.semester ? ' · ' + esc(f.semester) : ''}${f.session ? ' · ' + esc(f.session) : ''}</div></div><button class="btn btn-ghost btn-sm" data-edit="${f.id}">Edit</button></div>`).join('') || '<p class="muted" style="padding:20px 0;">No fees yet. Tap “Add a fee”: the list covers tuition, acceptance fee, registration, faculty and departmental dues, SUG dues, ICT, library, medical, laboratory, SIWES, teaching practice, project, hostel, convocation and more.</p>'}</div>`;
+      body.querySelector('#ff-add').addEventListener('click', () => feeForm(null));
+      body.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => feeForm(d.fees.find((f) => f.id === b.dataset.edit))));
+      function feeForm(cur) {
+        cur = cur || { title: '', category: 'TUITION', amountKobo: 0, semester: '', session: '', levels: [], departmentId: '', dueDate: '', description: '', active: true };
+        const m = feeModal(`<h3 style="margin-bottom:10px;">${cur.id ? 'Edit fee' : 'Add a fee'}</h3>
+          <div class="field"><label>What kind of fee?</label><select id="ff-cat">${d.categories.map((c) => `<option value="${c.id}" ${c.id === cur.category ? 'selected' : ''}>${c.icon} ${esc(c.label)}</option>`).join('')}</select></div>
+          <div class="field" id="ff-title-box" ${cur.category === 'OTHER' ? '' : 'hidden'}><label>What is it for?</label><input id="ff-title" maxlength="120" value="${esc(cur.category === 'OTHER' ? cur.title : '')}" placeholder="e.g. Faculty week contribution"></div>
+          <div class="field"><label>Amount (₦)</label><input id="ff-amt" inputmode="decimal" value="${cur.amountKobo ? cur.amountKobo / 100 : ''}"></div>
+          <div style="display:flex;gap:8px;"><div class="field" style="flex:1;"><label>Semester</label><select id="ff-sem"><option value="">Whole session</option>${['First Semester', 'Second Semester'].map((t) => `<option ${cur.semester === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div><div class="field" style="flex:1;"><label>Session</label><input id="ff-ses" maxlength="20" placeholder="2026/2027" value="${esc(cur.session || '')}"></div></div>
+          <div class="field"><label>Which levels pay it? (none ticked = every level)</label><div style="display:flex;flex-wrap:wrap;gap:6px;">${d.levels.map((l) => `<label style="border:1.5px solid rgba(128,128,128,.35);border-radius:999px;padding:5px 11px;cursor:pointer;font-weight:500;"><input type="checkbox" class="ff-lv" value="${l.year}" ${cur.levels.includes(l.year) ? 'checked' : ''}> ${l.label}</label>`).join('')}</div></div>
+          <div class="field"><label>Which department? (leave on “Every department” if all pay it)</label><select id="ff-dep"><option value="">Every department</option>${d.departments.map((x) => `<option value="${x.id}" ${x.id === cur.departmentId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Due date (optional)</label><input id="ff-due" type="date" value="${cur.dueDate ? String(cur.dueDate).slice(0, 10) : ''}"></div>
+          <div class="field"><label>Details (optional)</label><input id="ff-desc" maxlength="300" value="${esc(cur.description || '')}"></div>
+          <label style="display:flex;gap:8px;align-items:center;margin-bottom:12px;font-weight:500;"><input type="checkbox" id="ff-active" ${cur.active ? 'checked' : ''}> Show it to students</label>
+          <button class="btn btn-primary" id="ff-save" style="width:100%;">💾 Save</button>${cur.id ? '<button class="btn btn-ghost" id="ff-del" style="width:100%;margin-top:8px;color:#b42318;">🗑 Delete this fee</button>' : ''}<button class="btn btn-ghost" id="ff-x" style="width:100%;margin-top:8px;">Cancel</button>`);
+        const q = (s) => m.el.querySelector(s);
+        q('#ff-x').addEventListener('click', m.close);
+        q('#ff-cat').addEventListener('change', () => { q('#ff-title-box').hidden = q('#ff-cat').value !== 'OTHER'; });
+        q('#ff-save').addEventListener('click', async () => {
+          const category = q('#ff-cat').value;
+          const payload = { category, title: category === 'OTHER' ? q('#ff-title').value : catOf(category).label, amountNaira: q('#ff-amt').value, semester: q('#ff-sem').value, session: q('#ff-ses').value, levels: [...m.el.querySelectorAll('.ff-lv:checked')].map((x) => Number(x.value)), departmentId: q('#ff-dep').value || null, dueDate: q('#ff-due').value || null, description: q('#ff-desc').value, active: q('#ff-active').checked };
+          try { await api(cur.id ? '/fees/admin/fees/' + cur.id : '/fees/admin/fees', { method: cur.id ? 'PATCH' : 'POST', body: payload }); m.close(); toast('✅ Saved'); feesTab(body, alive); } catch (err) { toast(err.message); }
+        });
+        const del = q('#ff-del');
+        if (del) del.addEventListener('click', async () => {
+          if (!confirm('Delete this fee? Payments already made keep their record.')) return;
+          try { await api('/fees/admin/fees/' + cur.id, { method: 'DELETE' }); m.close(); toast('Deleted'); feesTab(body, alive); } catch (err) { toast(err.message); }
+        });
+      }
+    }
+
+    async function bankTab(body, alive, refresh) {
+      const { bank } = await api('/fees/admin/bank');
+      if (!alive()) return;
+      body.innerHTML = `<div class="card"><h3 style="margin-bottom:4px;">🏦 Where students pay</h3><p class="meta" style="margin-bottom:12px;">These details are shown <b>only to the students of your institution</b>, on their School Fees page. Learnza staff cannot change them.</p>
+        <div class="field"><label>Bank name</label><input id="bk-bank" maxlength="80" value="${esc(bank ? bank.bankName : '')}" placeholder="e.g. Zenith Bank"></div>
+        <div class="field"><label>Account name</label><input id="bk-name" maxlength="120" value="${esc(bank ? bank.accountName : '')}"></div>
+        <div class="field"><label>Account number (10 digits)</label><input id="bk-no" maxlength="10" inputmode="numeric" value="${esc(bank ? bank.accountNumber : '')}"></div>
+        <div class="field"><label>Instructions for students (optional)</label><input id="bk-ins" maxlength="300" value="${esc(bank ? bank.instructions || '' : '')}" placeholder="e.g. Use your matric number as the narration"></div>
+        <button class="btn btn-primary" id="bk-save">💾 Save bank details</button></div>`;
+      body.querySelector('#bk-save').addEventListener('click', async () => {
+        try {
+          await api('/fees/admin/bank', { method: 'PUT', body: { bankName: body.querySelector('#bk-bank').value, accountName: body.querySelector('#bk-name').value, accountNumber: body.querySelector('#bk-no').value, instructions: body.querySelector('#bk-ins').value } });
+          toast('✅ Bank details saved'); await refresh();
+        } catch (err) { toast(err.message); }
+      });
+    }
   }
 
   // ---------------------------------------------------------------- generated practice: progress banner
@@ -1064,5 +1418,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
 })();

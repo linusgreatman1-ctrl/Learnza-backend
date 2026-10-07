@@ -48,7 +48,11 @@ button[disabled] { opacity: .55; cursor: default; }
 
 /* ---- app shell ---- */
 #app-screen { display: grid; grid-template-columns: 230px 1fr; height: 100vh; }
-.sidebar { background: var(--navy); color: #fff; padding: 20px 14px; display: flex; flex-direction: column; overflow-y: auto; }
+.sidebar { background: var(--navy); color: #fff; padding: 20px 14px; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .25) transparent; }
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .25); border-radius: 6px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.nav-toggle, .nav-scrim { display: none; }
 .sidebar h2 { margin: 0 0 6px; font-size: 1.1rem; padding: 0 8px; }
 .sidebar h2 span { color: var(--gold); }
 .nav-user { padding: 0 8px 14px; font-size: 12px; color: rgba(255, 255, 255, .6); display: flex; flex-direction: column; gap: 4px; }
@@ -98,12 +102,13 @@ tr.clickable:hover td { background: #fafbfd; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 @media (max-width: 800px) {
-  #app-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
-  .sidebar { flex-direction: row; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .sidebar ul { display: flex; gap: 4px; flex-wrap: wrap; width: 100%; }
-  .nav-user { display: none; }
-  .sidebar button { width: auto; margin-top: 0; }
-  main { padding: 18px 14px 60px; }
+  /* On a phone the menu slides in from the ☰ button and scrolls on its own, like the apps' menus. */
+  #app-screen { grid-template-columns: 1fr; height: 100vh; }
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 78vw; max-width: 300px; z-index: 200; transform: translateX(-102%); transition: transform .2s; }
+  #app-screen.nav-open .sidebar { transform: none; box-shadow: 0 0 40px rgba(0, 0, 0, .45); }
+  .nav-toggle { display: flex; position: fixed; top: 10px; right: 12px; z-index: 150; width: 40px; height: 40px; border-radius: 10px; border: none; background: var(--navy); color: #fff; font-size: 18px; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
+  #app-screen.nav-open .nav-scrim { display: block; position: fixed; inset: 0; z-index: 190; background: rgba(0, 0, 0, .45); }
+  main { padding: 56px 14px 60px; }
 }
 
 /* tabs, switches and settings rows (Announcements, Payments, AI, Settings) */

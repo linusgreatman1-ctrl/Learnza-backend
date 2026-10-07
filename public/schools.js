@@ -434,6 +434,7 @@
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['academic-record', 'Academic Record'],
+      ['fees', 'School Fees'],
       ['elections', 'Elections'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
@@ -473,6 +474,7 @@
       ['research', 'AI Research Assistant'],
       ['practice', 'Practice Questions'],
       ['staff-profile', 'My Staff Profile'],
+      ['class-vote', 'Class Rep Voting'],
       ['elections', 'Elections'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
@@ -500,6 +502,7 @@
       ['admin-announce', 'Announce'],
       ['admin-bulk-message', 'Bulk SMS/Email'],
       ['admin-management', 'Admin Management'],
+      ['admin-fees', 'Fee Payment'],
       ['admin-elections', 'Elections'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
@@ -821,6 +824,9 @@
         case 'practice': return LZX.practice(view, { api, esc, toast });
         case 'elections': return LZX.elections(view, { api, esc, toast });
         case 'admin-elections': return LZX.electionsAdmin(view, { api, esc, toast });
+        case 'class-vote': return LZX.electionsAdmin(view, { api, esc, toast, mode: 'class' });
+        case 'fees': return LZX.fees(view, { api, esc, toast });
+        case 'admin-fees': return LZX.feesAdmin(view, { api, esc, toast });
         case 'settings-profile': return renderSettingsProfile();
         case 'settings-password': return renderSettingsPassword();
         case 'lab': return renderLab();

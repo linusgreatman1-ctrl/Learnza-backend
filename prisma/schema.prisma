@@ -30,6 +30,9 @@ model School {
   hostels               Hostel[]
   libraryResources      LibraryResource[]
   elections             Election[]
+  bankAccount           SchoolBankAccount?
+  fees                  SchoolFee[]
+  feePayments           FeePayment[]
 }
 
 // A school's own term/semester calendar. isCurrent marks the one new activity
@@ -143,6 +146,7 @@ model User {
   passwordResets PasswordReset[]
   coursesAssigned CourseLecturer[]
   labAttempts    LabAttempt[]
+  feePayments    FeePayment[] @relation("FeePaymentStudent")
 
   @@index([schoolId, role])
   @@index([departmentId])
@@ -222,6 +226,7 @@ model Department {
   code         String
   courses      Course[]
   users        User[]
+  fees         SchoolFee[]
 
   @@unique([schoolId, code])
 }
@@ -248,6 +253,7 @@ model Course {
   assignments  Assignment[]
   results      Result[]
   lecturers    CourseLecturer[]
+  elections    Election[]
 
   @@unique([departmentId, code])
   practiceReadyAt DateTime? // when the system finished writing this course's mock exams, past-question set and practice bank
@@ -1111,7 +1117,9 @@ model Election {
   schoolId        String
   title           String
   description     String?
-  kind            String   // STUDENT_SUG | LECTURER
+  kind            String   // STUDENT_SUG | LECTURER | CLASS_REP (set up by a lecturer for one of their courses)
+  course          Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId        String?  // CLASS_REP: only the students enrolled in this course stand and vote
   voters          String   // STUDENTS | LECTURERS | BOTH
   status          String   @default("DRAFT") // DRAFT | OPEN | CLOSED
   opensAt         DateTime?
@@ -1126,6 +1134,7 @@ model Election {
   votes           ElectionVote[]
 
   @@index([schoolId, status])
+  @@index([courseId])
 }
 
 model ElectionPosition {
@@ -1178,4 +1187,71 @@ model ElectionVote {
   @@index([electionId])
   @@index([positionId])
   @@index([candidateId])
+}
+
+
+// ---- School fees (school app) -----------------------------------------------------------
+// What a university, polytechnic, monotechnic or college of education charges, what each student
+// owes and has paid. Money is in kobo. A school pastes in its own bank details (shown only to its own
+// students); a student pays by card / USSD / bank transfer through the payment window (confirmed
+// automatically with a receipt) or transfers to the school's account and tells the school (the school
+// confirms). The platform owner can only look.
+model SchoolBankAccount {
+  id            String   @id @default(cuid())
+  school        School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId      String   @unique
+  bankName      String
+  accountName   String
+  accountNumber String
+  instructions  String?
+  updatedAt     DateTime @updatedAt
+}
+
+model SchoolFee {
+  id           String      @id @default(cuid())
+  school       School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId     String
+  title        String      // the kind of fee, or what an "Other" fee is for
+  category     String
+  description  String?
+  amountKobo   Int
+  session      String?     // e.g. 2026/2027
+  semester     String?     // First Semester | Second Semester | null = whole session
+  levels       Int[]       // year of study it applies to (1 = 100L); empty = every level
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  departmentId String?     // empty = every department
+  dueDate      DateTime?
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+
+  @@index([schoolId, active])
+}
+
+model FeePayment {
+  id              String    @id @default(cuid())
+  school          School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  schoolId        String
+  student         User      @relation("FeePaymentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  studentId       String
+  submittedByType String    // STUDENT | SCHOOL
+  submittedById   String?
+  status          String    @default("PENDING") // AWAITING_PAYMENT (payment window open) | PENDING | CONFIRMED | REJECTED
+  amountKobo      Int
+  method          String    @default("BANK_TRANSFER") // BANK_TRANSFER | CASH | POS | ONLINE
+  provider        String?   // FLUTTERWAVE | PAYSTACK, for ONLINE payments
+  reference       String?
+  depositorName   String?
+  paidOn          DateTime?
+  note            String?
+  proofUrl        String?
+  items           Json      // [{ feeId|null, title, category, amountKobo }]
+  receiptNo       String?   @unique
+  reviewedById    String?
+  reviewedAt      DateTime?
+  rejectReason    String?
+  createdAt       DateTime  @default(now())
+
+  @@index([schoolId, status])
+  @@index([studentId])
+  @@index([reference])
 }
