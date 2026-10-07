@@ -145,12 +145,12 @@ router.get('/elections/:id', async (req, res) => {
 });
 
 // ---------------------------------------------------------------- school fees (read-only oversight)
-// What students pay their institutions, school by school. The owner can only look: bank-transfer payments are
-// confirmed by the school, card and USSD payments by the payment provider, so there is nothing to act on here.
+// What students pay their institutions, school by school. The owner can only look: the school confirms every
+// payment itself, so there is nothing to act on here.
 router.get('/fees/overview', async (req, res) => {
   const [schools, byStatus] = await Promise.all([
     prisma.school.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, state: true, bankAccount: { select: { bankName: true, accountName: true, accountNumber: true } }, _count: { select: { fees: true } } } }),
-    prisma.feePayment.groupBy({ by: ['schoolId', 'status'], where: { status: { not: 'AWAITING_PAYMENT' } }, _sum: { amountKobo: true }, _count: { _all: true } }),
+    prisma.feePayment.groupBy({ by: ['schoolId', 'status'], _sum: { amountKobo: true }, _count: { _all: true } }),
   ]);
   const rows = schools.map((s) => {
     const mine = byStatus.filter((r) => r.schoolId === s.id);
@@ -169,7 +169,7 @@ router.get('/fees/payments', async (req, res) => {
   const q = feeKit.clean(req.query.q, 60);
   const where = {
     ...(req.query.schoolId ? { schoolId: String(req.query.schoolId) } : {}),
-    ...(['PENDING', 'CONFIRMED', 'REJECTED'].includes(req.query.status) ? { status: req.query.status } : { status: { not: 'AWAITING_PAYMENT' } }),
+    ...(['PENDING', 'CONFIRMED', 'REJECTED'].includes(req.query.status) ? { status: req.query.status } : {}),
     ...(q ? { student: { fullName: { contains: q, mode: 'insensitive' } } } : {}),
   };
   const [rows, total] = await Promise.all([
@@ -180,7 +180,7 @@ router.get('/fees/payments', async (req, res) => {
     total, page, pageSize: size,
     items: rows.map((p) => ({
       id: p.id, schoolName: p.school.name, studentName: p.student.fullName, matricNumber: p.student.matricNumber, department: p.student.department ? p.student.department.name : null, level: feeKit.levelLabel(p.student.yearOfStudy),
-      status: p.status, amountKobo: p.amountKobo, method: p.method, provider: p.provider, reference: p.reference, depositorName: p.depositorName, paidOn: p.paidOn, receiptNo: p.receiptNo, items: feeKit.itemsOf(p), submittedBy: p.submittedByType, createdAt: p.createdAt, reviewedAt: p.reviewedAt,
+      status: p.status, amountKobo: p.amountKobo, method: p.method, reference: p.reference, depositorName: p.depositorName, paidOn: p.paidOn, receiptNo: p.receiptNo, items: feeKit.itemsOf(p), submittedBy: p.submittedByType, createdAt: p.createdAt, reviewedAt: p.reviewedAt,
     })),
   });
 });
@@ -192,7 +192,7 @@ router.get('/fees/payments/:id', async (req, res) => {
   res.json({
     payment: {
       id: p.id, schoolName: p.school.name, studentName: p.student.fullName, matricNumber: p.student.matricNumber, department: p.student.department ? p.student.department.name : null, level: feeKit.levelLabel(p.student.yearOfStudy),
-      status: p.status, amountKobo: p.amountKobo, method: p.method, provider: p.provider, reference: p.reference, depositorName: p.depositorName, paidOn: p.paidOn, note: p.note, receiptNo: p.receiptNo, items: feeKit.itemsOf(p),
+      status: p.status, amountKobo: p.amountKobo, method: p.method, reference: p.reference, depositorName: p.depositorName, paidOn: p.paidOn, note: p.note, receiptNo: p.receiptNo, items: feeKit.itemsOf(p),
       submittedBy: p.submittedByType, createdAt: p.createdAt, reviewedAt: p.reviewedAt, rejectReason: p.rejectReason, proofUrl: p.proofUrl,
       schoolBank: p.school.bankAccount ? { bankName: p.school.bankAccount.bankName, accountName: p.school.bankAccount.accountName, accountNumber: p.school.bankAccount.accountNumber } : null,
     },

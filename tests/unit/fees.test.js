@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const path = require('path');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'unit-test-secret';
-process.env.FLUTTERWAVE_PUBLIC_KEY = 'FLWPUBK-test';
 
 const U = {
   adm: { id: 'adm', fullName: 'Registrar', role: 'ADMIN', schoolId: 's1', status: 'ACTIVE' },
@@ -57,11 +56,9 @@ const fake = {
   feePayment: {
     findMany: async ({ where }) => db.payments.filter((p) => match(p, where)).map(withStudent),
     findUnique: async ({ where }) => { const p = db.payments.find((x) => (where.id ? x.id === where.id : x.receiptNo === where.receiptNo)); return p ? withStudent(p) : null; },
-    findFirst: async ({ where }) => { const p = db.payments.find((x) => match(x, where)); return p ? withStudent(p) : null; },
     aggregate: async ({ where }) => ({ _sum: { amountKobo: db.payments.filter((p) => match(p, where)).reduce((a, p) => a + p.amountKobo, 0) } }),
     create: async ({ data }) => { const p = { id: nid('pay'), createdAt: new Date(), proofUrl: null, receiptNo: null, rejectReason: null, reviewedAt: null, provider: null, ...data }; db.payments.push(p); return p; },
     update: async ({ where, data }) => Object.assign(db.payments.find((p) => p.id === where.id), data),
-    updateMany: async ({ where, data }) => { const rows = db.payments.filter((x) => match(x, where)); rows.forEach((r) => Object.assign(r, data)); return { count: rows.length }; },
     count: async ({ where }) => db.payments.filter((p) => match(p, where)).length,
   },
   notification: { create: async ({ data }) => { db.notes.push(data); return { id: nid('note'), ...data }; } },
@@ -123,8 +120,6 @@ function call(fn, req) {
     Promise.resolve(fn({ body: {}, query: {}, params: {}, get: () => 'localhost', protocol: 'http', ...req }, res)).catch(reject);
   });
 }
-const realFetch = global.fetch;
-const gatewayPays = (amountKobo) => { global.fetch = async () => ({ ok: true, json: async () => ({ status: 'success', data: { status: 'successful', amount: amountKobo / 100 } }) }); };
 
 test('fee categories cover what higher institutions charge, and the kind of fee is its name', () => {
   const ids = feeKit.CATEGORIES.map((c) => c.id);
@@ -178,51 +173,6 @@ test('the school confirms with a receipt; it cannot be confirmed twice and anoth
   assert.equal((await call(F.confirmPayment, { user: U.adm, params: { id: p.id } })).status, 409);
   const view = await call(F.mine, { user: U.ada });
   assert.equal(view.body.fees.find((f) => f.category === 'TUITION').paidKobo, 5000000);
-});
-
-test('an online payment is priced by the server, hidden from the school until paid, confirmed once by the gateway', async () => {
-  process.env.FLUTTERWAVE_SECRET_KEY = 'FLWSECK-test';
-  const fee = db.fees.find((f) => f.category === 'TUITION');
-  assert.equal((await call(F.payOnline, { user: U.ada, body: { provider: 'STRIPE', items: [{ feeId: fee.id, amountKobo: 100000 }] } })).status, 400);
-  assert.equal((await call(F.payOnline, { user: U.ada, body: { provider: 'PAYSTACK', items: [{ feeId: fee.id, amountKobo: 100000 }] } })).status, 503);   // Paystack has no key here
-  const init = await call(F.payOnline, { user: U.ada, body: { provider: 'FLUTTERWAVE', items: [{ feeId: fee.id, amountKobo: 3000000 }] } });
-  assert.equal(init.status, 201);
-  assert.match(init.body.reference, /^LZ-FEE-/);
-  assert.equal(init.body.amountKobo, 3000000);
-  const listed = await call(F.listPayments, { user: U.adm, query: {} });
-  assert.ok(!listed.body.payments.some((x) => x.reference === init.body.reference));
-  const ref = init.body.reference;
-  gatewayPays(1000);
-  assert.equal((await call(F.verifyOnline, { user: U.ada, params: { reference: ref }, query: {} })).body.status, 'AWAITING_PAYMENT');   // paid too little
-  gatewayPays(3000000);
-  const ok = await call(F.verifyOnline, { user: U.ada, params: { reference: ref }, query: {} });
-  assert.equal(ok.body.status, 'CONFIRMED');
-  assert.match(ok.body.receiptNo, /^RCT-/);
-  const notes = db.notes.length;
-  assert.equal((await call(F.verifyOnline, { user: U.ada, params: { reference: ref }, query: {} })).body.receiptNo, ok.body.receiptNo);
-  assert.equal(db.notes.length, notes);                                                         // nobody is told twice
-  assert.equal((await call(F.verifyOnline, { user: U.cara, params: { reference: ref }, query: {} })).status, 404);   // another student cannot touch it
-  global.fetch = realFetch;
-});
-
-test('a payment the window says went through, but cannot be checked yet, goes to the school to confirm', async () => {
-  delete process.env.FLUTTERWAVE_SECRET_KEY;
-  const init = await call(F.payOnline, { user: U.ada, body: { provider: 'FLUTTERWAVE', items: [{ title: 'Replacement ID card', amountKobo: 200000 }] } });
-  assert.equal((await call(F.verifyOnline, { user: U.ada, params: { reference: init.body.reference }, query: {} })).body.status, 'AWAITING_PAYMENT');
-  assert.equal((await call(F.verifyOnline, { user: U.ada, params: { reference: init.body.reference }, query: { completed: '1' } })).body.status, 'PENDING');
-  const list = await call(F.listPayments, { user: U.adm, query: { status: 'PENDING' } });
-  assert.ok(list.body.payments.some((x) => x.reference === init.body.reference && x.method === 'ONLINE'));
-});
-
-test('the gateway\'s webhook settles an online fee payment too', async () => {
-  const payments = require('../../src/services/payments.service');
-  const fee = db.fees.find((f) => f.category === 'TUITION');
-  const init = await call(F.payOnline, { user: U.ada, body: { provider: 'FLUTTERWAVE', items: [{ feeId: fee.id, amountKobo: 100000 }] } });
-  fake.payment = { findUnique: async () => null };
-  fake.coinPurchase = { findUnique: async () => null };
-  const r = await payments.settle(init.body.reference, 100000);
-  assert.equal(r.ok, true);
-  assert.equal(db.payments.find((x) => x.reference === init.body.reference).status, 'CONFIRMED');
 });
 
 test('the school sees who owes what; the office records cash and the fee clears', async () => {

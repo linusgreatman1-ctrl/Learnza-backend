@@ -10,7 +10,7 @@ const { aiGuard } = require('../aiGuard');
 const router = express.Router();
 
 // Self-directed courses for individual (non-school) learners -- no lecturer, no
-// department, just a topic they want the AI Teacher to cover.
+// department, just a topic they want the AI Lecturer to cover.
 router.get('/individual-courses', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const courses = await prisma.individualCourse.findMany({
     where: { studentId: req.user.id },

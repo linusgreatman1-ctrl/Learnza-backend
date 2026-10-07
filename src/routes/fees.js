@@ -1,35 +1,25 @@
 const express = require('express');
-const crypto = require('crypto');
 const prisma = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const fees = require('../services/fees.service');
 const { notify, notifySchoolAdmins } = require('../services/notification.service');
-const { uniqueReceiptNo, settleOnline } = require('../services/feeSettlement');
-const flutterwave = require('../services/flutterwave.service');
-const paystack = require('../services/paystack.service');
-const { flutterwavePublicKey } = require('../config/payments');
 
 // School fees. A student sees the fees for their level and department, the school's own bank
-// details (only the students of THAT school ever get them) and what is paid and owing. They pay by card,
-// USSD or bank transfer through the payment window (confirmed automatically, with a receipt) or by
-// transferring to the school's account and telling the school (the school confirms). The school admin
-// sets the bank details and fees, confirms or rejects, records cash, and sees who has paid. The
-// platform owner can only look (routes/superInsights.js).
+// details (only the students of THAT school ever get them) and what is paid and owing. They transfer to the
+// school's account and tell the school; the school confirms (with a receipt). The school admin sets the bank
+// details and fees, confirms or rejects, records cash, and sees who has paid. The platform owner can only look
+// (routes/superInsights.js).
 const router = express.Router();
 router.use(requireAuth);
 
 const PAGE = 30;
-const PROVIDERS = ['FLUTTERWAVE', 'PAYSTACK'];
-const INTERNAL = /@internal\.learnza\.local$/;
-const payerEmail = (u) => (u.email && !INTERNAL.test(u.email) ? u.email : process.env.PAY_FALLBACK_EMAIL || 'payments@learnza.app');
-// Where Paystack sends the browser back to: the page the payment started from, on this site only.
-function returnUrl(req) {
-  const origin = `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
-  try {
-    const u = new URL(String((req.body && req.body.returnUrl) || ''), origin);
-    if (u.host === req.get('host')) return u.origin + u.pathname;
-  } catch { /* fall through */ }
-  return origin + '/schools';
+
+async function uniqueReceiptNo() {
+  for (let i = 0; i < 5; i++) {
+    const candidate = fees.newReceiptNo();
+    if (!(await prisma.feePayment.findUnique({ where: { receiptNo: candidate } }))) return candidate;
+  }
+  return fees.newReceiptNo() + '-' + Date.now().toString(36).toUpperCase();
 }
 
 const STUDENT_SELECT = { id: true, fullName: true, email: true, role: true, schoolId: true, departmentId: true, yearOfStudy: true, matricNumber: true, department: { select: { id: true, name: true } } };
@@ -37,14 +27,10 @@ const studentRow = (id) => prisma.user.findUnique({ where: { id }, select: STUDE
 
 function presentPayment(p) {
   return {
-    id: p.id, status: p.status, amountKobo: p.amountKobo, method: p.method, provider: p.provider || null, reference: p.reference, depositorName: p.depositorName,
+    id: p.id, status: p.status, amountKobo: p.amountKobo, method: p.method, reference: p.reference, depositorName: p.depositorName,
     paidOn: p.paidOn, note: p.note, items: fees.itemsOf(p), receiptNo: p.receiptNo, rejectReason: p.rejectReason,
     hasProof: !!p.proofUrl, submittedByType: p.submittedByType, createdAt: p.createdAt, reviewedAt: p.reviewedAt,
   };
-}
-
-function onlineOptions() {
-  return { flutterwave: !!flutterwavePublicKey(), flutterwavePublicKey: flutterwavePublicKey() || null, paystack: paystack.isConfigured() };
 }
 
 // Everything a student sees. Bank details go to people of THIS school only.
@@ -54,13 +40,13 @@ async function studentView(student) {
     prisma.school.findUnique({ where: { id: student.schoolId }, select: { id: true, name: true } }),
     prisma.schoolBankAccount.findUnique({ where: { schoolId: student.schoolId } }),
     prisma.schoolFee.findMany({ where: { schoolId: student.schoolId, active: true }, orderBy: [{ category: 'asc' }, { createdAt: 'asc' }] }),
-    prisma.feePayment.findMany({ where: { studentId: student.id, status: { not: 'AWAITING_PAYMENT' } }, orderBy: { createdAt: 'desc' }, take: 60 }),
+    prisma.feePayment.findMany({ where: { studentId: student.id }, orderBy: { createdAt: 'desc' }, take: 60 }),
   ]);
   const led = fees.ledger(feeRows, rows, student);
   return {
     school, student: { id: student.id, name: student.fullName, matricNumber: student.matricNumber || null, department: student.department ? student.department.name : null, level: fees.levelLabel(student.yearOfStudy) },
     bank: bank ? { bankName: bank.bankName, accountName: bank.accountName, accountNumber: bank.accountNumber, instructions: bank.instructions } : null,
-    online: onlineOptions(), categories: fees.CATEGORIES, fees: led.fees, totals: led.totals, payments: rows.map(presentPayment),
+    categories: fees.CATEGORIES, fees: led.fees, totals: led.totals, payments: rows.map(presentPayment),
   };
 }
 
@@ -98,56 +84,6 @@ async function pay(req, res) {
   await notifySchoolAdmins(student.schoolId, 'Fee payment to confirm', student.fullName + ' paid ' + fees.naira(items.totalKobo) + ' (' + items.items.map((i) => i.title).join(', ').slice(0, 120) + ').', 'admin-fees').catch(() => {});
   res.status(201).json({ payment: presentPayment(row) });
 }
-
-// Card / USSD / bank transfer through the gateway: priced here, never from the browser. Until the gateway
-// confirms, the row is AWAITING_PAYMENT: the school never sees it and the balance does not change.
-async function payOnline(req, res) {
-  if (!isSchoolStudent(req.user)) return notStudent(res);
-  const provider = String((req.body && req.body.provider) || '');
-  if (!PROVIDERS.includes(provider)) return res.status(400).json({ error: 'Choose Flutterwave or Paystack.' });
-  if (provider === 'PAYSTACK' && !paystack.isConfigured()) return res.status(503).json({ error: 'Paystack is not set up yet. Please choose another way to pay.' });
-  const student = await studentRow(req.user.id);
-  const led = await ledgerFor(student);
-  const items = fees.buildItems(req.body.items, led.fees);
-  if (items.error) return res.status(400).json({ error: items.error });
-  const reference = 'LZ-FEE-' + Date.now() + '-' + crypto.randomBytes(5).toString('hex');
-  let authorizationUrl;
-  if (provider === 'PAYSTACK') {
-    try {
-      const init = await paystack.initializeTransaction({ email: payerEmail(req.user), amountKobo: items.totalKobo, reference, callbackUrl: returnUrl(req), metadata: { userId: student.id, kind: 'school-fees' } });
-      authorizationUrl = init.authorization_url;
-    } catch (err) { return res.status(502).json({ error: 'Could not reach Paystack: ' + err.message }); }
-  }
-  const row = await prisma.feePayment.create({
-    data: { schoolId: student.schoolId, studentId: student.id, submittedByType: 'STUDENT', submittedById: student.id, status: 'AWAITING_PAYMENT', method: 'ONLINE', provider, reference, amountKobo: items.totalKobo, items: items.items },
-  });
-  res.status(201).json({ reference, authorizationUrl, amountKobo: row.amountKobo, amount: row.amountKobo / 100, email: payerEmail(req.user), name: student.fullName, provider });
-}
-
-// Called when the gateway's window reports success (completed = '1') and again while it waits. If the
-// gateway confirms, the payment is confirmed on the spot. If it cannot be checked (the gateway is slow,
-// or there is no key for it yet) a payment the student says went through is handed to the school as a
-// normal "to confirm" payment, so nobody is left having paid with nothing to show for it.
-async function verifyOnline(req, res) {
-  if (!isSchoolStudent(req.user)) return notStudent(res);
-  const student = await studentRow(req.user.id);
-  const p = await prisma.feePayment.findFirst({ where: { reference: String(req.params.reference), method: 'ONLINE', studentId: student.id } });
-  if (!p) return res.status(404).json({ error: 'Payment not found.' });
-  if (p.status === 'CONFIRMED') return res.json({ status: 'CONFIRMED', receiptNo: p.receiptNo });
-  if (p.status === 'REJECTED') return res.json({ status: 'REJECTED' });
-  const checked = await verifyWithGateway(p.provider, p.reference);
-  if (checked.ok) {
-    const done = await settleOnline(p.reference, checked.amountKobo);
-    if (done.ok) return res.json({ status: 'CONFIRMED', receiptNo: done.payment.receiptNo });
-  }
-  if (req.query.completed === '1' && p.status === 'AWAITING_PAYMENT') {
-    const flipped = await prisma.feePayment.updateMany({ where: { id: p.id, status: 'AWAITING_PAYMENT' }, data: { status: 'PENDING', note: 'Paid online with ' + (p.provider === 'PAYSTACK' ? 'Paystack' : 'Flutterwave') + '. Learnza could not check it automatically yet, please confirm it from your bank or gateway statement.' } });
-    if (flipped.count === 1) await notifySchoolAdmins(p.schoolId, 'Online fee payment to confirm', student.fullName + ' paid ' + fees.naira(p.amountKobo) + ' online (' + p.reference + ').', 'admin-fees').catch(() => {});
-    return res.json({ status: 'PENDING' });
-  }
-  res.json({ status: p.status });
-}
-const verifyWithGateway = (provider, reference) => (provider === 'PAYSTACK' ? paystack.verifyByReference(reference) : flutterwave.verifyByReference(reference));
 
 function categories(req, res) { res.json({ categories: fees.CATEGORIES, levels: fees.LEVELS.map((y) => ({ year: y, label: y * 100 + 'L' })) }); }
 
@@ -220,7 +156,7 @@ async function listPayments(req, res) {
   const status = ['PENDING', 'CONFIRMED', 'REJECTED'].includes(req.query.status) ? req.query.status : undefined;
   const q = fees.clean(req.query.q, 60);
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-  const where = { schoolId: req.user.schoolId, ...(status ? { status } : { status: { not: 'AWAITING_PAYMENT' } }), ...(q ? { student: { fullName: { contains: q, mode: 'insensitive' } } } : {}) };
+  const where = { schoolId: req.user.schoolId, ...(status ? { status } : {}), ...(q ? { student: { fullName: { contains: q, mode: 'insensitive' } } } : {}) };
   const [rows, total, pending] = await Promise.all([
     prisma.feePayment.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * PAGE, take: PAGE, include: { student: STUDENT_INCLUDE } }),
     prisma.feePayment.count({ where }),
@@ -322,7 +258,7 @@ async function studentLedger(req, res) {
   if (!row || row.schoolId !== req.user.schoolId || row.role !== 'STUDENT') return res.status(404).json({ error: 'That student is not in your institution.' });
   const out = await studentView(row);
   if (out.error) return res.status(out.status).json({ error: out.error });
-  delete out.bank; delete out.online;
+  delete out.bank;
   res.json(out);
 }
 
@@ -330,8 +266,6 @@ async function studentLedger(req, res) {
 router.get('/categories', categories);
 router.get('/mine', mine);
 router.post('/pay', pay);
-router.post('/online/initiate', payOnline);
-router.get('/online/verify/:reference', verifyOnline);
 
 // the school admin: the school's own money, nobody else's
 router.get('/admin/overview', ...admin, needSchool, overview);
@@ -350,7 +284,7 @@ router.get('/admin/students', ...admin, needSchool, students);
 router.get('/admin/students/:id', ...admin, needSchool, studentLedger);
 
 // For the tests, and for the owner's read-only pages (routes/superInsights.js).
-router.handlers = { mine, pay, payOnline, verifyOnline, categories, getBank, saveBank, listFees, createFee, updateFee, deleteFee, listPayments, paymentDetail, confirmPayment, rejectPayment, recordPayment, students, overview, studentLedger };
-router.helpers = { presentPayment, settleOnline };
+router.handlers = { mine, pay, categories, getBank, saveBank, listFees, createFee, updateFee, deleteFee, listPayments, paymentDetail, confirmPayment, rejectPayment, recordPayment, students, overview, studentLedger };
+router.helpers = { presentPayment };
 
 module.exports = router;

@@ -35,7 +35,7 @@ const DEFINITIONS = {
   aiEnabled: {
     type: 'boolean', default: true, category: 'AI',
     label: 'AI features enabled',
-    help: 'Master switch for AI Teacher, the research assistant, lab questions and AI-generated content.',
+    help: 'Master switch for AI Lecturer, the research assistant, lab questions and AI-generated content.',
   },
   aiQuestionsPerDay: {
     type: 'number', default: 0, min: 0, category: 'AI',

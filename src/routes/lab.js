@@ -104,7 +104,7 @@ router.post('/lab/:id/ask', requireAuth, aiGuard, loadDemo(), requireActiveSubsc
   try {
     const answer = await ai.askForText(systemPrompt, question.trim());
     await logAiConversation(req.user.id, 'LAB', question.trim(), answer);
-    // Structured the same way AI Teacher's interrupt answers are, so the frontend can
+    // Structured the same way AI Lecturer's interrupt answers are, so the frontend can
     // always render the answer onto the board rather than only in the chat log.
     res.json({ answer, boardActions: [{ type: 'TEXT', content: answer }] });
   } catch (err) {

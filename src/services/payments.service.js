@@ -4,7 +4,6 @@ const coins = require('./coins.service');
 const flutterwave = require('./flutterwave.service');
 const paystack = require('./paystack.service');
 const { notify } = require('./notification.service');
-const { settleOnline: settleFeeOnline } = require('./feeSettlement');
 
 // Everything that turns "a payment exists" into "the student has what they paid for". Shared by
 // the browser's verify call, Flutterwave's webhook and the admin's manual confirmation, so no
@@ -46,10 +45,9 @@ async function settle(reference, paidKobo) {
     if (purchase.status === 'SUCCESS') return { ok: true, kind: 'coins', already: true, coins: purchase.coins };
     if (!amountCovers(purchase.amountKobo, paidKobo)) return { ok: false, reason: 'amount_mismatch' };
     const credited = await coins.completePurchase(purchase);
-    if (credited) await notify(purchase.userId, 'Coins added', `${purchase.coins} coins (${purchase.coins} minutes of live AI Teacher) were added to your wallet.`, 'wallet');
+    if (credited) await notify(purchase.userId, 'Coins added', `${purchase.coins} coins (${purchase.coins} minutes of live AI Lecturer) were added to your wallet.`, 'wallet');
     return { ok: true, kind: 'coins', coins: purchase.coins };
   }
-  if (String(reference).startsWith('LZ-FEE-')) return settleFeeOnline(reference, paidKobo);   // school fees paid through the payment window
   return { ok: false, reason: 'not_found' };
 }
 

@@ -243,10 +243,10 @@
   function aiErrorMessage(err) {
     const msg = (err && err.message) || '';
     if (/quota|rate.?limit|resource.?exhausted|too many requests/i.test(msg)) {
-      return "The AI Teacher is getting a lot of use right now and has hit its provider limit — please try again in a few minutes.";
+      return "The AI Lecturer is getting a lot of use right now and has hit its provider limit — please try again in a few minutes.";
     }
     if (/high demand|overloaded|unavailable|\b503\b|\b502\b/i.test(msg)) {
-      return "The AI Teacher's provider is temporarily overloaded — please try again in a few minutes.";
+      return "The AI Lecturer's provider is temporarily overloaded — please try again in a few minutes.";
     }
     return msg || 'Something went wrong. Please try again.';
   }
@@ -781,7 +781,7 @@
       <div class="card" style="padding:32px; max-width:480px; margin:40px auto; text-align:center;">
         <span class="pill pill-accent">Learnza subscription</span>
         <h2 style="margin:14px 0 8px;">This needs an active subscription</h2>
-        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock AI Teacher lessons, recorded lectures and live classes.')}</p>
+        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock AI Lecturer lessons, recorded lectures and live classes.')}</p>
         <button class="btn btn-accent" id="go-upgrade-btn">See plans — ₦10,000/month</button>
       </div>
     `;
@@ -797,7 +797,7 @@
         <h1>My Courses</h1>
         <button class="btn btn-accent" id="new-individual-course-btn">+ New course</button>
       </div>
-      <p class="muted" style="margin-bottom:20px;">Create a course on anything you want to learn — the AI Teacher covers it.</p>
+      <p class="muted" style="margin-bottom:20px;">Create a course on anything you want to learn — the AI Lecturer covers it.</p>
       <div class="grid-cards">
         ${courses.map((c) => `
           <div class="card course-card" data-open="${c.id}">
@@ -836,19 +836,19 @@
       ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
       <div class="card" style="padding:24px; text-align:center; margin-bottom:22px;">
         ${subBadge}
-        <h3 style="margin:14px 0 8px;">Start an AI Teacher lesson</h3>
-        <p class="muted" style="margin-bottom:18px;">Tell the AI Teacher what to cover in this course.</p>
-        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Teacher</button>
+        <h3 style="margin:14px 0 8px;">Start an AI Lecturer lesson</h3>
+        <p class="muted" style="margin-bottom:18px;">Tell the AI Lecturer what to cover in this course.</p>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lecturer</button>
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lessons</h3>
-      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated AI Teacher lessons for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
+      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated AI Lecturer lessons for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
       <div class="card" style="margin-bottom:22px;">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
             <div>
               <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-              <div class="meta">AI Teacher · narrated lesson</div>
+              <div class="meta">AI Lecturer · narrated lesson</div>
             </div>
             <span class="pill pill-accent">Lesson ${l.order}</span>
           </div>
@@ -859,7 +859,7 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('individual-courses'));
     document.getElementById('start-ai-teacher-btn').addEventListener('click', () => {
-      const topic = prompt(`What topic in ${course.title} should the AI Teacher cover?`);
+      const topic = prompt(`What topic in ${course.title} should the AI Lecturer cover?`);
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim(), true);
     });
@@ -883,7 +883,7 @@
       <div class="card" style="padding:48px 24px; text-align:center;">
         <div class="ai-avatar-ring" style="margin:0 auto 18px; animation: avatar-pulse 1.4s ease-in-out infinite;">✨</div>
         <h3 style="margin-bottom:8px;">Preparing your lesson on "${esc(topic)}"…</h3>
-        <p class="muted">The AI Teacher is drafting a full, comprehensive lesson — this takes a little while.</p>
+        <p class="muted">The AI Lecturer is drafting a full, comprehensive lesson — this takes a little while.</p>
       </div>
     `;
     try {
@@ -910,7 +910,7 @@
         <div class="card" style="padding:32px; text-align:center;">
           <span class="pill pill-accent">Subscription feature</span>
           <h2 style="margin:14px 0 8px;">This lesson needs an active subscription</h2>
-          <p class="muted" style="margin-bottom:20px;">AI Teacher narration and recorded lectures are part of Learnza's paid plan — ₦10,000/month or ₦105,000/year.</p>
+          <p class="muted" style="margin-bottom:20px;">AI Lecturer narration and recorded lectures are part of Learnza's paid plan — ₦10,000/month or ₦105,000/year.</p>
           <button class="btn btn-accent" id="go-upgrade-btn">See plans</button>
         </div>
       `;
@@ -936,13 +936,13 @@
           <h3 style="margin:18px 0 8px; font-size:0.95rem;">Lesson notes</h3>
           <p style="white-space:pre-wrap;">${esc(lesson.script)}</p>
         ` : `
-          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Teacher — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
+          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Lecturer — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
           ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
           <div class="ai-avatar-box" style="margin-top:14px;">
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
             <audio id="avatar-audio" autoplay hidden></audio>
-            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Teacher — video avatar available' : 'AI Teacher'}</div>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Lecturer — video avatar available' : 'AI Lecturer'}</div>
             ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
           </div>
           <div class="controls">
@@ -1100,7 +1100,7 @@
       videoEl.play?.().catch(() => {});
       audioEl.play?.().catch(() => {});
       ringEl.style.display = 'none';
-      if (labelEl) labelEl.textContent = 'AI Teacher — video avatar connected';
+      if (labelEl) labelEl.textContent = 'AI Lecturer — video avatar connected';
       return client;
     } catch (err) {
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') { renderUpgradePrompt(err.message); return null; }
@@ -1110,7 +1110,7 @@
     }
   }
 
-  // Tracks whatever the AI Teacher is currently saying so a question can pause it
+  // Tracks whatever the AI Lecturer is currently saying so a question can pause it
   // mid-sentence and resume from the exact same spot afterwards, instead of the
   // lesson restarting the section from the top. `mode: 'avatar'` tracks a byte
   // offset into the PCM stream fed to Simli; `mode: 'browser'` defers to the
@@ -1164,7 +1164,7 @@
       // `await speakAsync(...)` would hang forever waiting for a callback that will
       // never come, which looks exactly like the teacher freezing mid-lesson.
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') renderUpgradePrompt(err.message);
-      else toast(err.message || 'The AI Teacher had trouble speaking that.');
+      else toast(err.message || 'The AI Lecturer had trouble speaking that.');
       if (onDone) onDone();
     }
   }
@@ -1250,7 +1250,7 @@
       if (ringEl) ringEl.classList.remove('listening');
       if (labelEl) {
         labelEl.classList.remove('listening-label');
-        labelEl.textContent = simliAvatarClient ? 'AI Teacher — video avatar connected' : originalLabelText;
+        labelEl.textContent = simliAvatarClient ? 'AI Lecturer — video avatar connected' : originalLabelText;
       }
       if (!heardSomething && onCancelled) onCancelled();
     };
@@ -1277,7 +1277,7 @@
 
     view.innerHTML = `
       <div class="page-head">
-        <div><span class="pill pill-accent">AI Teacher — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(plan.title)}</h1></div>
+        <div><span class="pill pill-accent">AI Lecturer — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(plan.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
       </div>
       <div class="card lesson-player">
@@ -1287,10 +1287,10 @@
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(plan.title || 'AI'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
             <audio id="avatar-audio" autoplay hidden></audio>
-            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Teacher'}</div>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Lecturer'}</div>
           </div>
           <div class="smart-board-wrap">
-            <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">AI Teacher — writing on the board</div></div>
+            <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">AI Lecturer — writing on the board</div></div>
             <div class="smart-board" id="smart-board"></div>
             <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
           </div>
@@ -1357,7 +1357,7 @@
       sectionMeta.textContent = `Section ${idx + 1} of ${plan.sections.length}`;
       sectionTitleEl.textContent = section.title;
       setBoardContent(board, section.boardActions);
-      boardStatus.textContent = 'AI Teacher — writing on the board';
+      boardStatus.textContent = 'AI Lecturer — writing on the board';
       return section;
     }
 
@@ -1390,7 +1390,7 @@
       const panel = document.getElementById('got-question-panel');
       panel.hidden = false;
       document.getElementById('gq-arrow').textContent = '▲';
-      boardStatus.textContent = 'AI Teacher — thinking…';
+      boardStatus.textContent = 'AI Lecturer — thinking…';
       try {
         const { answer, boardActions } = await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
@@ -1402,7 +1402,7 @@
         // Every answer lands on the board itself, not just the chat log underneath it.
         const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
         setBoardContent(board, answerBoardActions);
-        boardStatus.textContent = 'AI Teacher — answering your question';
+        boardStatus.textContent = 'AI Lecturer — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         });
@@ -1439,7 +1439,7 @@
     // check-answer endpoint (graded against whatever section is still current
     // server-side); either way the explanation is spoken before the lesson resumes.
     async function runCheckQuestion(question) {
-      boardStatus.textContent = 'AI Teacher — checking your understanding';
+      boardStatus.textContent = 'AI Lecturer — checking your understanding';
       setBoardContent(board, [{ type: 'TEXT', content: question }]);
       await speakAsync(`Quick question to check you're following: ${question}`, avatarRing);
       if (stopped) return;
@@ -1484,10 +1484,10 @@
 
       box.hidden = true;
       askVoiceBtn.disabled = false;
-      boardStatus.textContent = 'AI Teacher — thinking…';
+      boardStatus.textContent = 'AI Lecturer — thinking…';
       try {
         const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
-        boardStatus.textContent = result.correct ? 'AI Teacher — well done!' : 'AI Teacher — explaining';
+        boardStatus.textContent = result.correct ? 'AI Lecturer — well done!' : 'AI Lecturer — explaining';
         setBoardContent(board, [{ type: 'TEXT', content: `${result.correct ? "Correct! " : 'Not quite — '}${result.feedback}` }]);
         await speakAsync(`${result.correct ? "That's correct! " : 'Not quite. '}${result.feedback}`, avatarRing);
       } catch (err) {
@@ -1509,7 +1509,7 @@
       // avatar for whatever it says next as soon as simliAvatarClient gets set.
       if (avatarConfigured) {
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
-          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Teacher'; });
+          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
       }
       while (!stopped) {
         const section = renderSection(sectionIdx);
@@ -1891,7 +1891,7 @@
       <div class="settings-section">
         <div class="settings-section-label">Help</div>
         <div class="card">
-          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Teacher time', action: 'nav:wallet' }) : ''}
+          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Lecturer time', action: 'nav:wallet' }) : ''}
           ${settingsArrowRowHtml({ icon: '🎧', label: 'Help & Support', sub: 'Tickets and live chat', action: 'nav:support' })}
           ${settingsArrowRowHtml({ icon: '⭐', label: 'Rate Learnza', action: 'nav:support-review' })}
         </div>
@@ -2590,7 +2590,7 @@
   }
 
   // The same continuous, avatar-narrated, whiteboard-illustrated teaching method as
-  // the live AI Teacher session -- applied to a Digital Lab practical's steps instead
+  // the live AI Lecturer session -- applied to a Digital Lab practical's steps instead
   // of a generated lesson plan's sections. Reuses every shared piece (connectAvatar,
   // speakThroughAvatarOrTts, pause/resume, startVoiceCapture, the sticky lesson-stage
   // layout) rather than a second parallel implementation. No comprehension checks
@@ -2614,7 +2614,7 @@
     let stepIdx = 0;
     let stopped = false;
     // "Got a question" only becomes usable once the teacher has actually started
-    // speaking -- structured the same way as AI Teacher's session.
+    // speaking -- structured the same way as AI Lecturer's session.
     let teachingStarted = false;
 
     view.innerHTML = `
@@ -2629,10 +2629,10 @@
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(demo.title || 'AI'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
             <audio id="avatar-audio" autoplay hidden></audio>
-            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Teacher'}</div>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Lecturer'}</div>
           </div>
           <div class="smart-board-wrap">
-            <div class="smart-board-head"><div class="dot">🧪</div><div class="label" id="board-status">AI Teacher — writing on the board</div></div>
+            <div class="smart-board-head"><div class="dot">🧪</div><div class="label" id="board-status">AI Lecturer — writing on the board</div></div>
             <div class="smart-board" id="smart-board"></div>
             <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
           </div>
@@ -2689,7 +2689,7 @@
       stepTitleEl.textContent = step.title;
       const actions = labStepBoardActions(step);
       setBoardContent(board, actions);
-      boardStatus.textContent = 'AI Teacher — writing on the board';
+      boardStatus.textContent = 'AI Lecturer — writing on the board';
       return step;
     }
 
@@ -2701,7 +2701,7 @@
     });
 
     // Flips on once the teacher starts speaking the first step -- structured the same
-    // way as AI Teacher, so "got a question" only opens once teaching has actually begun.
+    // way as AI Lecturer, so "got a question" only opens once teaching has actually begun.
     function markTeachingStarted() {
       if (teachingStarted) return;
       teachingStarted = true;
@@ -2721,7 +2721,7 @@
       const panel = document.getElementById('got-question-panel');
       panel.hidden = false;
       document.getElementById('gq-arrow').textContent = '▲';
-      boardStatus.textContent = 'AI Teacher — thinking…';
+      boardStatus.textContent = 'AI Lecturer — thinking…';
       try {
         const { answer, boardActions } = await api(`/lab/${demo.id}/ask`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
@@ -2733,7 +2733,7 @@
         // Every answer lands on the board itself, not just the chat log underneath it.
         const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
         setBoardContent(board, answerBoardActions);
-        boardStatus.textContent = 'AI Teacher — answering your question';
+        boardStatus.textContent = 'AI Lecturer — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         });
@@ -2768,7 +2768,7 @@
     async function runPractical() {
       if (avatarConfigured) {
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
-          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Teacher'; });
+          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
       }
       while (!stopped) {
         const step = renderStep(stepIdx);
@@ -2815,7 +2815,7 @@
       ` : `
         <div class="card" style="padding:20px; margin-bottom:22px;">
           <div style="font-weight:600;">Don't see the practical you need?</div>
-          <div class="meta" style="margin-bottom:12px;">Type a topic and the AI Teacher drafts it instantly — no admin review, included with your subscription.</div>
+          <div class="meta" style="margin-bottom:12px;">Type a topic and the AI Lecturer drafts it instantly — no admin review, included with your subscription.</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <input type="text" id="gen-demo-topic" placeholder="e.g. Titration of acid and base" style="flex:1; min-width:220px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
             <button class="btn btn-accent" id="request-demo-btn">Generate practical</button>
@@ -2976,7 +2976,7 @@
           <span class="pill pill-pass">Active</span>
           <p style="margin-top:10px;">Your ${esc(subscription.plan === 'YEARLY' ? 'yearly' : 'monthly')} plan is active until <strong>${new Date(subscription.expiresAt).toLocaleDateString()}</strong>.</p>
           <div style="margin-top:14px;">
-            <div class="meta" style="margin-bottom:4px;">Live AI Teacher minutes this cycle</div>
+            <div class="meta" style="margin-bottom:4px;">Live AI Lecturer minutes this cycle</div>
             <div class="tabular" style="font-weight:600;">${Math.max(0, Math.floor((subscription.aiSecondsGranted - subscription.aiSecondsUsed) / 60))} / ${Math.floor(subscription.aiSecondsGranted / 60)} min left</div>
             ${subscription.aiSecondsUsed >= subscription.aiSecondsGranted ? '<p class="muted" style="margin-top:6px;">You have used up this cycle\'s AI credit — subscribe again to top up.</p>' : ''}
           </div>
@@ -2984,7 +2984,7 @@
       ` : `
         <div class="card" style="padding:20px; margin-bottom:20px;">
           <span class="pill pill-muted">No active plan</span>
-          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Teacher lessons, recorded lectures and live classes — each plan includes a bank of live AI Teacher minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
+          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Lecturer lessons, recorded lectures and live classes — each plan includes a bank of live AI Lecturer minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
         </div>
       `}
       ${noProvider ? `<div class="hint-box" style="background:var(--danger-soft); color:var(--danger);">Payments aren't configured on this server yet — checkout will be available once a payment provider is connected.</div>` : ''}

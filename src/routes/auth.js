@@ -59,7 +59,7 @@ function checkSchoolAccess(res, school) {
 // Independent (non-school) learners self-register -- no Learnza school or department,
 // and deliberately no link to one at all. attendedSchoolName/attendedDepartment/
 // courseOfStudy describe their real institution for display purposes only. They get
-// their own self-directed courses (see /individual-courses) taught by the AI Teacher.
+// their own self-directed courses (see /individual-courses) taught by the AI Lecturer.
 const INSTITUTION_TYPES = ['UNIVERSITY', 'POLYTECHNIC', 'MONOTECHNIC', 'COLLEGE_OF_EDUCATION', 'OTHER'];
 
 router.post('/register-individual', async (req, res) => {

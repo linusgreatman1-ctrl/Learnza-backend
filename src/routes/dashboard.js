@@ -54,7 +54,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
       orderBy: { submittedAt: 'desc' },
       take: 10,
     }),
-    // Lecturer-recorded lessons (a real uploaded video, not the AI Teacher's own
+    // Lecturer-recorded lessons (a real uploaded video, not the AI Lecturer's own
     // narrated-script lessons) across every enrolled course -- surfaced on the
     // dashboard so a student sees new uploads without hunting through each course.
     courseIds.length

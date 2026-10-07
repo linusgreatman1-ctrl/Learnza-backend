@@ -1,6 +1,6 @@
 const prisma = require('../db');
 
-// Coins are a pay-as-you-go top-up for live AI Teacher time. A subscription already includes
+// Coins are a pay-as-you-go top-up for live AI Lecturer time. A subscription already includes
 // AI minutes each billing cycle (src/subscription.js); once those are used up, coins keep the
 // avatar going. 1 coin = 1 minute (as in PassNow). The wallet holds whole coins plus the unspent
 // remainder of the coin currently being used, so a 30-second answer costs 30 seconds, not a coin.
@@ -60,7 +60,7 @@ async function spendSeconds(userId, seconds) {
       await tx.coinWallet.update({ where: { userId }, data: { balance, aiSecondsCredit } });
       if (coinsUsed > 0) {
         await tx.coinLedger.create({
-          data: { userId, delta: -coinsUsed, balanceAfter: balance, reason: 'AI_USAGE', note: `${Math.round(covered / 60)} min of live AI Teacher` },
+          data: { userId, delta: -coinsUsed, balanceAfter: balance, reason: 'AI_USAGE', note: `${Math.round(covered / 60)} min of live AI Lecturer` },
         });
       }
     }

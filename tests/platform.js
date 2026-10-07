@@ -109,7 +109,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   r = await call('GET', '/api/super/ai-logs?search=' + RUN, { token: SUPER });
   check('AI conversation log is searchable', r.data.logs.length === 1 && r.data.logs[0].user.fullName === 'Plat Indie', r.data);
   r = await call('GET', '/api/super/ai-sessions', { token: SUPER });
-  check('AI Teacher sessions list loads', r.status === 200 && Array.isArray(r.data.sessions));
+  check('AI Lecturer sessions list loads', r.status === 200 && Array.isArray(r.data.sessions));
 
   console.log('== settings ==');
   r = await call('GET', '/api/super/settings', { token: SUPER });

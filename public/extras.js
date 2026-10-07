@@ -29,6 +29,25 @@
     .lzx-optionbtn.mine { border-color: #c1861f; }
     .lzx-optionbtn .fill { position: absolute; inset: 0 auto 0 0; background: rgba(193,134,31,.18); z-index: 0; }
     .lzx-optionbtn span { position: relative; z-index: 1; }
+    .lzx-pay [hidden] { display: none !important; }
+    .lzx-card { padding: 14px 16px; }
+    .lzx-hero { background: linear-gradient(135deg, #0f1b2e, #16355c); color: #fff; padding: 18px 20px; margin-bottom: 14px; }
+    .lzx-hero .who { font-size: .85rem; color: rgba(255,255,255,.72); line-height: 1.5; }
+    .lzx-hero .big { font: 800 2.1rem Sora, sans-serif; margin: 4px 0 2px; }
+    .lzx-hero .sub { font-size: .85rem; color: rgba(255,255,255,.72); }
+    .lzx-hero .bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); overflow: hidden; margin: 10px 0 6px; }
+    .lzx-hero .bar > div { height: 100%; background: #35e08a; }
+    .lzx-feerow { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid rgba(128,128,128,.25); }
+    .lzx-feerow:last-child { border-bottom: none; }
+    .lzx-feerow input[type=checkbox] { width: 22px; height: 22px; margin: 1px 0 0; flex: 0 0 22px; }
+    .lzx-feerow .mid { flex: 1; min-width: 0; }
+    .lzx-feerow .t { font-weight: 700; line-height: 1.35; }
+    .lzx-feerow .m { font-size: .82rem; opacity: .75; margin-top: 3px; line-height: 1.5; }
+    .lzx-feerow .side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .lzx-fee-page { padding-bottom: 20px; }
+    .lzx-paybar { position: sticky; bottom: 10px; z-index: 5; padding: 6px 0; }
+    .lzx-paybar .btn { box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+    .lzx-sum { background: rgba(128,128,128,.12); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: .88rem; }
   `;
   document.head.appendChild(css);
 
@@ -193,8 +212,8 @@
       <div class="card" style="margin-bottom:16px;">
         <div class="meta">Coin balance</div>
         <div style="font-size:2.2rem;font-weight:800;">🪙 ${w.balance}</div>
-        <div class="meta">${w.minutesLeft} minute${w.minutesLeft === 1 ? '' : 's'} of live AI Teacher time in your wallet (1 coin = 1 minute)</div>
-        <p class="muted" style="margin-top:10px;font-size:.85rem;">Your subscription already includes AI Teacher minutes each cycle. Coins are used only after those run out, so nothing is wasted.${sub && sub.enforced === false ? ' (The subscription paywall is currently off.)' : ''}</p>
+        <div class="meta">${w.minutesLeft} minute${w.minutesLeft === 1 ? '' : 's'} of live AI Lecturer time in your wallet (1 coin = 1 minute)</div>
+        <p class="muted" style="margin-top:10px;font-size:.85rem;">Your subscription already includes AI Lecturer minutes each cycle. Coins are used only after those run out, so nothing is wasted.${sub && sub.enforced === false ? ' (The subscription paywall is currently off.)' : ''}</p>
       </div>
       ${w.pending.length ? `<div class="hint-box" style="margin-bottom:16px;">⏳ ${w.pending.length} bank-transfer purchase${w.pending.length === 1 ? ' is' : 's are'} waiting to be confirmed (${w.pending.map((p) => p.coins + ' coins').join(', ')}). Your coins appear as soon as it is.</div>` : ''}
       <div class="card" style="margin-bottom:16px;">
@@ -204,7 +223,7 @@
           <button class="btn btn-primary btn-sm" data-buy="${p.id}">Buy</button></div>`).join('')}
       </div>
       <div class="card"><h3 style="margin-bottom:6px;">History</h3>
-        ${w.ledger.map((e) => `<div class="list-row"><div><div style="font-weight:600;">${esc(e.reason === 'PURCHASE' ? 'Coins bought' : e.reason === 'AI_USAGE' ? 'Live AI Teacher' : e.reason === 'GRANT' ? 'Added by Learnza' : 'Adjustment')}</div><div class="meta">${esc(e.note || '')} · ${esc(fmt(e.createdAt))}</div></div><div style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} 🪙</div></div>`).join('') || '<p class="muted" style="padding:10px;">Nothing yet.</p>'}
+        ${w.ledger.map((e) => `<div class="list-row"><div><div style="font-weight:600;">${esc(e.reason === 'PURCHASE' ? 'Coins bought' : e.reason === 'AI_USAGE' ? 'Live AI Lecturer' : e.reason === 'GRANT' ? 'Added by Learnza' : 'Adjustment')}</div><div class="meta">${esc(e.note || '')} · ${esc(fmt(e.createdAt))}</div></div><div style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} 🪙</div></div>`).join('') || '<p class="muted" style="padding:10px;">Nothing yet.</p>'}
       </div>`;
     view.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
       const pack = w.packs.find((p) => p.id === b.dataset.buy);
@@ -331,7 +350,7 @@
     try { sessionStorage.removeItem('lzx_pay'); history.replaceState(null, '', location.pathname + location.hash); } catch { /* ignore */ }
     try {
       const r = await api('/billing/verify/' + encodeURIComponent(ref));
-      toast(r.status === 'SUCCESS' ? (r.kind === 'coins' ? '✅ Coins added!' : r.kind === 'fee' ? '✅ Fee payment received. Receipt ' + (r.receiptNo || '') : '✅ Payment successful! Your plan is now active.') : 'Payment received — confirming with Paystack, this can take a moment.');
+      toast(r.status === 'SUCCESS' ? (r.kind === 'coins' ? '✅ Coins added!' : '✅ Payment successful! Your plan is now active.') : 'Payment received — confirming with Paystack, this can take a moment.');
       if (r.status === 'SUCCESS' && rerender) rerender();
     } catch { /* not our payment, or not signed in: nothing to report */ }
   }
@@ -723,7 +742,7 @@
     view.innerHTML = `
       <div class="page-head"><h1>Elections</h1></div>
       ${list.length ? list.map((e) => `
-        <div class="card" style="margin-bottom:12px;cursor:pointer;" data-open="${e.id}">
+        <div class="card lzx-card" style="margin-bottom:12px;cursor:pointer;" data-open="${e.id}">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
             <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind, e.courseName))}${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
             <div style="text-align:right;"><span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span>${e.hasVoted ? '<div class="meta" style="margin-top:6px;">✓ You voted</div>' : e.state === 'OPEN' ? '<div class="meta" style="margin-top:6px;color:#c1861f;font-weight:700;">Vote now →</div>' : ''}</div>
@@ -744,7 +763,7 @@
       ${e.hasVoted ? '<div class="hint-box" style="margin-bottom:16px;">✅ Your vote has been counted. Thank you for taking part. Your ballot is secret — nobody can see who you voted for.</div>' : ''}
       ${e.state === 'UPCOMING' ? `<div class="hint-box" style="margin-bottom:16px;">Voting opens ${esc(when(e.opensAt) || 'soon')}.</div>` : ''}
       ${d.positions.map((p) => `
-        <div class="card" style="margin-bottom:14px;">
+        <div class="card lzx-card" style="margin-bottom:14px;">
           <h3 style="margin-bottom:10px;">${esc(p.title)}</h3>
           ${p.candidates.map((c) => `
             <label class="lzx-cand" style="display:flex;gap:12px;align-items:flex-start;padding:10px;border:1.5px solid rgba(128,128,128,.3);border-radius:12px;margin-bottom:8px;${open ? 'cursor:pointer;' : 'opacity:.85;'}">
@@ -775,7 +794,7 @@
       <h2 style="margin:22px 0 10px;font-size:1.1rem;">Results</h2>
       ${turn ? `<div class="grid-cards" style="margin-bottom:16px;">${Object.entries(turn).map(([g, t]) => `<div class="card course-card"><div class="code">${t.voted} / ${t.eligible}</div><div class="meta">${g === 'students' ? 'Students' : 'Lecturers'} voted${t.eligible ? ' (' + Math.round(t.voted / t.eligible * 100) + '%)' : ''}</div></div>`).join('')}</div>` : ''}
       ${positions.map((p) => `
-        <div class="card" style="margin-bottom:14px;">
+        <div class="card lzx-card" style="margin-bottom:14px;">
           <div style="display:flex;justify-content:space-between;"><h3>${esc(p.title)}</h3><span class="meta">${p.totalVotes} vote${p.totalVotes === 1 ? '' : 's'}${p.tied ? ' · tie for the lead' : ''}</span></div>
           ${p.candidates.map((c) => `
             <div style="margin-top:12px;">
@@ -798,7 +817,7 @@
       <div class="page-head"><h1>${ctx.mode === 'class' ? 'Class Rep Voting' : 'Elections'}</h1><button class="btn btn-accent btn-sm" id="el-new">+ ${ctx.mode === 'class' ? 'New class rep vote' : 'New election'}</button></div>
       <p class="muted" style="margin-bottom:16px;">${ctx.mode === 'class' ? 'Choose one of your courses and add the students standing for class representative. Only the students enrolled in that course can vote. They are told when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.' : 'Run a student union (SUG) election or an election among lecturers. Voters get a notification when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.'}</p>
       ${list.length ? list.map((e) => `
-        <div class="card" style="margin-bottom:12px;">
+        <div class="card lzx-card" style="margin-bottom:12px;">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
             <div><div style="font-weight:700;font-size:1.05rem;">${esc(e.title)}</div><div class="meta">${esc(kindLabel(e.kind, e.courseName))} · ${esc(votersLabel(e.voters))} · ${e.positions} position${e.positions === 1 ? '' : 's'} · ${e.ballots} ballot${e.ballots === 1 ? '' : 's'} cast${e.closesAt ? ' · closes ' + esc(when(e.closesAt)) : ''}</div></div>
             <div><span class="pill ${statePill(e.state)}">${stateLabel[e.state]}</span></div>
@@ -866,7 +885,7 @@
     function draw() {
       view.innerHTML = `
         <div class="page-head"><h1>${editId ? (classMode ? 'Edit class rep vote' : 'Edit election') : (classMode ? 'New class rep vote' : 'New election')}</h1><button class="btn btn-ghost btn-sm" id="ef-cancel">Cancel</button></div>
-        <div class="card" style="margin-bottom:14px;">
+        <div class="card lzx-card" style="margin-bottom:14px;">
           <div class="field"><label>Title</label><input id="ef-title" maxlength="120" value="${esc(model.title)}" placeholder="${classMode ? 'e.g. Class Rep — CSC 201' : 'e.g. SUG Election 2026/2027'}"></div>
           <div class="field"><label>Description (optional)</label><textarea id="ef-desc" rows="2" maxlength="600">${esc(model.description)}</textarea></div>
           ${classMode
@@ -878,7 +897,7 @@
           <label style="display:flex;gap:8px;align-items:center;font-weight:500;"><input type="checkbox" id="ef-vis" ${model.resultsVisible ? 'checked' : ''}> Let voters see the result once voting closes</label>
         </div>
         ${model.positions.map((p, pi) => `
-          <div class="card" style="margin-bottom:12px;" data-pos="${pi}">
+          <div class="card lzx-card" style="margin-bottom:12px;" data-pos="${pi}">
             <div style="display:flex;gap:8px;"><input class="ef-ptitle" data-pi="${pi}" value="${esc(p.title)}" placeholder="Position, e.g. President" maxlength="80" style="flex:1;font-weight:700;">${model.positions.length > 1 ? `<button class="btn btn-ghost btn-sm" data-delpos="${pi}">Remove position</button>` : ''}</div>
             ${p.candidates.map((c, ci) => `
               <div style="margin-top:10px;padding:10px;border:1px solid rgba(128,128,128,.3);border-radius:10px;">
@@ -960,15 +979,14 @@
 
   // ---------------------------------------------------------------- school fees
   // Students see the fees for their level and department, the school's own bank details, and what is paid
-  // and owing; they pay by card / USSD / bank transfer through the payment window (confirmed at once, with
-  // a receipt) or transfer to the school's account and tell the school (the school confirms). The school
-  // admin sets the bank details and fees, confirms payments, records cash, and sees who has paid.
+  // and owing; they transfer to the school's account and tell the school (the school confirms, with a receipt).
+  // The school admin sets the bank details and fees, confirms payments, records cash, and sees who has paid.
   const FEE_CHIP = { PAID: ['pill-pass', 'Paid ✓'], PARTIAL: ['pill-accent', 'Part paid'], PENDING: ['pill-muted', 'Awaiting school'], UNPAID: ['pill-danger', 'Unpaid'], NO_FEES: ['pill-muted', 'No fees'] };
   const FEE_PAY = { CONFIRMED: ['pill-pass', 'Confirmed'], PENDING: ['pill-muted', 'Waiting'], REJECTED: ['pill-danger', 'Not accepted'] };
   const toKobo = (t) => { const n = parseFloat(String(t).replace(/[₦,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
   const money = (kobo) => '₦' + (Number(kobo || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
   const onDate = (d) => (d ? new Date(d).toLocaleDateString([], { dateStyle: 'medium' }) : '');
-  const methodLabel = (p) => (p.method === 'ONLINE' ? 'online (' + (p.provider === 'PAYSTACK' ? 'Paystack' : 'Flutterwave') + ')' : String(p.method).replace('_', ' ').toLowerCase());
+  const methodLabel = (p) => String(p.method).replace('_', ' ').toLowerCase();
 
   function feeModal(html) {
     const bg = document.createElement('div');
@@ -1025,32 +1043,31 @@
       const feeRow = (f) => {
         const open = f.balanceKobo > 0, on = sel[f.id] != null, chip = FEE_CHIP[f.status];
         const meta = [f.semester, f.session, f.dueDate ? 'due ' + onDate(f.dueDate) : null].filter(Boolean).map(esc).join(' · ');
-        return `<div class="list-row" style="align-items:center;gap:10px;">
-          ${open ? `<input type="checkbox" data-sel="${f.id}" ${on ? 'checked' : ''} style="width:20px;height:20px;flex:0 0 auto;">` : '<span style="width:20px;display:inline-block;"></span>'}
-          <div style="font-size:1.4rem;">${(cat[f.category] || cat.OTHER).icon}</div>
-          <div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(f.title)}</div><div class="meta">${meta ? meta + ' · ' : ''}${money(f.amountKobo)}${f.paidKobo && open ? ' · paid ' + money(f.paidKobo) : ''}</div>
-            ${on ? `<div style="margin-top:6px;"><span class="meta">Paying now ₦ </span><input data-amt="${f.id}" value="${sel[f.id] / 100}" inputmode="decimal" style="width:120px;text-align:right;"></div>` : ''}</div>
-          <span class="pill ${chip[0]}">${chip[1]}</span></div>`;
+        return `<div class="lzx-feerow">
+          ${open ? `<input type="checkbox" data-sel="${f.id}" ${on ? 'checked' : ''} aria-label="Pay ${esc(f.title)}">` : '<span style="width:22px;flex:0 0 22px;"></span>'}
+          <div class="mid"><div class="t">${(cat[f.category] || cat.OTHER).icon} ${esc(f.title)}</div>${meta ? `<div class="m">${meta}</div>` : ''}
+            <div class="m">${money(f.amountKobo)}${f.paidKobo && open ? ' · paid ' + money(f.paidKobo) + ' · owing ' + money(f.balanceKobo) : ''}</div>
+            ${on ? `<div style="margin-top:8px;display:flex;align-items:center;gap:6px;"><span class="m" style="margin:0;">Paying now ₦</span><input data-amt="${f.id}" value="${sel[f.id] / 100}" inputmode="decimal" style="width:130px;text-align:right;padding:6px 8px;"></div>` : ''}</div>
+          <div class="side"><span class="pill ${chip[0]}">${chip[1]}</span></div></div>`;
       };
-      const normal = d.fees.filter((f) => f.category !== 'OTHER'), other = d.fees.filter((f) => f.category === 'OTHER');
-      view.innerHTML = `<div id="fee-root">
+      view.innerHTML = `<div id="fee-root" class="lzx-fee-page">
         <div class="page-head"><h1>School Fees</h1></div>
-        <div class="card" style="margin-bottom:14px;background:linear-gradient(135deg,#0f1b2e,#16355c);color:#fff;">
-          <div class="meta" style="color:rgba(255,255,255,.7);">${esc(d.school.name)}${d.student.department ? ' · ' + esc(d.student.department) : ''}${d.student.level ? ' · ' + esc(d.student.level) : ''}</div>
-          <div style="font:800 2rem Sora,sans-serif;">${money(t.balanceKobo)}</div><div class="meta" style="color:rgba(255,255,255,.7);">still to pay of ${money(t.dueKobo)}</div>
-          <div class="lzx-bar" style="background:rgba(255,255,255,.2);"><div style="width:${pct}%;background:#35e08a;"></div></div>
-          <div class="meta" style="color:rgba(255,255,255,.7);">${money(t.paidKobo)} paid${t.pendingKobo ? ' · ' + money(t.pendingKobo) + ' waiting for the school to confirm' : ''}</div></div>
-        ${d.bank ? `<div class="hint-box" style="margin:0 0 14px;"><strong>🏦 The school's account</strong><div>${esc(d.bank.bankName)} · ${esc(d.bank.accountName)}</div><div style="font:800 1.3rem Sora,sans-serif;letter-spacing:1px;">${esc(d.bank.accountNumber)}</div>${d.bank.instructions ? `<div class="meta">${esc(d.bank.instructions)}</div>` : ''}<button class="btn btn-ghost btn-sm" id="fee-copy" style="margin-top:8px;">📋 Copy account number</button></div>`
-          : '<div class="hint-box" style="margin:0 0 14px;background:#fff8e1;"><strong>The school has not added its bank details yet.</strong> Ask the bursary. You can still see what is owed below and pay online.</div>'}
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><h3 style="flex:1;margin:0;">Your fees</h3>${d.fees.some((f) => f.balanceKobo > 0) ? '<button class="btn btn-ghost btn-sm" id="fee-all">Select all unpaid</button>' : ''}</div>
-        <div class="card" style="padding:4px 14px;margin-bottom:12px;">
-          ${normal.map(feeRow).join('')}${other.length ? `<div style="font-weight:700;margin:12px 0 2px;">➕ Other fees from the school</div>${other.map(feeRow).join('')}` : ''}
-          ${others.map((o, i) => `<div class="list-row" style="align-items:center;"><span style="width:20px;display:inline-block;"></span><div style="font-size:1.4rem;">➕</div><div style="flex:1;"><div style="font-weight:700;">${esc(o.title)}</div><div class="meta">Other fee · ${money(o.amountKobo)}</div></div><button class="btn btn-ghost btn-sm" data-rmother="${i}">Remove</button></div>`).join('')}
-          ${!d.fees.length ? '<p class="muted" style="padding:14px 0;">The school has not listed any fee for your level and department yet. If you need to pay something else, use <b>Other fees</b>.</p>' : ''}
+        <div class="card lzx-hero">
+          <div class="who">${esc(d.school.name)}${d.student.department ? ' · ' + esc(d.student.department) : ''}${d.student.level ? ' · ' + esc(d.student.level) : ''}</div>
+          <div class="big">${money(t.balanceKobo)}</div><div class="sub">still to pay of ${money(t.dueKobo)}</div>
+          <div class="bar"><div style="width:${pct}%"></div></div>
+          <div class="sub">${money(t.paidKobo)} paid${t.pendingKobo ? ' · ' + money(t.pendingKobo) + ' waiting for the school to confirm' : ''}</div></div>
+        ${d.bank ? `<div class="hint-box lzx-card" style="margin:0 0 14px;"><strong>🏦 The school's account</strong><div style="margin-top:4px;">${esc(d.bank.bankName)} · ${esc(d.bank.accountName)}</div><div style="font:800 1.35rem Sora,sans-serif;letter-spacing:1px;margin:2px 0;">${esc(d.bank.accountNumber)}</div>${d.bank.instructions ? `<div class="meta">${esc(d.bank.instructions)}</div>` : ''}<button class="btn btn-ghost btn-sm" id="fee-copy" style="margin-top:10px;">📋 Copy account number</button></div>`
+          : '<div class="hint-box lzx-card" style="margin:0 0 14px;"><strong>The school has not added its bank details yet.</strong> Ask the bursary. You can still see what is owed below.</div>'}
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><h3 style="flex:1;margin:0;">Your fees</h3>${d.fees.some((f) => f.balanceKobo > 0) ? '<button class="btn btn-ghost btn-sm" id="fee-all">Select all unpaid</button>' : ''}</div>
+        <div class="card lzx-card" style="margin-bottom:12px;">
+          ${d.fees.map(feeRow).join('')}
+          ${others.map((o, i) => `<div class="lzx-feerow"><span style="width:22px;flex:0 0 22px;"></span><div class="mid"><div class="t">➕ ${esc(o.title)}</div><div class="m">Other fee · ${money(o.amountKobo)}</div></div><div class="side"><button class="btn btn-ghost btn-sm" data-rmother="${i}">Remove</button></div></div>`).join('')}
+          ${!d.fees.length && !others.length ? '<p class="muted" style="padding:6px 0;">The school has not listed any fee for your level and department yet. Use <b>Other fees</b> below to choose what you are paying for.</p>' : ''}
         </div>
-        <button class="btn btn-ghost" id="fee-other" style="width:100%;margin-bottom:12px;">➕ Other fees — pay something not listed</button>
-        <button class="btn btn-primary" id="fee-pay" style="width:100%;position:sticky;bottom:12px;" ${count() ? '' : 'disabled'}>${count() ? 'Pay ' + money(picked()) + ' (' + count() + ' item' + (count() === 1 ? '' : 's') + ')' : 'Tick the fees you are paying'}</button>
-        ${d.payments.length ? `<h3 style="margin:22px 0 4px;">🧾 Your payments</h3><div class="card" style="padding:4px 14px;">${d.payments.map((p) => `<div class="list-row" data-receipt="${p.id}" style="cursor:pointer;align-items:center;"><div><div style="font-weight:700;">${money(p.amountKobo)}</div><div class="meta">${esc(p.items.map((i) => i.title).join(', ').slice(0, 90))} · ${esc(onDate(p.createdAt))}</div>${p.status === 'REJECTED' && p.rejectReason ? `<div class="meta" style="color:#b42318;">${esc(p.rejectReason)}</div>` : ''}</div><span class="pill ${FEE_PAY[p.status][0]}">${FEE_PAY[p.status][1]}</span></div>`).join('')}</div>` : ''}</div>`;
+        <button class="btn btn-ghost" id="fee-other" style="width:100%;margin-bottom:12px;">➕ Other fees — choose from the list</button>
+        <div class="lzx-paybar"><button class="btn btn-primary" id="fee-pay" style="width:100%;" ${count() ? '' : 'disabled'}>${count() ? 'Pay ' + money(picked()) + ' (' + count() + ' item' + (count() === 1 ? '' : 's') + ')' : 'Tick the fees you are paying'}</button></div>
+        ${d.payments.length ? `<h3 style="margin:22px 0 8px;">🧾 Your payments</h3><div class="card lzx-card">${d.payments.map((p) => `<div class="lzx-feerow" data-receipt="${p.id}" style="cursor:pointer;"><div class="mid"><div class="t">${money(p.amountKobo)}</div><div class="m">${esc(p.items.map((i) => i.title).join(', ').slice(0, 90))} · ${esc(onDate(p.createdAt))}</div>${p.status === 'REJECTED' && p.rejectReason ? `<div class="m" style="color:#b42318;">${esc(p.rejectReason)}</div>` : ''}</div><div class="side"><span class="pill ${FEE_PAY[p.status][0]}">${FEE_PAY[p.status][1]}</span></div></div>`).join('')}</div>` : ''}</div>`;
       wire();
     }
     function wire() {
@@ -1074,14 +1091,21 @@
         m.el.querySelector('#rc-print').addEventListener('click', printReceipt); m.el.querySelector('#rc-close').addEventListener('click', m.close);
       }));
     }
+    // "Other fees": pick what the payment is for from the same list of fee types the school uses. Only
+    // "Something else" asks for a short description.
     function otherForm() {
-      const m = feeModal(`<h3 style="margin-bottom:4px;">➕ Other fees</h3><p class="meta" style="margin-bottom:12px;">For anything the school asked you to pay that is not in the list: a field trip, a replacement ID card, a damaged item, a departmental levy…</p>
-        <div class="field"><label>What is it for?</label><input id="of-t" maxlength="120" placeholder="e.g. Replacement ID card"></div>
+      const kinds = d.categories.filter((c) => c.id !== 'OTHER');
+      const m = feeModal(`<h3 style="margin-bottom:4px;">➕ Other fees</h3><p class="meta" style="margin-bottom:12px;">For anything you need to pay that is not ticked above. Choose what it is for.</p>
+        <div class="field"><label>What is it for?</label><select id="of-kind">${kinds.map((c) => `<option value="${c.id}">${c.icon} ${esc(c.label)}</option>`).join('')}<option value="__other">➕ Something else (describe it)</option></select></div>
+        <div class="field" id="of-text-box" hidden><label>Describe it</label><input id="of-t" maxlength="120" placeholder="e.g. Replacement ID card"></div>
         <div class="field"><label>Amount (₦)</label><input id="of-a" inputmode="decimal" placeholder="e.g. 2000"></div>
         <button class="btn btn-primary" id="of-add" style="width:100%;">Add to my payment</button><button class="btn btn-ghost" id="of-x" style="width:100%;margin-top:8px;">Cancel</button>`);
-      m.el.querySelector('#of-x').addEventListener('click', m.close);
-      m.el.querySelector('#of-add').addEventListener('click', () => {
-        const title = m.el.querySelector('#of-t').value.trim(), k = toKobo(m.el.querySelector('#of-a').value);
+      const q = (s) => m.el.querySelector(s);
+      q('#of-x').addEventListener('click', m.close);
+      q('#of-kind').addEventListener('change', () => { q('#of-text-box').hidden = q('#of-kind').value !== '__other'; });
+      q('#of-add').addEventListener('click', () => {
+        const kind = q('#of-kind').value, k = toKobo(q('#of-a').value);
+        const title = kind === '__other' ? q('#of-t').value.trim() : (cat[kind] || {}).label;
         if (!title) return toast('Say what the fee is for.');
         if (!Number.isFinite(k) || k < 100) return toast('Enter the amount in naira.');
         others.push({ title, amountKobo: k }); m.close(); paint();
@@ -1090,15 +1114,8 @@
     function openPay() {
       if (!count()) return;
       const items = itemsShown(), total = picked(), today = new Date().toISOString().slice(0, 10);
-      const o = d.online;
-      const m = feeModal(`<h3 style="margin-bottom:8px;">Pay ${money(total)}</h3>
-        <div style="background:rgba(128,128,128,.12);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:.88rem;">${items.map((i) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span>${esc(i.title)}</span><b>${money(i.amountKobo)}</b></div>`).join('')}</div>
-        <div style="font-weight:800;margin-bottom:4px;">💳 Pay now by card, USSD or bank transfer</div>
-        <p class="meta" style="margin-bottom:8px;">A secure payment window opens. When it goes through you get your receipt straight away.</p>
-        ${o.flutterwave ? '<button class="lzx-pay-fw" id="fp-fw" style="margin-bottom:8px;"><span style="font-size:22px">🦋</span><div style="flex:1;text-align:left"><div style="font-weight:800;">Pay with Flutterwave</div><div style="font-size:11px;opacity:.65;">Card, Bank, USSD, Mobile Money</div></div><span>→</span></button>' : ''}
-        ${o.paystack ? '<button class="lzx-pay-fw lzx-pay-ps" id="fp-ps" style="margin-bottom:8px;"><span style="font-size:22px">💳</span><div style="flex:1;text-align:left"><div style="font-weight:800;">Pay with Paystack</div><div style="font-size:11px;opacity:.85;">Card, Bank, USSD, Bank Transfer</div></div><span>→</span></button>' : ''}
-        ${!o.flutterwave && !o.paystack ? '<p class="meta" style="margin-bottom:8px;">Online payment is not switched on yet. Pay into the school\'s account below and tell the school.</p>' : ''}
-        <div style="border-top:1px solid rgba(128,128,128,.3);margin-top:14px;padding-top:12px;font-weight:800;margin-bottom:6px;">🏦 Or: I paid into the school's account</div>
+      const m = feeModal(`<h3 style="margin-bottom:8px;">Tell the school you have paid</h3>
+        <div class="lzx-sum">${items.map((i) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span>${esc(i.title)}</span><b>${money(i.amountKobo)}</b></div>`).join('')}<div style="display:flex;justify-content:space-between;border-top:1px solid rgba(128,128,128,.3);margin-top:6px;padding-top:6px;"><b>Total</b><b>${money(total)}</b></div></div>
         ${d.bank ? `<div class="lzx-pay-card"><div class="meta">Pay ${money(total)} to ${esc(d.bank.bankName)} · ${esc(d.bank.accountName)}</div><div style="font:800 1.3rem Sora,sans-serif;letter-spacing:1px;">${esc(d.bank.accountNumber)}</div></div>` : ''}
         <p class="meta" style="margin-bottom:10px;">Make the transfer first, then fill this in. The school checks its bank statement and confirms your payment; you will get a receipt.</p>
         <div class="field"><label>Transfer reference / teller number</label><input id="fp-ref" maxlength="80" placeholder="From your bank app or teller"></div>
@@ -1117,36 +1134,6 @@
           m.close(); toast('✅ Sent. The school will confirm it and you will get a receipt.'); feesStudent(view, ctx);
         } catch (err) { btn.disabled = false; btn.textContent = 'Try again'; toast(err.message || 'Could not send that.'); }
       });
-      const fw = q('#fp-fw'), ps = q('#fp-ps');
-      if (fw) fw.addEventListener('click', () => online('FLUTTERWAVE', m));
-      if (ps) ps.addEventListener('click', () => online('PAYSTACK', m));
-    }
-    async function online(provider, m) {
-      try {
-        if (provider === 'FLUTTERWAVE') await lib('flutterwave');
-        const init = await api('/fees/online/initiate', { method: 'POST', body: { provider, items: itemsPayload(), returnUrl: location.origin + location.pathname } });
-        m.close();
-        if (provider === 'PAYSTACK') {
-          try { sessionStorage.setItem('lzx_pay', JSON.stringify({ ref: init.reference, kind: 'fee' })); } catch { /* the return page also carries the reference */ }
-          location.href = init.authorizationUrl; return;
-        }
-        window.FlutterwaveCheckout({
-          public_key: d.online.flutterwavePublicKey, tx_ref: init.reference, amount: init.amount, currency: 'NGN', payment_options: 'card,banktransfer,ussd,mobilemoney',
-          customer: { email: init.email, name: init.name || 'Learnza student' }, customizations: { title: 'School fees', description: 'Fees for ' + init.name },
-          callback: () => { toast('Checking your payment…'); settle(init.reference, 0); }, onclose: () => {},
-        });
-      } catch (err) { toast(err.message || 'Could not start the payment. Please try again.'); }
-    }
-    // After the window says it went through, ask Learnza (which asks the gateway) a few times. If the gateway
-    // cannot be checked yet, the payment goes to the school as a normal "to confirm" payment instead of being lost.
-    async function settle(ref, attempt) {
-      try {
-        const r = await api('/fees/online/verify/' + encodeURIComponent(ref) + (attempt >= 3 ? '?completed=1' : ''));
-        if (r.status === 'CONFIRMED') { toast('✅ Payment received. Receipt ' + (r.receiptNo || '') + '.'); if (view.querySelector('#fee-root')) feesStudent(view, ctx); return; }
-        if (r.status === 'PENDING') { toast('✅ Payment sent. The school will confirm it shortly and you will get a receipt.'); if (view.querySelector('#fee-root')) feesStudent(view, ctx); return; }
-      } catch { /* try again below */ }
-      if (attempt < 4) setTimeout(() => settle(ref, attempt + 1), 3000);
-      else toast('We could not check that payment yet. If money left your account, tell the school the reference ' + ref + '.');
     }
     paint();
   }
@@ -1191,7 +1178,7 @@
           <div class="meta">${esc(methodLabel(p))}${p.reference ? ' · ref ' + esc(p.reference) : ''}${p.depositorName ? ' · by ' + esc(p.depositorName) : ''} · ${esc(onDate(p.paidOn || p.createdAt))}${p.submittedByType === 'SCHOOL' ? ' · recorded by the school' : ''}</div>
           ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ''}</div><div style="text-align:right;"><div style="font:800 1.05rem Sora,sans-serif;">${money(p.amountKobo)}</div><span class="pill ${FEE_PAY[p.status][0]}">${FEE_PAY[p.status][1]}</span></div></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${p.hasProof ? `<button class="btn btn-ghost btn-sm" data-proof="${p.id}">🖼 Receipt photo</button>` : ''}${p.status === 'PENDING' ? `<button class="btn btn-primary btn-sm" data-ok="${p.id}">✅ Confirm</button><button class="btn btn-ghost btn-sm" data-no="${p.id}">Reject</button>` : ''}${p.receiptNo ? `<span class="meta" style="align-self:center;">Receipt ${esc(p.receiptNo)}</span>` : ''}</div></div>`).join('')
-          : '<div class="card"><p class="muted">Nothing here.</p></div>';
+          : '<div class="card lzx-card"><p class="muted">Nothing here.</p></div>';
         list.querySelectorAll('[data-proof]').forEach((b) => b.addEventListener('click', async () => {
           const { payment } = await api('/fees/admin/payments/' + b.dataset.proof);
           const m = feeModal(`<img alt="Receipt photo" src="${esc(payment.proofUrl)}" style="max-width:100%;border-radius:10px;"><button class="btn btn-ghost" style="width:100%;margin-top:10px;" id="pf-x">Close</button>`);
@@ -1216,7 +1203,7 @@
       async function drawList() {
         const { students } = await api('/fees/admin/students?q=' + encodeURIComponent(state.sq));
         if (!alive()) return;
-        list.innerHTML = students.length ? `<div class="card" style="padding:4px 14px;">${students.map((s) => { const c = FEE_CHIP[s.status]; return `<div class="list-row" style="align-items:center;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(s.name)}</div><div class="meta">${esc([s.matricNumber, s.department, s.level].filter(Boolean).join(' · '))}</div></div><div style="text-align:right;"><div style="font-weight:700;">${s.status === 'NO_FEES' ? '—' : money(s.balanceKobo) + ' owing'}</div><span class="pill ${c[0]}">${c[1]}</span></div><button class="btn btn-ghost btn-sm" data-rec="${s.id}">Record payment</button></div>`; }).join('')}</div>` : '<div class="card"><p class="muted">No students found.</p></div>';
+        list.innerHTML = students.length ? `<div class="card lzx-card" style="padding-top:4px;padding-bottom:4px;">${students.map((s) => { const c = FEE_CHIP[s.status]; return `<div class="list-row" style="align-items:center;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(s.name)}</div><div class="meta">${esc([s.matricNumber, s.department, s.level].filter(Boolean).join(' · '))}</div></div><div style="text-align:right;"><div style="font-weight:700;">${s.status === 'NO_FEES' ? '—' : money(s.balanceKobo) + ' owing'}</div><span class="pill ${c[0]}">${c[1]}</span></div><button class="btn btn-ghost btn-sm" data-rec="${s.id}">Record payment</button></div>`; }).join('')}</div>` : '<div class="card lzx-card"><p class="muted">No students found.</p></div>';
         list.querySelectorAll('[data-rec]').forEach((b) => b.addEventListener('click', () => recordFor(b.dataset.rec, refresh, drawList)));
       }
       let timer; body.querySelector('#fs-q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { state.sq = e.target.value.trim(); drawList(); }, 300); });
@@ -1251,7 +1238,7 @@
       if (!alive()) return;
       const catOf = (id) => d.categories.find((c) => c.id === id) || d.categories[d.categories.length - 1];
       const deptName = (id) => { const x = d.departments.find((y) => y.id === id); return x ? x.name : null; };
-      body.innerHTML = `<button class="btn btn-primary" id="ff-add" style="margin-bottom:10px;">➕ Add a fee</button><div class="card" style="padding:4px 14px;">${d.fees.map((f) => `<div class="list-row" style="align-items:center;gap:10px;"><div style="font-size:1.4rem;">${catOf(f.category).icon}</div><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(f.title)}${f.active ? '' : ' <span class="pill pill-muted">hidden</span>'}</div><div class="meta">${money(f.amountKobo)} · ${f.levels.length ? f.levels.map((l) => l * 100 + 'L').join(', ') : 'every level'}${f.departmentId ? ' · ' + esc(deptName(f.departmentId) || 'one department') : ' · every department'}${f.semester ? ' · ' + esc(f.semester) : ''}${f.session ? ' · ' + esc(f.session) : ''}</div></div><button class="btn btn-ghost btn-sm" data-edit="${f.id}">Edit</button></div>`).join('') || '<p class="muted" style="padding:20px 0;">No fees yet. Tap “Add a fee”: the list covers tuition, acceptance fee, registration, faculty and departmental dues, SUG dues, ICT, library, medical, laboratory, SIWES, teaching practice, project, hostel, convocation and more.</p>'}</div>`;
+      body.innerHTML = `<button class="btn btn-primary" id="ff-add" style="margin-bottom:10px;">➕ Add a fee</button><div class="card lzx-card" style="padding-top:4px;padding-bottom:4px;">${d.fees.map((f) => `<div class="list-row" style="align-items:center;gap:10px;"><div style="font-size:1.4rem;">${catOf(f.category).icon}</div><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(f.title)}${f.active ? '' : ' <span class="pill pill-muted">hidden</span>'}</div><div class="meta">${money(f.amountKobo)} · ${f.levels.length ? f.levels.map((l) => l * 100 + 'L').join(', ') : 'every level'}${f.departmentId ? ' · ' + esc(deptName(f.departmentId) || 'one department') : ' · every department'}${f.semester ? ' · ' + esc(f.semester) : ''}${f.session ? ' · ' + esc(f.session) : ''}</div></div><button class="btn btn-ghost btn-sm" data-edit="${f.id}">Edit</button></div>`).join('') || '<p class="muted" style="padding:20px 0;">No fees yet. Tap “Add a fee”: the list covers tuition, acceptance fee, registration, faculty and departmental dues, SUG dues, ICT, library, medical, laboratory, SIWES, teaching practice, project, hostel, convocation and more.</p>'}</div>`;
       body.querySelector('#ff-add').addEventListener('click', () => feeForm(null));
       body.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => feeForm(d.fees.find((f) => f.id === b.dataset.edit))));
       function feeForm(cur) {
@@ -1286,7 +1273,7 @@
     async function bankTab(body, alive, refresh) {
       const { bank } = await api('/fees/admin/bank');
       if (!alive()) return;
-      body.innerHTML = `<div class="card"><h3 style="margin-bottom:4px;">🏦 Where students pay</h3><p class="meta" style="margin-bottom:12px;">These details are shown <b>only to the students of your institution</b>, on their School Fees page. Learnza staff cannot change them.</p>
+      body.innerHTML = `<div class="card lzx-card"><h3 style="margin-bottom:4px;">🏦 Where students pay</h3><p class="meta" style="margin-bottom:12px;">These details are shown <b>only to the students of your institution</b>, on their School Fees page. Learnza staff cannot change them.</p>
         <div class="field"><label>Bank name</label><input id="bk-bank" maxlength="80" value="${esc(bank ? bank.bankName : '')}" placeholder="e.g. Zenith Bank"></div>
         <div class="field"><label>Account name</label><input id="bk-name" maxlength="120" value="${esc(bank ? bank.accountName : '')}"></div>
         <div class="field"><label>Account number (10 digits)</label><input id="bk-no" maxlength="10" inputmode="numeric" value="${esc(bank ? bank.accountNumber : '')}"></div>
@@ -1328,7 +1315,7 @@
   }
 
   // ---------------------------------------------------------------- on-demand libraries
-  // KaTeX (maths) and Chart.js (graphs) are only used on the AI Teacher's board. They used to be
+  // KaTeX (maths) and Chart.js (graphs) are only used on the AI Lecturer's board. They used to be
   // downloaded on every visit to every screen (~450 KB); now they are fetched the first time a
   // lesson actually draws an equation or a graph.
   const LIBS = {

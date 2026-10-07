@@ -37,7 +37,7 @@ async function requireActiveSubscription(req, res, next) {
   next();
 }
 
-// Live AI Teacher (avatar/voice) usage draws down a per-cycle credit bank, separate
+// Live AI Lecturer (avatar/voice) usage draws down a per-cycle credit bank, separate
 // from the plain time-based active/expired check above -- so a student can be
 // time-active but still have run out of AI minutes for this cycle, and vice versa
 // while credits are simply untracked (no subscription row yet, e.g. during testing).
@@ -58,7 +58,7 @@ async function requireAiCredits(req, res, next) {
   const { tracked, exhausted } = await getAiCreditStatus(req.user.id);
   if (tracked && exhausted) {
     return res.status(402).json({
-      error: "You've used up this cycle's live AI Teacher minutes. Subscribe again to top up your credit.",
+      error: "You've used up this cycle's live AI Lecturer minutes. Subscribe again to top up your credit.",
       code: 'AI_CREDITS_EXHAUSTED',
     });
   }

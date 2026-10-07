@@ -268,7 +268,7 @@ router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (re
 });
 
 // Lessons (AI-teacher narrated or lecturer recorded)
-// AI Teacher narration and lecturer-recorded video are paid features -- students can
+// AI Lecturer narration and lecturer-recorded video are paid features -- students can
 // always see what lessons exist, but the actual content (script/videoUrl) is stripped
 // unless they have an active subscription. Lecturers/admins always see everything.
 router.get('/courses/:id/lessons', requireAuth, loadCourse(), async (req, res) => {
@@ -295,7 +295,7 @@ router.get('/courses/:id/lessons', requireAuth, loadCourse(), async (req, res) =
 // Teacher's live avatar sessions, so it's always stored isAiTeacher: false. (A prior
 // version of this route defaulted isAiTeacher to true whenever the field was omitted,
 // and no frontend form ever sent it, so every lecturer-uploaded lesson was silently
-// mislabeled as "AI Teacher" content.)
+// mislabeled as "AI Lecturer" content.)
 router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), upload.single('video'), async (req, res) => {
   const { title, script, order } = req.body;
   if (!title || !script) return res.status(400).json({ error: 'Title and script are required' });

@@ -1,7 +1,7 @@
 // Server-side source of truth for plan pricing. The frontend only ever sends a
 // plan name ("MONTHLY" | "YEARLY") -- never an amount -- so a tampered client
 // request can never change what gets charged.
-// aiMinutes is the live AI Teacher (avatar/voice) time credited on activation --
+// aiMinutes is the live AI Lecturer (avatar/voice) time credited on activation --
 // YEARLY grants 12 months' worth up front rather than a single month's allowance,
 // since it's paid for a full year at once.
 const PLANS = {

@@ -2,7 +2,7 @@ const syslog = require('../syslog');
 // Provider-agnostic AI layer: picks Gemini or Claude based on whichever API key is
 // present (Gemini first, matching the sibling PassNow project), and throws a clear,
 // catchable error when neither is configured yet -- callers turn that into a friendly
-// "AI Teacher isn't set up yet" response rather than a crash.
+// "AI Lecturer isn't set up yet" response rather than a crash.
 
 const fakeAi = () => process.env.LZ_FAKE_AI === '1';
 function fakeJson(userPrompt) {
@@ -55,7 +55,7 @@ async function callGemini(systemPrompt, userPrompt, { json = true } = {}) {
   });
   const data = await res.json();
   if (!res.ok) {
-    // Every caller (lab Q&A, research assistant, AI Teacher, quiz/lab generation)
+    // Every caller (lab Q&A, research assistant, AI Lecturer, quiz/lab generation)
     // catches and swallows this into a generic "please try again" -- log it here once,
     // centrally, so a real failure (bad model name, quota, etc.) is actually visible
     // in server logs instead of requiring live reproduction to diagnose.
@@ -98,7 +98,7 @@ async function callAnthropic(systemPrompt, userPrompt) {
 // the video avatar. Reference: https://ai.google.dev/gemini-api/docs/generate-content/speech-generation
 async function synthesizeSpeech(text) {
   if (!process.env.GEMINI_API_KEY) {
-    const err = new Error('AI Teacher voice synthesis needs GEMINI_API_KEY (Anthropic has no TTS endpoint).');
+    const err = new Error('AI Lecturer voice synthesis needs GEMINI_API_KEY (Anthropic has no TTS endpoint).');
     err.code = 'AI_NOT_CONFIGURED';
     throw err;
   }
