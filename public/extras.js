@@ -552,14 +552,16 @@
     return qrLoading;
   }
   const initialsOf = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
+  // The ID number belongs to the card and is never the matric number or the staff ID: those are shown on
+  // their own lines.
   function idNumber(u) {
-    if (u.role === 'STUDENT' && u.matricNumber) return u.matricNumber;
-    if (u.role !== 'STUDENT' && u.staffId) return u.staffId;
     return 'LZ-' + String(u.id || '').replace(/[^a-z0-9]/gi, '').slice(-8).toUpperCase();
   }
   function levelOf(u) { return u.yearOfStudy ? u.yearOfStudy * 100 + 'L' : ''; }
   function idFacts(u, ctx) {
     const f = [['ID No.', idNumber(u)]];
+    if (u.role === 'STUDENT' && u.matricNumber) f.push(['Matric No.', u.matricNumber]);
+    if (u.role !== 'STUDENT' && u.staffId) f.push(['Staff ID', u.staffId]);
     const inst = (ctx.school && ctx.school.name) || u.attendedSchoolName || (u.schoolId ? '' : 'Independent learner');
     if (inst) f.push(['Institution', inst]);
     const dept = (ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment;
@@ -666,12 +668,12 @@
     g.fillStyle = '#fff'; g.fillText(role, W - 48 - rw + 20, 70);
     g.font = '800 46px Sora, sans-serif'; g.fillText(String(u.fullName || '').slice(0, 30), 270, 200);
     g.font = '600 26px sans-serif'; g.fillStyle = 'rgba(255,255,255,.75)'; g.fillText(idSubLine(u, ctx).slice(0, 44), 270, 246);
-    let y = 380, col = 0;
+    let y = 342, col = 0;
     idFacts(u, ctx).forEach(([k, v]) => {
       const px = 48 + col * 330;
       g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '700 18px sans-serif'; g.fillText(String(k).toUpperCase(), px, y);
       g.fillStyle = '#fff'; g.font = '700 26px sans-serif'; g.fillText(String(v).slice(0, 22), px, y + 34);
-      col++; if (col === 2) { col = 0; y += 90; }
+      col++; if (col === 2) { col = 0; y += 74; }
     });
     await new Promise((done) => {
       const initials = () => { g.fillStyle = '#c1861f'; g.fillRect(48, 130, 190, 190); g.fillStyle = '#fff'; g.font = '800 72px Sora, sans-serif'; g.textAlign = 'center'; g.fillText(initialsOf(u.fullName), 143, 252); g.textAlign = 'left'; };

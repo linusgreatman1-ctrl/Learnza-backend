@@ -31,6 +31,7 @@
     return sessionStorage.getItem(key) || localStorage.getItem(lsKey(key));
   }
   function saveSession(token, user, refreshToken) {
+    if (refreshToken) { try { localStorage.setItem('lz_schools_resume', JSON.stringify({ refreshToken, name: user && user.fullName, role: user && user.role ? user.role.charAt(0) + user.role.slice(1).toLowerCase() : '' })); } catch { /* private mode */ } }
     const put = (key, value) => { sessionStorage.setItem(key, value); localStorage.setItem(lsKey(key), value); };
     put('lz_schools_token', token);
     put('lz_schools_user', JSON.stringify(user));
@@ -38,6 +39,7 @@
     localStorage.setItem(lsKey('lz_schools_stamp'), String(Date.now()));
   }
   function clearSession() {
+    try { localStorage.removeItem('lz_schools_resume'); } catch { /* ignore */ }
     for (const part of ['token', 'user', 'refresh', 'stamp']) {
       sessionStorage.removeItem('lz_schools_' + part);
       localStorage.removeItem(lsKey('lz_schools_' + part));
@@ -292,6 +294,53 @@
     try { await fn(); } catch (err) { toast(err.message); } finally { btn.disabled = false; btn.textContent = label; }
   }
 
+
+  // "Continue as ...": a tab that is not signed in offers the person who last signed in on this device, to be
+  // picked on purpose with one tap. (A new tab never quietly becomes whoever signed in last.)
+  (function offerResume() {
+    let r = null;
+    try { r = JSON.parse(localStorage.getItem('lz_schools_resume') || 'null'); } catch { r = null; }
+    if (!r || !r.refreshToken || state.token) return;
+    const host = document.querySelector('#lg-splash .lg-actions');
+    if (!host) return;
+    const card = document.createElement('div');
+    card.className = 'lg-card'; card.id = 'lg-resume';
+    card.innerHTML = `<div class="lg-card-icon">👤</div><div><div class="lg-card-name">Continue as ${esc(r.name || 'your account')}</div><div class="lg-card-desc">${esc(r.role || '')} · tap to sign in again · <a data-resume-clear style="text-decoration:underline;">Not you?</a></div></div><div class="lg-card-go">›</div>`;
+    host.insertBefore(card, host.firstChild);
+    card.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-resume-clear]')) { e.stopPropagation(); try { localStorage.removeItem('lz_schools_resume'); } catch { /* ignore */ } card.remove(); return; }
+      card.style.opacity = '.6';
+      try {
+        const res = await fetch('/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: r.refreshToken }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Your last session has ended. Please sign in.');
+        onAuthed(data.token, data.user, data.refreshToken);
+      } catch (err) { card.remove(); try { localStorage.removeItem('lz_schools_resume'); } catch { /* ignore */ } toast(err.message); }
+    });
+  })();
+
+  // Let the browser's password manager keep the sign-in: the access code is a real password field,
+  // the name has the username hint, and (in Chrome) the details are handed to the password manager
+  // when the sign-in works. Only the last name and school typed are remembered by the app itself,
+  // never the code.
+  function rememberLogin(id, secret, display) {
+    try {
+      if (window.PasswordCredential && navigator.credentials && navigator.credentials.store) {
+        navigator.credentials.store(new PasswordCredential({ id, password: secret, name: display || id }));
+      }
+    } catch { /* the browser will offer to save it by itself */ }
+  }
+  const LAST_KEY = 'lz_last_signin';
+  const readLast = () => { try { return JSON.parse(localStorage.getItem(LAST_KEY) || '{}'); } catch { return {}; } };
+  const writeLast = (patch) => { try { localStorage.setItem(LAST_KEY, JSON.stringify(Object.assign(readLast(), patch))); } catch { /* private mode */ } };
+  (function prefillLast() {
+    const last = readLast();
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value) el.value = v; };
+    set('lg-school-name', last.adminSchool);
+    set('lg-code-name', last.name);
+    set('lg-code-school', last.school);
+  })();
+
   document.getElementById('lg-school-form').addEventListener('submit', (e) => {
     e.preventDefault();
     submitting('lg-school-submit', async () => {
@@ -302,6 +351,8 @@
           joinCode: document.getElementById('lg-school-code').value.trim(),
         },
       });
+      writeLast({ adminSchool: document.getElementById('lg-school-name').value.trim() });
+      rememberLogin(document.getElementById('lg-school-name').value.trim(), document.getElementById('lg-school-code').value.trim(), 'School admin');
       onAuthed(token, user, refreshToken);
     });
   });
@@ -317,6 +368,8 @@
           accessCode: document.getElementById('lg-code-code').value.trim(),
         },
       });
+      writeLast({ name: document.getElementById('lg-code-name').value.trim(), school: document.getElementById('lg-code-school').value.trim() });
+      rememberLogin(document.getElementById('lg-code-name').value.trim(), document.getElementById('lg-code-code').value.trim(), document.getElementById('lg-code-name').value.trim());
       onAuthed(token, user, refreshToken);
     });
   });

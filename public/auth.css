@@ -101,3 +101,30 @@ select.lg-input { appearance: none; cursor: pointer; background-image: linear-gr
   .lg-light .lg-bar, .lg-light .lg-head { width: 100%; max-width: 420px; margin-left: auto; margin-right: auto; }
   .lg-light .lg-form { width: 100%; max-width: 420px; background: #fff; flex: 1; padding-left: 24px; padding-right: 24px; }
 }
+
+/* ---- Sign-in screens: a size that is easy on the eye at every width (a little under PassNow's) ---- */
+.lg-hero { padding: 40px 24px 8px; }
+.lg-logo { width: 64px; height: 64px; border-radius: 19px; font-size: 34px; margin-bottom: 12px; }
+.lg-word { font-size: 40px; letter-spacing: -1.4px; }
+.lg-tag { font-size: 11.5px; letter-spacing: 1.6px; margin-top: 7px; }
+.lg-pill { margin-top: 14px; padding: 5px 13px; font-size: 11px; }
+.lg-actions { padding: 0 24px 28px; gap: 9px; }
+.lg-btn { padding: 13px; font-size: 14.5px; border-radius: 12px; }
+.lg-card { padding: 14px 16px; gap: 12px; border-radius: 16px; margin-bottom: 9px; }
+.lg-card-icon { width: 44px; height: 44px; border-radius: 14px; font-size: 22px; }
+.lg-card-name { font-size: 15px; margin-bottom: 2px; }
+.lg-card-desc { font-size: 12px; }
+.lg-title { font-size: 22px; }
+.lg-sub { font-size: 13px; margin-bottom: 18px; }
+.lg-head { padding: 14px 0 20px; }
+.lg-head-icon { width: 52px; height: 52px; border-radius: 16px; font-size: 26px; margin: 6px auto 10px; }
+.lg-head h2 { font-size: 20px; }
+.lg-head p { font-size: 12.5px; }
+.lg-input { padding: 11px 14px; font-size: 14px; border-radius: 12px; }
+.lg-label { font-size: 11px; margin-bottom: 5px; }
+.lg-fg { margin-bottom: 12px; }
+.lg-info { font-size: 12px; padding: 10px 12px; }
+.lg-check span, .lg-forgot, .lg-switch { font-size: 12.5px; }
+.lg-note, .lg-foot { font-size: 11.5px; }
+.lg-back { width: 36px; height: 36px; border-radius: 11px; font-size: 16px; }
+@media (min-width: 900px) { .lg-hero { padding-top: 48px; } .lg-word { font-size: 42px; } }

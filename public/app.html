@@ -338,7 +338,7 @@
     <form class="lg-inner lg-form" id="lg-register-form" autocomplete="on">
       <div class="lg-info"><span>🎓</span><span>Learn on your own terms — tell Learnza what you're studying and your AI Lecturer builds the lessons.</span></div>
       <div class="lg-fg"><label class="lg-label">Full Name</label><input class="lg-input" id="lg-reg-name" required placeholder="e.g. Chiamaka Okonkwo"></div>
-      <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-reg-email" required placeholder="you@example.com"></div>
+      <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-reg-email" name="username" autocomplete="username" required placeholder="you@example.com"></div>
       <div class="lg-fg"><label class="lg-label">Phone Number</label><input class="lg-input" type="tel" id="lg-reg-phone" placeholder="+234 800 000 0000"></div>
       <div class="lg-fg"><label class="lg-label">Institution Type</label>
         <select class="lg-input" id="lg-reg-type" required>
@@ -358,7 +358,7 @@
           <option value="1">100L</option><option value="2">200L</option><option value="3">300L</option>
           <option value="4">400L</option><option value="5">500L</option><option value="6">600L</option>
         </select></div>
-      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-reg-pw" required minlength="6" placeholder="At least 6 characters"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-reg-pw" name="new-password" autocomplete="new-password" required minlength="6" placeholder="At least 6 characters"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
       <div class="lg-fg"><label class="lg-label">Confirm Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-reg-pw2" required minlength="6" placeholder="Repeat your password"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
       <label class="lg-check"><input type="checkbox" id="lg-reg-terms" required><span>I have read and accept the <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</span></label>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-reg-submit">Create Free Account →</button>
@@ -374,8 +374,8 @@
       <h2>Welcome Back!</h2><p>Continue your study journey 🔥</p>
     </div></div>
     <form class="lg-inner lg-form" id="lg-login-form" autocomplete="on">
-      <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-login-email" required placeholder="you@example.com"></div>
-      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-login-pw" required placeholder="Your password"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+      <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-login-email" name="username" autocomplete="username" required placeholder="you@example.com"></div>
+      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-login-pw" name="password" autocomplete="current-password" required placeholder="Your password"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
       <p class="lg-forgot"><a data-go="lg-forgot">Forgot password?</a></p>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-login-submit" style="margin-top:6px">Sign In →</button>
       <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>

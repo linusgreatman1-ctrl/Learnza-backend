@@ -206,3 +206,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* Digital ID: Learnza's own navy (the colour of its sign-in and app background), gold edge */
 .lzx-id { background: linear-gradient(135deg, #0b1423 0%, #0f1b2e 55%, #1a2c47 100%); }
 .lzx-id::after { background: linear-gradient(90deg, #e3ac4c, #f3d58c, #e3ac4c); }
+
+/* Cards that are buttons (quick actions, shortcuts) take the page's text colour: a button does not inherit it */
+button.card, button.course-card { color: var(--ink); font: inherit; text-align: left; }
+button.card .meta, button.course-card .meta { color: var(--ink); }

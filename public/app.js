@@ -31,6 +31,7 @@
     return sessionStorage.getItem(key) || localStorage.getItem(lsKey(key));
   }
   function saveSession(token, user, refreshToken) {
+    if (refreshToken) { try { localStorage.setItem('lz_app_resume', JSON.stringify({ refreshToken, name: user && user.fullName, role: user && user.role ? user.role.charAt(0) + user.role.slice(1).toLowerCase() : '' })); } catch { /* private mode */ } }
     const put = (key, value) => { sessionStorage.setItem(key, value); localStorage.setItem(lsKey(key), value); };
     put('lz_app_token', token);
     put('lz_app_user', JSON.stringify(user));
@@ -38,6 +39,7 @@
     localStorage.setItem(lsKey('lz_app_stamp'), String(Date.now()));
   }
   function clearSession() {
+    try { localStorage.removeItem('lz_app_resume'); } catch { /* ignore */ }
     for (const part of ['token', 'user', 'refresh', 'stamp']) {
       sessionStorage.removeItem('lz_app_' + part);
       localStorage.removeItem(lsKey('lz_app_' + part));
@@ -284,6 +286,40 @@
     try { await fn(); } catch (err) { toast(err.message); } finally { btn.disabled = false; btn.textContent = label; }
   }
 
+  // "Continue as ...": a tab that is not signed in offers the person who last signed in on this device, to be
+  // picked on purpose with one tap. (A new tab never quietly becomes whoever signed in last.)
+  (function offerResume() {
+    let r = null;
+    try { r = JSON.parse(localStorage.getItem('lz_app_resume') || 'null'); } catch { r = null; }
+    if (!r || !r.refreshToken || state.token) return;
+    const host = document.querySelector('#lg-splash .lg-actions');
+    if (!host) return;
+    const card = document.createElement('div');
+    card.className = 'lg-card'; card.id = 'lg-resume';
+    card.innerHTML = `<div class="lg-card-icon">👤</div><div><div class="lg-card-name">Continue as ${esc(r.name || 'your account')}</div><div class="lg-card-desc">${esc(r.role || '')} · tap to sign in again · <a data-resume-clear style="text-decoration:underline;">Not you?</a></div></div><div class="lg-card-go">›</div>`;
+    host.insertBefore(card, host.firstChild);
+    card.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-resume-clear]')) { e.stopPropagation(); try { localStorage.removeItem('lz_app_resume'); } catch { /* ignore */ } card.remove(); return; }
+      card.style.opacity = '.6';
+      try {
+        const res = await fetch('/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: r.refreshToken }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Your last session has ended. Please sign in.');
+        onAuthed(data.token, data.user, data.refreshToken);
+      } catch (err) { card.remove(); try { localStorage.removeItem('lz_app_resume'); } catch { /* ignore */ } toast(err.message); }
+    });
+  })();
+
+  // Let the browser's password manager keep the sign-in (Chrome is handed the details when it works);
+  // the last email used is remembered here, never the password.
+  function rememberLogin(id, secret) {
+    try {
+      localStorage.setItem('lz_last_email', id);
+      if (window.PasswordCredential && navigator.credentials && navigator.credentials.store) navigator.credentials.store(new PasswordCredential({ id, password: secret, name: id }));
+    } catch { /* the browser will offer to save it by itself */ }
+  }
+  try { const le = localStorage.getItem('lz_last_email'), el = document.getElementById('lg-login-email'); if (le && el && !el.value) el.value = le; } catch { /* private mode */ }
+
   document.getElementById('lg-login-form').addEventListener('submit', (e) => {
     e.preventDefault();
     submitting('lg-login-submit', async () => {
@@ -294,6 +330,7 @@
           password: document.getElementById('lg-login-pw').value,
         },
       });
+      rememberLogin(document.getElementById('lg-login-email').value.trim(), document.getElementById('lg-login-pw').value);
       onAuthed(token, user, refreshToken);
     });
   });
@@ -504,6 +541,21 @@
   }
 
   // The greeting at the top of the home page, as in PassNow: time of day, the name large, then who they are.
+  // An independent learner's details, laid out like a school student's.
+  function learnerDetailsCard(u) {
+    const row = (k, v) => `<div><div class="meta">${esc(k)}</div><div class="tabular">${v}</div></div>`;
+    return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
+      ${row('Institution', esc(u.attendedSchoolName || '—'))}
+      ${row('Type', esc(INSTITUTION_TYPE_LABELS[u.institutionType] || '—'))}
+      ${row('Department', esc(u.attendedDepartment || '—'))}
+      ${row('Course of study', esc(u.courseOfStudy || '—'))}
+      ${row('Level', esc(levelLabel(u.yearOfStudy) || '—'))}
+      ${row('Email', esc(u.email || '—'))}
+      ${row('Phone', esc(u.phone || '—'))}
+      ${row('Member since', esc(u.createdAt ? String(new Date(u.createdAt).getFullYear()) : '—'))}
+    </div></div>`;
+  }
+
   function greetingBlock() {
     const u = state.user;
     const hour = new Date().getHours();
@@ -2201,6 +2253,8 @@
         ${selfAvatarHtml('avatar-student-dash')}
         ${greetingBlock()}
       </div>
+      <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
+      ${learnerDetailsCard(state.user)}
       <div class="grid-cards" style="margin-bottom:26px;">
         ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
       </div>

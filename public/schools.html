@@ -363,10 +363,10 @@
   <!-- SCHOOL ADMIN: school name + join code -->
   <div class="lg-s lg-light" id="lg-school">
     <div class="lg-head"><div class="lg-inner"><button class="lg-back" data-go="lg-splash" aria-label="Back" style="margin-right:auto;display:block">←</button><div class="lg-head-icon">🏫</div><h2>Welcome To Learnza</h2><p>School Sign In 🔥</p></div></div>
-    <form class="lg-inner lg-form" id="lg-school-form" autocomplete="off">
+    <form class="lg-inner lg-form" id="lg-school-form" autocomplete="on" method="post" action="#">
       <div class="lg-info"><span>🔑</span><span>Enter your school's name and the Join Code Learnza gave you when your school was onboarded. No Join Code yet? Contact Learnza.</span></div>
-      <div class="lg-fg"><label class="lg-label">School Name</label><input class="lg-input" id="lg-school-name" required placeholder="Exactly as Learnza registered it"></div>
-      <div class="lg-fg"><label class="lg-label">Join Code</label><input class="lg-input" id="lg-school-code" required placeholder="e.g. 7XQK2M9P" style="text-transform:uppercase;letter-spacing:2px" maxlength="16"></div>
+      <div class="lg-fg"><label class="lg-label">School Name</label><input class="lg-input" id="lg-school-name" name="school" autocomplete="username" required placeholder="Exactly as Learnza registered it"></div>
+      <div class="lg-fg"><label class="lg-label">Join Code</label><div class="password-field"><input class="lg-input" type="password" id="lg-school-code" name="password" autocomplete="current-password" required placeholder="e.g. 7XQK2M9P" style="text-transform:uppercase;letter-spacing:2px" maxlength="16"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-school-submit" style="margin-top:6px">Sign In →</button>
       <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
     </form>
@@ -375,11 +375,11 @@
   <!-- LECTURER / STUDENT / STAFF: name + school + access code -->
   <div class="lg-s lg-light" id="lg-code">
     <div class="lg-head"><div class="lg-inner"><button class="lg-back" data-go="lg-role" aria-label="Back" style="margin-right:auto;display:block">←</button><div class="lg-head-icon">🎓</div><h2>Welcome To Learnza</h2><p id="lg-code-title">Learn Smart | Anywhere 🔥</p></div></div>
-    <form class="lg-inner lg-form" id="lg-code-form" autocomplete="off">
+    <form class="lg-inner lg-form" id="lg-code-form" autocomplete="on" method="post" action="#">
       <div class="lg-info"><span>👋</span><span id="lg-code-hint">Your school already registered you. Enter your full name, School Name, and the Access Code your lecturer gave you.</span></div>
-      <div class="lg-fg"><label class="lg-label">Your Full Name</label><input class="lg-input" id="lg-code-name" required placeholder="Exactly as your school registered you"></div>
-      <div class="lg-fg"><label class="lg-label">School Name</label><input class="lg-input" id="lg-code-school" required placeholder="e.g. University of Lagos"></div>
-      <div class="lg-fg"><label class="lg-label">Access Code</label><input class="lg-input" id="lg-code-code" required placeholder="e.g. K7M2Q9XA" style="text-transform:uppercase;letter-spacing:2px" maxlength="16"></div>
+      <div class="lg-fg"><label class="lg-label">Your Full Name</label><input class="lg-input" id="lg-code-name" name="username" autocomplete="username" required placeholder="Exactly as your school registered you"></div>
+      <div class="lg-fg"><label class="lg-label">School Name</label><input class="lg-input" id="lg-code-school" name="school" autocomplete="organization" required placeholder="e.g. University of Lagos"></div>
+      <div class="lg-fg"><label class="lg-label">Access Code</label><div class="password-field"><input class="lg-input" type="password" id="lg-code-code" name="password" autocomplete="current-password" required placeholder="e.g. K7M2Q9XA" style="text-transform:uppercase;letter-spacing:2px" maxlength="16"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-code-submit" style="margin-top:6px">Sign In →</button>
       <p class="lg-note" id="lg-code-lost">Lost your code? Ask your lecturer: they can see it in your student details, and it never changes.</p>
       <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
