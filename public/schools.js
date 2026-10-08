@@ -270,10 +270,10 @@
     e.preventDefault();
     const who = el.dataset.who;
     if (who && document.getElementById('lg-code-title')) {
-      document.getElementById('lg-code-title').textContent = who === 'student' ? 'Student Sign In' : 'Lecturer / Staff Sign In';
+      document.getElementById('lg-code-title').textContent = who === 'student' ? 'Student Sign In 🔥' : 'Lecturer / Staff Sign In 🔥';
       document.getElementById('lg-code-hint').textContent = who === 'student'
-        ? 'Your school has already registered you. Enter your full name, your school\'s name and the Access Code your school gave you.'
-        : 'Your school administrator added you. Enter your full name, your school\'s name and the Access Code they gave you.';
+        ? 'Your school already registered you. Enter your full name, School Name, and the Access Code your lecturer gave you.'
+        : 'Your school already registered you. Enter your full name, School Name, and the Access Code your school administrator gave you.';
       const lost = document.getElementById('lg-code-lost');
       if (lost) lost.textContent = who === 'student'
         ? 'Lost your code? Ask your lecturer: they can see it in your student details, and it never changes.'
@@ -3435,6 +3435,8 @@
       api('/students/me/dashboard'),
       api('/notifications'),
     ]);
+    // everything on record about this student: what the lecturer entered, and what the school admin added
+    const myRecord = isIndividual ? null : await api('/students/me/academic-record').catch(() => null);
     const attendancePct = attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
     const avgScorePct = recentResults.length
       ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length)
@@ -3566,6 +3568,7 @@
         ${selfAvatarHtml('avatar-student-dash')}
         ${greetingBlock()}
       </div>
+      ${myRecord ? `<h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>${studentDetailsCard(myRecord, { own: true })}` : ''}
       <div class="grid-cards" style="margin-bottom:26px;">
         ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
       </div>
@@ -5371,6 +5374,8 @@
         ${selfAvatarHtml('avatar-lect-dash')}
         ${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}
       </div>
+      <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
+      ${lecturerDetailsCard(u, department, courses.length, totalStudents)}
       <div class="grid-cards" style="margin-bottom:26px;">
         <div class="card course-card" data-jump-nav="lect-courses" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
         <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">${totalStudents}</div><div class="meta">Students</div></div>
@@ -5645,6 +5650,23 @@
         box.querySelector('#ns-done').addEventListener('click', () => { close(); render(); });
       } catch (err) { btn.disabled = false; toast(err.message); }
     });
+  }
+
+  // The lecturer's own details, laid out like a student's: what the school admin entered about them.
+  function lecturerDetailsCard(u, department, courseCount, studentCount) {
+    const row = (k, v) => `<div><div class="meta">${esc(k)}</div><div class="tabular">${v}</div></div>`;
+    return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
+      ${row('Staff ID', esc(u.staffId || '—'))}
+      ${row('Department', esc((department && department.name) || '—'))}
+      ${row('Status', statusPillHtml(u.status || 'ACTIVE'))}
+      ${row('Position', esc(u.position || 'Lecturer'))}
+      ${row('Email', esc(shownEmail(u.email) || '—'))}
+      ${row('Phone', esc(u.phone || '—'))}
+      ${row('Courses taught', String(courseCount))}
+      ${row('Students', String(studentCount))}
+      ${row('Member since', esc(u.createdAt ? String(new Date(u.createdAt).getFullYear()) : '—'))}
+      ${u.accessCode ? row('Access code', `<span style="letter-spacing:.12em; font-weight:700;">${esc(u.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(u.accessCode)}">Copy</button><div class="meta" style="font-size:.74rem; margin-top:2px;">You sign in with your full name and this code. It does not change.</div>`) : ''}
+    </div></div>`;
   }
 
   // Everything on record about a student, shown the same way to the student and to the lecturer:
