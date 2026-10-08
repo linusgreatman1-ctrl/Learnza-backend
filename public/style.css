@@ -195,3 +195,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cp-list { position: absolute; left: 8px; right: 8px; top: 100%; margin-top: 4px; z-index: 30; max-height: 240px; overflow: auto; background: var(--paper-raised); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
 .cp-opt { display: block; width: 100%; text-align: left; border: none; background: transparent; color: inherit; padding: 10px 12px; cursor: pointer; font: inherit; }
 .cp-opt:hover, .cp-opt:focus { background: var(--accent-soft); }
+
+/* Pop-up dialogs (fees, payments): taller than the screen? Scroll from the very top. A flex box that centres
+   its content cuts the top off with no way to scroll up to it; this centres without that. */
+.lzx-pay-bg { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; overflow-y: auto; padding: 0; }
+.lzx-pay { margin: auto auto 0; flex: 0 0 auto; }
+@media (min-width: 640px) { .lzx-pay { margin: auto; } .lzx-pay-bg { padding: 24px 0; } }
+.lzx-pay-body { padding-bottom: 24px; }
+
+/* Digital ID: Learnza's own navy (the colour of its sign-in and app background), gold edge */
+.lzx-id { background: linear-gradient(135deg, #0b1423 0%, #0f1b2e 55%, #1a2c47 100%); }
+.lzx-id::after { background: linear-gradient(90deg, #e3ac4c, #f3d58c, #e3ac4c); }

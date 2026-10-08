@@ -653,9 +653,9 @@
     const W = 1011, H = 638;
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d');
-    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0f1b2e'); bg.addColorStop(.55, '#16355c'); bg.addColorStop(1, '#5a3d0e');
+    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0b1423'); bg.addColorStop(.55, '#0f1b2e'); bg.addColorStop(1, '#1a2c47');
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    const stripe = g.createLinearGradient(0, 0, W, 0); stripe.addColorStop(0, '#e3ac4c'); stripe.addColorStop(.5, '#4a8cff'); stripe.addColorStop(1, '#e3ac4c');
+    const stripe = g.createLinearGradient(0, 0, W, 0); stripe.addColorStop(0, '#e3ac4c'); stripe.addColorStop(.5, '#f3d58c'); stripe.addColorStop(1, '#e3ac4c');
     g.fillStyle = stripe; g.fillRect(0, H - 16, W, 16);
     g.fillStyle = '#fff'; g.font = '800 34px Sora, sans-serif'; g.fillText('Learn', 48, 74);
     const lw = g.measureText('Learn').width; g.fillStyle = '#e3ac4c'; g.fillText('za', 48 + lw, 74);
