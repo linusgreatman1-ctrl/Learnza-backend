@@ -31,7 +31,6 @@
     return sessionStorage.getItem(key) || localStorage.getItem(lsKey(key));
   }
   function saveSession(token, user, refreshToken) {
-    if (refreshToken) { try { localStorage.setItem('lz_app_resume', JSON.stringify({ refreshToken, name: user && user.fullName, role: user && user.role ? user.role.charAt(0) + user.role.slice(1).toLowerCase() : '' })); } catch { /* private mode */ } }
     const put = (key, value) => { sessionStorage.setItem(key, value); localStorage.setItem(lsKey(key), value); };
     put('lz_app_token', token);
     put('lz_app_user', JSON.stringify(user));
@@ -39,7 +38,6 @@
     localStorage.setItem(lsKey('lz_app_stamp'), String(Date.now()));
   }
   function clearSession() {
-    try { localStorage.removeItem('lz_app_resume'); } catch { /* ignore */ }
     for (const part of ['token', 'user', 'refresh', 'stamp']) {
       sessionStorage.removeItem('lz_app_' + part);
       localStorage.removeItem(lsKey('lz_app_' + part));
@@ -286,30 +284,6 @@
     try { await fn(); } catch (err) { toast(err.message); } finally { btn.disabled = false; btn.textContent = label; }
   }
 
-  // "Continue as ...": a tab that is not signed in offers the person who last signed in on this device, to be
-  // picked on purpose with one tap. (A new tab never quietly becomes whoever signed in last.)
-  (function offerResume() {
-    let r = null;
-    try { r = JSON.parse(localStorage.getItem('lz_app_resume') || 'null'); } catch { r = null; }
-    if (!r || !r.refreshToken || state.token) return;
-    const host = document.querySelector('#lg-splash .lg-actions');
-    if (!host) return;
-    const card = document.createElement('div');
-    card.className = 'lg-card'; card.id = 'lg-resume';
-    card.innerHTML = `<div class="lg-card-icon">👤</div><div><div class="lg-card-name">Continue as ${esc(r.name || 'your account')}</div><div class="lg-card-desc">${esc(r.role || '')} · tap to sign in again · <a data-resume-clear style="text-decoration:underline;">Not you?</a></div></div><div class="lg-card-go">›</div>`;
-    host.insertBefore(card, host.firstChild);
-    card.addEventListener('click', async (e) => {
-      if (e.target.closest('[data-resume-clear]')) { e.stopPropagation(); try { localStorage.removeItem('lz_app_resume'); } catch { /* ignore */ } card.remove(); return; }
-      card.style.opacity = '.6';
-      try {
-        const res = await fetch('/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: r.refreshToken }) });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Your last session has ended. Please sign in.');
-        onAuthed(data.token, data.user, data.refreshToken);
-      } catch (err) { card.remove(); try { localStorage.removeItem('lz_app_resume'); } catch { /* ignore */ } toast(err.message); }
-    });
-  })();
-
   // Let the browser's password manager keep the sign-in (Chrome is handed the details when it works);
   // the last email used is remembered here, never the password.
   function rememberLogin(id, secret) {
@@ -498,6 +472,7 @@
     STUDENT_INDIVIDUAL: [
       ['my-dashboard', 'My Dashboard'],
       ['individual-courses', 'My Courses'],
+      ['my-ai-lectures', 'My AI Lectures'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -809,6 +784,7 @@
     function dispatch() {
       switch (state.view.screen) {
         case 'individual-courses': return renderIndividualCourses();
+        case 'my-ai-lectures': return renderMyAiLectures();
         case 'individual-course-detail': return renderIndividualCourseDetail();
         case 'lesson-player': return renderLessonPlayer();
         case 'library': return renderLibrary(false);
@@ -890,6 +866,68 @@
         render();
       } catch (err) { toast(err.message); }
     });
+  }
+
+  // ---- My AI Lectures: every AI Lecturer lesson and class, to watch again or to download ----------------
+  function downloadTextFile(filename, text) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  const safeFileName = (n) => String(n || 'lecture').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'lecture';
+  async function loadMyAiLectures() {
+    const { courses } = await api('/individual-courses');
+    const sets = await Promise.all(courses.map(async (c) => {
+      const { lessons } = await api(`/individual-courses/${c.id}/lessons`).catch(() => ({ lessons: [] }));
+      return lessons.map((l) => ({ ...l, course: c }));
+    }));
+    const { sessions } = await api('/ai-teacher/my-sessions').catch(() => ({ sessions: [] }));
+    return { lessons: sets.flat(), sessions };
+  }
+  function lectureRowHtml(l) {
+    return `<div class="list-row" style="gap:10px; flex-wrap:wrap;">
+      <div style="min-width:0;"><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
+        <div class="meta">${esc(l.course.title)} · ${l.videoUrl ? 'Recorded lecture' : 'AI Lecturer · narrated lesson'}</div></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn btn-accent btn-sm" data-watch-lecture="${l.id}" data-lecture-course="${l.course.id}">▶ Watch again</button>
+        ${l.locked ? '' : l.videoUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(l.videoUrl)}" download>⬇ Download</a>` : `<button class="btn btn-ghost btn-sm" data-dl-lecture="${l.id}">⬇ Download notes</button>`}
+      </div></div>`;
+  }
+  function sessionRowHtml(x) {
+    return `<div class="list-row" style="gap:10px; flex-wrap:wrap;">
+      <div style="min-width:0;"><div style="font-weight:600;">${esc(x.title)}</div>
+        <div class="meta">${esc(x.course)} · AI Lecturer class · ${new Date(x.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · ${x.status === 'COMPLETED' ? 'finished' : 'in progress'}</div></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${x.status === 'COMPLETED' ? '' : `<button class="btn btn-accent btn-sm" data-open-session="${x.id}">▶ Continue class</button>`}
+        <button class="btn btn-ghost btn-sm" data-dl-session="${x.id}">⬇ Download class notes</button>
+      </div></div>`;
+  }
+  function wireLectureRows(root, data) {
+    root.querySelectorAll('[data-watch-lecture]').forEach((b) => b.addEventListener('click', () => navigate('lesson-player', { courseId: b.dataset.lectureCourse, lessonId: b.dataset.watchLecture, isIndividual: true })));
+    root.querySelectorAll('[data-dl-lecture]').forEach((b) => b.addEventListener('click', () => {
+      const l = data.lessons.find((x) => x.id === b.dataset.dlLecture);
+      if (l) downloadTextFile(safeFileName(l.course.title + '-' + l.title) + '.txt', `${l.title}\n${l.course.title}\n\n${l.script || ''}\n`);
+    }));
+    root.querySelectorAll('[data-open-session]').forEach((b) => b.addEventListener('click', () => navigate('ai-teacher-session', { sessionId: b.dataset.openSession, isIndividual: true })));
+    root.querySelectorAll('[data-dl-session]').forEach((b) => b.addEventListener('click', () => {
+      const x = data.sessions.find((y) => y.id === b.dataset.dlSession);
+      if (!x) return;
+      const body = x.sections.map((sec, i) => `${i + 1}. ${sec.title}\n${sec.boardText ? sec.boardText + '\n' : ''}\n${sec.speechText || ''}\n`).join('\n');
+      downloadTextFile(safeFileName(x.course + '-' + x.title) + '-class-notes.txt', `${x.title}\n${x.course}\nAI Lecturer class · ${new Date(x.createdAt).toLocaleDateString()}\n\n${body}`);
+    }));
+  }
+  async function renderMyAiLectures() {
+    const data = await loadMyAiLectures();
+    view.innerHTML = `
+      <div class="page-head"><h1>My AI Lectures</h1></div>
+      <p class="muted" style="margin-bottom:18px;">Every lesson the AI Lecturer has given you in your courses. Watch one again whenever you like, or download it.</p>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Recorded lessons</h3>
+      <div class="card" style="margin-bottom:24px;">${data.lessons.map(lectureRowHtml).join('') || '<p class="muted" style="padding:16px;">No lessons yet. Create a course under <strong>My Courses</strong> and the AI Lecturer prepares your first lessons.</p>'}</div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">My AI Lecturer classes</h3>
+      <div class="card">${data.sessions.map(sessionRowHtml).join('') || '<p class="muted" style="padding:16px;">You have not taken an AI Lecturer class yet. Open a course and tap <strong>Start AI Lecturer</strong>.</p>'}</div>`;
+    wireLectureRows(view, data);
   }
 
   async function renderIndividualCourseDetail() {
@@ -2122,6 +2160,7 @@
       api('/students/me/dashboard'),
       api('/notifications'),
     ]);
+    const myAiLectures = isIndividual ? await loadMyAiLectures().catch(() => null) : null;
     const attendancePct = attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
     const avgScorePct = recentResults.length
       ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length)
@@ -2255,6 +2294,8 @@
       </div>
       <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
       ${learnerDetailsCard(state.user)}
+      ${myAiLectures ? `<div class="page-head" style="margin-bottom:10px;"><h3 style="font-size:1rem;">My recorded AI lectures</h3><button class="btn btn-ghost btn-sm" id="all-ai-lectures-btn">See all</button></div>
+        <div class="card" style="margin-bottom:22px;" id="dash-ai-lectures">${myAiLectures.lessons.slice(0, 5).map(lectureRowHtml).join('') || '<p class="muted" style="padding:16px;">No lessons yet — create a course and the AI Lecturer prepares them.</p>'}</div>` : ''}
       <div class="grid-cards" style="margin-bottom:26px;">
         ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
       </div>
@@ -2324,6 +2365,11 @@
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
     wireSelfAvatarUpload('avatar-student-dash');
+    if (myAiLectures) {
+      wireLectureRows(document.getElementById('dash-ai-lectures'), myAiLectures);
+      const allBtn = document.getElementById('all-ai-lectures-btn');
+      if (allBtn) allBtn.addEventListener('click', () => navigate('my-ai-lectures'));
+    }
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
         const target = view.querySelector(tile.dataset.jump);

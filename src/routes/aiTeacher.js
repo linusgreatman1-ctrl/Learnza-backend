@@ -60,6 +60,28 @@ router.post('/individual-courses/:id/ai-teacher/sessions', requireAuth, requireR
   await startSession(req, res, { individualCourseId: course.id, courseTitle: course.title });
 });
 
+// Every AI Lecturer class this student has had, with its notes, so it can be looked at again or downloaded.
+router.get('/ai-teacher/my-sessions', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const rows = await prisma.aiTeacherSession.findMany({
+    where: { studentId: req.user.id },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    include: { course: { select: { code: true, title: true } }, individualCourse: { select: { title: true } } },
+  });
+  res.json({
+    sessions: rows.map((r) => {
+      let plan = {};
+      try { plan = JSON.parse(r.planJson); } catch { plan = {}; }
+      return {
+        id: r.id, topic: r.topic, status: r.status, createdAt: r.createdAt, isIndividual: !!r.individualCourseId,
+        course: r.course ? `${r.course.code} — ${r.course.title}` : (r.individualCourse ? r.individualCourse.title : ''),
+        title: plan.title || r.topic,
+        sections: (plan.sections || []).map((x) => ({ title: x.title, boardText: x.boardText, speechText: x.speechText })),
+      };
+    }),
+  });
+});
+
 router.get('/ai-teacher/sessions/:id', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const session = await prisma.aiTeacherSession.findUnique({
     where: { id: req.params.id },
