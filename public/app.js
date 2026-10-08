@@ -1,49 +1,47 @@
 (function () {
   'use strict';
 
-  // Session storage strategy: sessionStorage is the source of truth once a tab has one
-  // (per-tab, so logging into a different account in another tab never overwrites this
-  // tab's own session). It falls back to localStorage ONLY when this load is an actual
-  // page reload (F5/refresh) -- covering both a normal reload (sessionStorage should
-  // already have it, but some embedded webviews don't reliably keep sessionStorage
-  // across a reload) and that edge case alike, so refreshing never forces a fresh
-  // login. A genuinely fresh navigation into app.html (a new tab, clicking "Open
-  // Learnza" from the public site, typing the URL) is deliberately NOT given the
-  // fallback: that tab's sessionStorage is empty because it's actually new, not
-  // because a reload lost it, so it should show the login screen rather than quietly
-  // resuming whichever account last logged in anywhere. Every write (login, profile
-  // update, etc.) still saves to both, via saveSession()/clearSession() below, so
-  // localStorage always holds the last-active session for the reload fallback, while
-  // each tab's own sessionStorage still wins over whatever any other tab does after.
-  function isPageReload() {
+  // Every browser tab keeps its own sign-in, so signing in as someone else in another tab (a lecturer
+  // in one, the school admin in another) can never change who THIS tab is. The sign-in is held in this
+  // tab's sessionStorage and, for browsers that lose that on a refresh, in a copy in localStorage that
+  // is keyed by the tab's own name (window.name belongs to the tab and survives a refresh). A tab that
+  // is opened fresh has no name yet, so it asks for a sign-in instead of quietly taking over whichever
+  // account last signed in anywhere.
+  const TAB_ID = (function () {
     try {
-      const nav = performance.getEntriesByType('navigation')[0];
-      if (nav) return nav.type === 'reload';
-      if (performance.navigation) return performance.navigation.type === 1; // legacy TYPE_RELOAD
-    } catch { /* Performance/Navigation Timing unavailable */ }
-    return true; // unknown -- default to preserving login, the safer direction
-  }
-  const IS_RELOAD = isPageReload();
+      if (!/^lzt_/.test(window.name)) window.name = 'lzt_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      return window.name;
+    } catch { return 'lzt_x'; }
+  })();
+  const lsKey = (key) => key + '@' + TAB_ID;
+  (function tidyOldSessions() {
+    try {
+      const now = Date.now();
+      for (const k of Object.keys(localStorage)) {
+        const m = /^(lz_[a-z]+_)stamp@(lzt_.+)$/.exec(k);
+        if (m && now - Number(localStorage.getItem(k) || 0) > 14 * 864e5) {
+          for (const part of ['token', 'user', 'refresh', 'stamp']) localStorage.removeItem(m[1] + part + '@' + m[2]);
+        }
+      }
+      // the one shared "last active" copy older versions kept: it is what let tabs swap accounts
+      for (const part of ['token', 'user', 'refresh']) localStorage.removeItem('lz_app_' + part);
+    } catch { /* storage unavailable */ }
+  })();
   function readSession(key) {
-    return sessionStorage.getItem(key) || (IS_RELOAD ? localStorage.getItem(key) : null);
+    return sessionStorage.getItem(key) || localStorage.getItem(lsKey(key));
   }
   function saveSession(token, user, refreshToken) {
-    sessionStorage.setItem('lz_app_token', token);
-    sessionStorage.setItem('lz_app_user', JSON.stringify(user));
-    localStorage.setItem('lz_app_token', token);
-    localStorage.setItem('lz_app_user', JSON.stringify(user));
-    if (refreshToken) {
-      sessionStorage.setItem('lz_app_refresh', refreshToken);
-      localStorage.setItem('lz_app_refresh', refreshToken);
-    }
+    const put = (key, value) => { sessionStorage.setItem(key, value); localStorage.setItem(lsKey(key), value); };
+    put('lz_app_token', token);
+    put('lz_app_user', JSON.stringify(user));
+    if (refreshToken) put('lz_app_refresh', refreshToken);
+    localStorage.setItem(lsKey('lz_app_stamp'), String(Date.now()));
   }
   function clearSession() {
-    sessionStorage.removeItem('lz_app_token');
-    sessionStorage.removeItem('lz_app_user');
-    sessionStorage.removeItem('lz_app_refresh');
-    localStorage.removeItem('lz_app_token');
-    localStorage.removeItem('lz_app_user');
-    localStorage.removeItem('lz_app_refresh');
+    for (const part of ['token', 'user', 'refresh', 'stamp']) {
+      sessionStorage.removeItem('lz_app_' + part);
+      localStorage.removeItem(lsKey('lz_app_' + part));
+    }
   }
 
   const state = {
@@ -505,8 +503,28 @@
     return lines;
   }
 
+  // The greeting at the top of the home page, as in PassNow: time of day, the name large, then who they are.
+  function greetingBlock() {
+    const u = state.user;
+    const hour = new Date().getHours();
+    const hello = hour < 12 ? 'Good morning,' : hour < 18 ? 'Good afternoon,' : 'Good evening,';
+    const lines = profileLines().slice(1);
+    return `<div class="greet">
+      <div class="meta">${hello}</div>
+      <div class="greet-name">${esc(u.fullName)} 👋</div>
+      <div class="meta"><b>Student</b>${lines.length ? ' · ' + lines[0] : ''}</div>
+      ${lines.slice(1).map((l) => `<div class="meta">${l}</div>`).join('')}
+    </div>`;
+  }
+
   function buildSidebar() {
     const u = state.user;
+
+    // The top of the sidebar says who is signed in, as PassNow's does.
+    const brandRole = document.getElementById('brand-role');
+    if (brandRole) brandRole.textContent = 'Student';
+    const sideWho = document.getElementById('sidebar-who');
+    if (sideWho) sideWho.innerHTML = `<div class="nm">${esc(u.fullName)}</div><div class="sc">${esc(u.attendedSchoolName || 'Independent learner')}</div>`;
 
     const semesterBox = document.getElementById('semester-box');
     if (state.school && state.semesters && state.semesters.length) {
@@ -2181,7 +2199,7 @@
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-student-dash')}
-        <div>${profileLines().map((l) => `<div>${l}</div>`).join('')}</div>
+        ${greetingBlock()}
       </div>
       <div class="grid-cards" style="margin-bottom:26px;">
         ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}

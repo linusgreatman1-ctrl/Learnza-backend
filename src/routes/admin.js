@@ -358,10 +358,15 @@ router.post('/students', (req, res) => {
 // Used by routes/academics.js when a lecturer adds a student.
 async function createStudent(req, res, { departmentId, courseIds }) {
   const { matricNumber, yearOfStudy } = req.body;
+  const thisYear = new Date().getFullYear();
+  const admitted = req.body.yearOfAdmission ? parseInt(req.body.yearOfAdmission, 10) : null;
+  if (admitted !== null && !(admitted >= 1980 && admitted <= thisYear + 1)) return res.status(400).json({ error: 'Enter a valid year of admission, for example ' + thisYear + '.' });
+  const length = req.body.programmeYears ? parseInt(req.body.programmeYears, 10) : null;
+  if (length !== null && !(length >= 1 && length <= 8)) return res.status(400).json({ error: 'Programme length must be from 1 to 8 years.' });
   const created = await createSchoolUser(req, res, {
     role: 'STUDENT',
     requiredFields: ['matricNumber'],
-    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, addedById: req.user.id },
+    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, yearOfAdmission: admitted, programmeYears: length, addedById: req.user.id },
     courseIds,
   });
   if (!created) return;
@@ -494,7 +499,15 @@ async function updateSchoolUser(req, res, role, fields) {
     // yearOfStudy is the one Int column among these edit fields -- every other one is
     // a plain String column, but the <select> it comes from submits its value as a
     // string regardless, which Prisma rejects outright for an Int field.
-    data[key] = key === 'yearOfStudy' ? (req.body[key] ? Number(req.body[key]) : null) : (req.body[key] || null);
+    if (key === 'cgpa') {
+      const n = req.body[key] === '' || req.body[key] == null ? null : Number(req.body[key]);
+      if (n !== null && !(n >= 0 && n <= 5)) { res.status(400).json({ error: 'CGPA must be a number from 0 to 5.' }); return 'handled'; }
+      data[key] = n === null ? null : Number(n.toFixed(2));
+    } else if (['yearOfStudy', 'yearOfAdmission', 'programmeYears'].includes(key)) {
+      data[key] = req.body[key] ? Number(req.body[key]) : null;
+    } else {
+      data[key] = req.body[key] || null;
+    }
   }
   const updated = await prisma.user.update({ where: { id: user.id }, data });
   return updated;
@@ -519,7 +532,7 @@ router.patch('/non-academic-staff/:id', async (req, res) => {
 });
 
 router.patch('/students/:id', async (req, res) => {
-  const updated = await updateSchoolUser(req, res, 'STUDENT', ['fullName', 'email', 'phone', 'matricNumber', 'departmentId', 'yearOfStudy']);
+  const updated = await updateSchoolUser(req, res, 'STUDENT', ['fullName', 'email', 'phone', 'matricNumber', 'departmentId', 'yearOfStudy', 'yearOfAdmission', 'programmeYears', 'cgpa', 'classPosition']);
   if (updated === 'handled') return;
   if (!updated) return res.status(404).json({ error: 'Not found' });
   if (req.body.courseIds !== undefined) {

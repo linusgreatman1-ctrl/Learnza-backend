@@ -174,6 +174,26 @@ router.get('/lect/add-student-options', requireAuth, requireRole('LECTURER'), as
   res.json(await lecturerScope(req.user));
 });
 
+// Every student a lecturer is responsible for: the ones they added (even if they have not put them
+// in a class yet) and the ones in any of their classes.
+router.get('/lect/students', requireAuth, requireRole('LECTURER'), async (req, res) => {
+  if (!hasSchool(req.user)) return res.status(404).json({ error: 'Not found' });
+  const scope = await lecturerScope(req.user);
+  const mine = scope.courses.map((c) => c.id);
+  const rows = await prisma.user.findMany({
+    where: {
+      role: 'STUDENT', schoolId: req.user.schoolId,
+      OR: [{ addedById: req.user.id }, ...(mine.length ? [{ enrollments: { some: { courseId: { in: mine } } } }] : [])],
+    },
+    select: {
+      id: true, fullName: true, matricNumber: true, status: true, yearOfStudy: true,
+      enrollments: { where: { courseId: { in: mine } }, select: { course: { select: { code: true } } } },
+    },
+    orderBy: { fullName: 'asc' },
+  });
+  res.json({ students: rows.map((r) => ({ id: r.id, fullName: r.fullName, matricNumber: r.matricNumber, status: r.status, yearOfStudy: r.yearOfStudy, classes: r.enrollments.map((e) => e.course.code) })) });
+});
+
 router.post('/lect/students', requireAuth, requireRole('LECTURER'), async (req, res) => {
   if (!hasSchool(req.user)) return res.status(404).json({ error: 'Not found' });
   const scope = await lecturerScope(req.user);
@@ -203,6 +223,8 @@ router.patch('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (
     if (dup) return res.status(409).json({ error: 'A student with that matric number already exists in your school.' });
   }
   if (req.body.yearOfStudy !== undefined) data.yearOfStudy = parseInt(req.body.yearOfStudy, 10) || null;
+  if (req.body.yearOfAdmission !== undefined) data.yearOfAdmission = parseInt(req.body.yearOfAdmission, 10) || null;
+  if (req.body.programmeYears !== undefined) data.programmeYears = parseInt(req.body.programmeYears, 10) || null;
   const updated = await prisma.user.update({ where: { id: student.id }, data });
   if (req.body.courseIds !== undefined) {
     const scope = await lecturerScope(req.user);
@@ -211,19 +233,26 @@ router.patch('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (
     await prisma.enrollment.deleteMany({ where: { studentId: student.id, courseId: { in: mine, notIn: wanted } } });
     if (wanted.length) await prisma.enrollment.createMany({ data: wanted.map((courseId) => ({ studentId: student.id, courseId })), skipDuplicates: true });
   }
-  res.json({ user: { id: updated.id, fullName: updated.fullName, matricNumber: updated.matricNumber, phone: updated.phone, yearOfStudy: updated.yearOfStudy } });
+  res.json({ user: { id: updated.id, fullName: updated.fullName, matricNumber: updated.matricNumber, phone: updated.phone, yearOfStudy: updated.yearOfStudy, yearOfAdmission: updated.yearOfAdmission, programmeYears: updated.programmeYears } });
 });
 
 // Comprehensive detail for one of the lecturer's own students -- reuses the same
 // computation the student/admin Admission Status screens use. Scoped so a lecturer can
 // only look up a student who is actually enrolled in one of their courses.
 router.get('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (req, res) => {
-  const enrollment = await prisma.enrollment.findFirst({
-    where: { studentId: req.params.id, course: { department: { schoolId: req.user.schoolId } } },
+  // One of the lecturer's own students: added by them, in their department, or in one of their classes.
+  const student = await prisma.user.findFirst({
+    where: {
+      id: req.params.id, role: 'STUDENT', schoolId: req.user.schoolId,
+      OR: [
+        { addedById: req.user.id },
+        ...(req.user.departmentId ? [{ departmentId: req.user.departmentId }] : []),
+        { enrollments: { some: { course: { lecturers: { some: { lecturerId: req.user.id } } } } } },
+      ],
+    },
+    include: { department: true },
   });
-  if (!enrollment) return res.status(404).json({ error: 'Student not found in any of your classes.' });
-  const student = await prisma.user.findUnique({ where: { id: req.params.id }, include: { department: true } });
-  if (!student) return res.status(404).json({ error: 'Student not found' });
+  if (!student) return res.status(404).json({ error: 'Student not found among your students.' });
   res.json(await computeAcademicRecord(student));
 });
 

@@ -1,49 +1,47 @@
 (function () {
   'use strict';
 
-  // Session storage strategy: sessionStorage is the source of truth once a tab has one
-  // (per-tab, so logging into a different account in another tab never overwrites this
-  // tab's own session). It falls back to localStorage ONLY when this load is an actual
-  // page reload (F5/refresh) -- covering both a normal reload (sessionStorage should
-  // already have it, but some embedded webviews don't reliably keep sessionStorage
-  // across a reload) and that edge case alike, so refreshing never forces a fresh
-  // login. A genuinely fresh navigation into app.html (a new tab, clicking "Open
-  // Learnza" from the public site, typing the URL) is deliberately NOT given the
-  // fallback: that tab's sessionStorage is empty because it's actually new, not
-  // because a reload lost it, so it should show the login screen rather than quietly
-  // resuming whichever account last logged in anywhere. Every write (login, profile
-  // update, etc.) still saves to both, via saveSession()/clearSession() below, so
-  // localStorage always holds the last-active session for the reload fallback, while
-  // each tab's own sessionStorage still wins over whatever any other tab does after.
-  function isPageReload() {
+  // Every browser tab keeps its own sign-in, so signing in as someone else in another tab (a lecturer
+  // in one, the school admin in another) can never change who THIS tab is. The sign-in is held in this
+  // tab's sessionStorage and, for browsers that lose that on a refresh, in a copy in localStorage that
+  // is keyed by the tab's own name (window.name belongs to the tab and survives a refresh). A tab that
+  // is opened fresh has no name yet, so it asks for a sign-in instead of quietly taking over whichever
+  // account last signed in anywhere.
+  const TAB_ID = (function () {
     try {
-      const nav = performance.getEntriesByType('navigation')[0];
-      if (nav) return nav.type === 'reload';
-      if (performance.navigation) return performance.navigation.type === 1; // legacy TYPE_RELOAD
-    } catch { /* Performance/Navigation Timing unavailable */ }
-    return true; // unknown -- default to preserving login, the safer direction
-  }
-  const IS_RELOAD = isPageReload();
+      if (!/^lzt_/.test(window.name)) window.name = 'lzt_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      return window.name;
+    } catch { return 'lzt_x'; }
+  })();
+  const lsKey = (key) => key + '@' + TAB_ID;
+  (function tidyOldSessions() {
+    try {
+      const now = Date.now();
+      for (const k of Object.keys(localStorage)) {
+        const m = /^(lz_[a-z]+_)stamp@(lzt_.+)$/.exec(k);
+        if (m && now - Number(localStorage.getItem(k) || 0) > 14 * 864e5) {
+          for (const part of ['token', 'user', 'refresh', 'stamp']) localStorage.removeItem(m[1] + part + '@' + m[2]);
+        }
+      }
+      // the one shared "last active" copy older versions kept: it is what let tabs swap accounts
+      for (const part of ['token', 'user', 'refresh']) localStorage.removeItem('lz_schools_' + part);
+    } catch { /* storage unavailable */ }
+  })();
   function readSession(key) {
-    return sessionStorage.getItem(key) || (IS_RELOAD ? localStorage.getItem(key) : null);
+    return sessionStorage.getItem(key) || localStorage.getItem(lsKey(key));
   }
   function saveSession(token, user, refreshToken) {
-    sessionStorage.setItem('lz_schools_token', token);
-    sessionStorage.setItem('lz_schools_user', JSON.stringify(user));
-    localStorage.setItem('lz_schools_token', token);
-    localStorage.setItem('lz_schools_user', JSON.stringify(user));
-    if (refreshToken) {
-      sessionStorage.setItem('lz_schools_refresh', refreshToken);
-      localStorage.setItem('lz_schools_refresh', refreshToken);
-    }
+    const put = (key, value) => { sessionStorage.setItem(key, value); localStorage.setItem(lsKey(key), value); };
+    put('lz_schools_token', token);
+    put('lz_schools_user', JSON.stringify(user));
+    if (refreshToken) put('lz_schools_refresh', refreshToken);
+    localStorage.setItem(lsKey('lz_schools_stamp'), String(Date.now()));
   }
   function clearSession() {
-    sessionStorage.removeItem('lz_schools_token');
-    sessionStorage.removeItem('lz_schools_user');
-    sessionStorage.removeItem('lz_schools_refresh');
-    localStorage.removeItem('lz_schools_token');
-    localStorage.removeItem('lz_schools_user');
-    localStorage.removeItem('lz_schools_refresh');
+    for (const part of ['token', 'user', 'refresh', 'stamp']) {
+      sessionStorage.removeItem('lz_schools_' + part);
+      localStorage.removeItem(lsKey('lz_schools_' + part));
+    }
   }
 
   const state = {
@@ -276,6 +274,10 @@
       document.getElementById('lg-code-hint').textContent = who === 'student'
         ? 'Your school has already registered you. Enter your full name, your school\'s name and the Access Code your school gave you.'
         : 'Your school administrator added you. Enter your full name, your school\'s name and the Access Code they gave you.';
+      const lost = document.getElementById('lg-code-lost');
+      if (lost) lost.textContent = who === 'student'
+        ? 'Lost your code? Ask your lecturer: they can see it in your student details, and it never changes.'
+        : 'Lost your code? Ask your school administrator: they can see it in your details, and it never changes.';
     }
     showAuthPanel(el.dataset.go);
   });
@@ -423,6 +425,7 @@
       ['courses', 'My Courses'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
+      ['class-recordings', 'Class Recordings'],
       ['lab-hub', 'Digital Lab'],
       ['past-questions-hub', 'Past Questions'],
       ['tests-hub', 'Tests'],
@@ -463,6 +466,7 @@
     LECTURER: [
       ['lect-dashboard', 'My Dashboard'],
       ['lect-courses', 'My Courses'],
+      ['class-recordings', 'Class Recordings'],
       ['lect-students', 'My Students'],
       ['lect-library', 'e-Library'],
       ['lect-attendance-hub', 'Class Attendance'],
@@ -534,8 +538,35 @@
     return lines;
   }
 
+  // The greeting at the top of every home page, as in PassNow: the time of day, the person's name large,
+  // then who they are (role, school, department and level).
+  const ROLE_NAMES = { STUDENT: 'Student', LECTURER: 'Lecturer', ADMIN: 'School Admin', STAFF: 'Staff' };
+  function greetingBlock(extraLine) {
+    const u = state.user;
+    const hour = new Date().getHours();
+    const hello = hour < 12 ? 'Good morning,' : hour < 18 ? 'Good afternoon,' : 'Good evening,';
+    const lines = profileLines().slice(1);
+    return `<div class="greet">
+      <div class="meta">${hello}</div>
+      <div class="greet-name">${esc(u.fullName)} 👋</div>
+      <div class="meta"><b>${esc(ROLE_NAMES[u.role] || '')}</b>${lines.length ? ' · ' + lines[0] : ''}</div>
+      ${lines.slice(1).map((l) => `<div class="meta">${l}</div>`).join('')}
+      ${extraLine ? `<div class="meta">${esc(extraLine)}</div>` : ''}
+    </div>`;
+  }
+
   function buildSidebar() {
     const u = state.user;
+
+    // The top of the sidebar says who is signed in, as PassNow's does: the role beside the name of
+    // the app, then the person's name and their school.
+    const brandRole = document.getElementById('brand-role');
+    if (brandRole) brandRole.textContent = ROLE_NAMES[u.role] || '';
+    const sideWho = document.getElementById('sidebar-who');
+    if (sideWho) {
+      const schoolLine = u.isIndividual ? (u.attendedSchoolName || 'Independent learner') : (state.school ? state.school.name : '');
+      sideWho.innerHTML = `<div class="nm">${esc(u.fullName)}</div>${schoolLine ? `<div class="sc">${esc(schoolLine)}</div>` : ''}`;
+    }
 
     const semesterBox = document.getElementById('semester-box');
     if (state.school && state.semesters && state.semesters.length) {
@@ -733,12 +764,10 @@
       if (live && live.isHost) {
         if (!window.confirm('Your class is still live. Leaving ends it for everyone. End the class and leave?')) return;
         const endingId = live.liveClassId;
-        const blobPromise = stopRecordingAndGetBlob();
+        const rec = live.rec;
+        const stopped = stopClassRecording();
         teardownLive();
-        blobPromise.then(async (blob) => {
-          try { await api(`/live/${endingId}/end`, { method: 'POST' }); } catch { /* the server also ends it after a short wait */ }
-          if (blob && blob.size > 0) uploadLiveRecording(endingId, blob);
-        });
+        stopped.then(() => finishHostedClass(endingId, rec));
       } else {
         teardownLive();
       }
@@ -773,7 +802,27 @@
     }
   }
 
+  // Keeps the open screen up to date by itself: every few seconds it asks the server for the same data
+  // and redraws only when something changed (an applicant applied, a decision was made, a student was
+  // registered). Stops as soon as the person goes to another screen.
+  let watchTimer = null;
+  function watchScreen(fetcher, ms) {
+    clearInterval(watchTimer);
+    const screen = state.view.screen;
+    let last = null;
+    watchTimer = setInterval(async () => {
+      if (state.view.screen !== screen || document.hidden) return;
+      try {
+        const sig = JSON.stringify(await fetcher());
+        if (last !== null && sig !== last) { last = sig; render(); return; }
+        last = sig;
+      } catch { /* the next tick tries again */ }
+    }, ms || 7000);
+    fetcher().then((d) => { if (last === null) last = JSON.stringify(d); }).catch(() => {});
+  }
+
   async function render() {
+    clearInterval(watchTimer);
     LZX.progress(true);
     try {
       await renderScreen();
@@ -793,6 +842,7 @@
 
     function dispatch() {
       switch (state.view.screen) {
+        case 'class-recordings': return renderClassRecordings();
         case 'courses': return renderStudentCourses();
         case 'individual-courses': return renderIndividualCourses();
         case 'individual-course-detail': return renderIndividualCourseDetail();
@@ -1818,6 +1868,7 @@
     if (live.speakPc) live.speakPc.close();
     if (live.speakMicStream) live.speakMicStream.getTracks().forEach((t) => t.stop());
     if (live.localStream) live.localStream.getTracks().forEach((t) => t.stop());
+    if (live.audioCtx) { try { live.audioCtx.close(); } catch { /* already closed */ } }
     if (live.socket) live.socket.disconnect();
     stopListening(false);
     document.getElementById('speaking-banner')?.remove();
@@ -1835,27 +1886,133 @@
     live = null;
   }
 
-  // Stops the host's local recorder (if any) and resolves with the finished video
-  // Blob once the last chunk has flushed -- resolves null when nothing was recorded
-  // (unsupported browser, or the recorder was never started) so callers can just
-  // check truthiness rather than branching on support themselves.
-  function stopRecordingAndGetBlob() {
+  // ---- Recording the class ------------------------------------------------------------------------
+  // The lecturer's browser records the class and sends it to the server in pieces every ten seconds,
+  // so the recording is saved as the class goes on (and survives a dropped connection or a closed
+  // page). The recording has the lecturer's camera and voice, and the voice of any student who is
+  // let in to speak, mixed in.
+  function startClassRecording(liveClassId) {
+    if (!window.MediaRecorder) throw new Error('This browser cannot record.');
+    const rec = { seq: 0, queue: [], sending: false, started: true, failed: 0, waiters: [] };
+    let stream = live.localStream;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      try {
+        const ctx = new AC();
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const dest = ctx.createMediaStreamDestination();
+        const mic = live.localStream.getAudioTracks()[0];
+        if (mic) ctx.createMediaStreamSource(new MediaStream([mic])).connect(dest);
+        live.audioCtx = ctx; live.mixDest = dest;
+        stream = new MediaStream([...live.localStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      } catch { stream = live.localStream; }
+    }
+    const mime = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+    if (!mime) throw new Error('This browser cannot record.');
+    live.rec = rec;
+    live.recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 600000, audioBitsPerSecond: 64000 });
+    live.recorder.ondataavailable = (e) => {
+      if (!e.data || !e.data.size) return;
+      rec.queue.push({ seq: rec.seq++, blob: e.data });
+      pumpRecording(rec, liveClassId);
+    };
+    live.recorder.start(10000);
+  }
+
+  // Lets the recording hear a student who has been let in to speak.
+  function addToRecordingMix(stream) {
+    if (!live || !live.audioCtx || !live.mixDest) return;
+    try { live.audioCtx.createMediaStreamSource(stream).connect(live.mixDest); } catch { /* the class is still heard live */ }
+  }
+
+  async function pumpRecording(rec, liveClassId) {
+    if (rec.sending) return;
+    rec.sending = true;
+    while (rec.queue.length) {
+      const item = rec.queue[0];
+      let ok = false;
+      for (let attempt = 0; attempt < 5 && !ok; attempt++) {
+        try {
+          const res = await fetch(`/api/live/${liveClassId}/recording/chunk?seq=${item.seq}`, { method: 'POST', headers: { Authorization: 'Bearer ' + state.token, 'Content-Type': 'application/octet-stream' }, body: item.blob });
+          if (res.status === 401 && state.refreshToken) { await refreshSession().catch(() => {}); continue; }
+          ok = res.ok || res.status === 404; // a 404 means the class is gone: nothing more to send
+        } catch { /* try again */ }
+        if (!ok) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+      if (!ok) rec.failed++;
+      rec.queue.shift();
+    }
+    rec.sending = false;
+    rec.waiters.splice(0).forEach((fn) => fn());
+  }
+
+  function recordingSaved(rec, timeoutMs) {
     return new Promise((resolve) => {
-      if (!live || !live.recorder || live.recorder.state === 'inactive') return resolve(null);
-      live.recorder.onstop = () => resolve(new Blob(live.recordedChunks, { type: 'video/webm' }));
-      live.recorder.stop();
+      if (!rec || (!rec.queue.length && !rec.sending)) return resolve(true);
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      rec.waiters.push(() => { clearTimeout(timer); resolve(true); });
     });
   }
 
-  async function uploadLiveRecording(liveClassId, blob) {
-    const fd = new FormData();
-    fd.append('video', blob, 'recording.webm');
+  // Stops the recorder and resolves once its last piece has been handed over for saving.
+  function stopClassRecording() {
+    return new Promise((resolve) => {
+      const r = live && live.recorder;
+      if (!r || r.state === 'inactive') return resolve();
+      r.onstop = () => resolve();
+      try { r.stop(); } catch { resolve(); }
+    });
+  }
+
+  // Ends the class on the server and waits (without holding the lecturer up) for the recording to finish saving.
+  async function finishHostedClass(liveClassId, rec) {
     try {
-      await api(`/live/${liveClassId}/recording`, { method: 'POST', body: fd });
-      toast('Class recording saved — students can rewatch and download it from their dashboard.');
-    } catch {
-      toast('Could not save the class recording.');
-    }
+      const { durationMin } = await api(`/live/${liveClassId}/end`, { method: 'POST' });
+      if (durationMin) toast(`Class ended — it lasted ${durationMin} minute${durationMin === 1 ? '' : 's'}.`);
+    } catch { /* the server also ends the class after a short wait */ }
+    if (!rec || !rec.started) return;
+    if (rec.queue.length || rec.sending) toast('Saving the class recording — keep this page open for a moment…');
+    const saved = await recordingSaved(rec, 180000);
+    toast(saved && !rec.failed ? 'Class recording saved. You and your students can watch it again under Class Recordings.' : 'The class recording may be incomplete: some of it could not be saved.');
+  }
+
+  // Every class that was recorded, to watch again or download: a lecturer sees the classes they
+  // taught, a student the classes of their courses.
+  async function renderClassRecordings() {
+    const { recordings } = await api('/live/recordings');
+    const mb = (n) => (n ? (n / 1048576 >= 10 ? Math.round(n / 1048576) : (n / 1048576).toFixed(1)) + ' MB' : '');
+    const mins = (r) => (r.endedAt ? Math.max(1, Math.round((new Date(r.endedAt) - new Date(r.startedAt)) / 60000)) : null);
+    const isLect = state.user.role === 'LECTURER';
+    view.innerHTML = `
+      <div class="page-head"><h1>Class Recordings</h1></div>
+      <p class="muted" style="margin-bottom:18px;">${isLect ? 'Every live class you taught is recorded and saved here, with your voice and the students you let speak. You and your students can watch or download it.' : 'Live classes your lecturers taught are recorded and saved here. Watch them again or download them.'}</p>
+      ${recordings.map((r) => `
+        <div class="card" style="padding:16px 20px; margin-bottom:14px;" data-rec="${r.id}">
+          <div style="display:flex; gap:12px; justify-content:space-between; align-items:flex-start; flex-wrap:wrap;">
+            <div style="min-width:0;">
+              <div style="font-weight:600;">${esc(r.title)}</div>
+              <div class="meta">${esc(r.course.code)} — ${esc(r.course.title)} · ${esc(r.host)} · ${new Date(r.startedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} ${new Date(r.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${mins(r) ? ` · ${mins(r)} min` : ''}${r.size ? ` · ${mb(r.size)}` : ''}</div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-accent btn-sm" data-watch="${r.id}">▶ Watch</button>
+              <a class="btn btn-ghost btn-sm" href="${esc(r.recordingUrl)}" download="${esc((r.course.code + '-' + r.title).replace(/[^A-Za-z0-9._-]+/g, '-'))}.webm">⬇ Download</a>
+              ${isLect && r.mine ? `<button class="btn btn-ghost btn-sm" data-del-rec="${r.id}">Delete</button>` : ''}
+            </div>
+          </div>
+          <div class="rec-player" hidden></div>
+        </div>`).join('') || '<div class="card" style="padding:26px;"><p class="muted">No recordings yet. ' + (isLect ? 'Teach a class live from one of your courses and it is recorded here automatically.' : 'When a lecturer teaches a live class, the recording appears here.') + '</p></div>'}`;
+    const byId = Object.fromEntries(recordings.map((r) => [r.id, r]));
+    view.querySelectorAll('[data-watch]').forEach((btn) => btn.addEventListener('click', () => {
+      const box = btn.closest('[data-rec]').querySelector('.rec-player');
+      if (!box.hidden) { box.hidden = true; box.innerHTML = ''; btn.textContent = '▶ Watch'; return; }
+      box.hidden = false;
+      box.innerHTML = `<video controls autoplay playsinline preload="metadata" src="${esc(byId[btn.dataset.watch].recordingUrl)}" style="width:100%; max-height:70vh; margin-top:14px; border-radius:12px; background:#000;"></video>`;
+      btn.textContent = '✕ Close';
+    }));
+    view.querySelectorAll('[data-del-rec]').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm('Delete this recording for everyone? This cannot be undone.')) return;
+      try { await api(`/live/${btn.dataset.delRec}/recording`, { method: 'DELETE' }); toast('Recording deleted'); render(); } catch (err) { toast(err.message); }
+    }));
   }
 
   async function renderLiveClass() {
@@ -1902,13 +2059,7 @@
             <div class="card" style="padding:14px 16px; margin-bottom:10px;"><div id="live-hand-zone"></div></div>
           `}
           <div id="live-qa-feed"></div>
-          <div class="card live-chat">
-            <div class="chat-messages" id="live-chat-messages"></div>
-            <form class="chat-input-row" id="live-chat-form">
-              <input type="text" id="live-chat-input" placeholder="Message the class…">
-              <button class="btn btn-primary btn-sm" type="submit">Send</button>
-            </form>
-          </div>
+          <p class="muted" style="font-size:.82rem; padding:0 4px;">${isHost ? 'Everything is spoken: raise your voice, ask the class, and let a student speak. The class is recorded and saved for you and your students.' : 'This class is spoken, not typed: listen, raise your hand, and speak when the lecturer lets you in.'}</p>
         </div>
       </div>
     `;
@@ -1921,15 +2072,11 @@
       // before disconnecting -- that emit can race the disconnect and never reach
       // the server, leaving the class stuck "live" for students.
       if (isHost) {
-        const recordingBlob = await stopRecordingAndGetBlob();
-        try {
-          const { durationMin } = await api(`/live/${liveClassId}/end`, { method: 'POST' });
-          if (durationMin) toast(`Class ended — it lasted ${durationMin} minute${durationMin === 1 ? '' : 's'}.`);
-        } catch {}
-        // Uploading can take a while for a longer class -- fired without waiting so
-        // "End class" doesn't stall on it; the upload keeps running in the
-        // background after navigate() below since this is a same-page SPA route.
-        if (recordingBlob && recordingBlob.size > 0) uploadLiveRecording(liveClassId, recordingBlob);
+        // The recording has been going to the server in pieces all along; stop it, end the class, and
+        // let the last piece finish saving in the background while the lecturer moves on.
+        const rec = live.rec;
+        await stopClassRecording();
+        finishHostedClass(liveClassId, rec);
       }
       teardownLive();
       // The lecturer goes back to the course they were just teaching (to upload
@@ -1937,13 +2084,6 @@
       // dashboard, not the course page.
       if (isHost) navigate('course-detail', { courseId });
       else navigate('my-dashboard');
-    });
-    document.getElementById('live-chat-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const input = document.getElementById('live-chat-input');
-      if (!input.value.trim()) return;
-      live.socket.emit('chat:message', { liveClassId, text: input.value.trim() });
-      input.value = '';
     });
     if (isHost) {
       // The topic the lecturer types shows on every student's screen.
@@ -2250,16 +2390,6 @@
     if (live.speakPc) { live.speakPc.close(); live.speakPc = null; }
   }
 
-  function appendLiveChat(from, role, text) {
-    const box = document.getElementById('live-chat-messages');
-    if (!box) return;
-    const div = document.createElement('div');
-    div.className = 'chat-msg';
-    div.innerHTML = `<div class="sender">${esc(from)}${role !== 'STUDENT' ? ' · Lecturer' : ''}</div>${esc(text)}`;
-    box.appendChild(div);
-    box.scrollTop = box.scrollHeight;
-  }
-
   async function setupLiveSocket(isHost, liveClassId, courseId) {
     const socket = io('/live', { auth: (cb) => cb({ token: state.token }) });
     live.socket = socket;
@@ -2268,7 +2398,6 @@
       toast(err.message);
       if (err.code === 'SUBSCRIPTION_REQUIRED') { teardownLive(); renderUpgradePrompt(err.message); }
     });
-    socket.on('chat:message', ({ from, role, text }) => appendLiveChat(from, role, text));
     socket.on('live:ended', ({ durationMin } = {}) => {
       toast(durationMin ? `The live class has ended — it lasted ${durationMin} minute${durationMin === 1 ? '' : 's'}.` : 'The live class has ended.');
       teardownLive();
@@ -2361,13 +2490,11 @@
       // ends (see the leave-btn handler) so students can rewatch/download it from
       // their dashboard. Recording is best-effort: unsupported browsers just skip it
       // rather than blocking the live class itself.
-      live.recordedChunks = [];
       try {
-        live.recorder = new MediaRecorder(live.localStream, { mimeType: 'video/webm;codecs=vp8,opus' });
-        live.recorder.ondataavailable = (e) => { if (e.data.size) live.recordedChunks.push(e.data); };
-        live.recorder.start();
+        startClassRecording(liveClassId);
       } catch {
         live.recorder = null;
+        toast('This browser cannot record the class. Use Chrome, Edge or Firefox to have it saved.');
       }
 
       // A connected student gets no tile and no standing invite control -- students
@@ -2417,6 +2544,7 @@
           // relaying only to the OTHER students (below) and never playing it back
           // for the host themselves left the lecturer unable to hear anyone at all.
           playRelayedAudio(studentSocketId, e.streams[0]);
+          addToRecordingMix(e.streams[0]);
           live.peers.forEach((_listenerMainPc, listenerId) => {
             if (listenerId === studentSocketId) return;
             relaySpeakerToListener(studentSocketId, listenerId, audioTrack, e.streams[0]);
@@ -2633,9 +2761,10 @@
           <div><div class="meta">Position held</div><div>${esc(data.classPosition || '—')}</div></div>
           <div><div class="meta">Account status</div><div>${statusPillHtml(data.status)}</div></div>
           <div><div class="meta">Year admitted</div><div class="tabular">${data.yearOfAdmission || '—'}</div></div>
-          <div><div class="meta">Expected graduation year</div><div class="tabular">${data.expectedGraduationYear || '—'} <span class="muted" style="font-size:0.75rem;">(${data.programmeYears ? `${data.programmeYears}-year programme` : '4-year programme assumed'})</span></div></div>
+          <div><div class="meta">Expected graduation year</div><div class="tabular">${data.expectedGraduationYear || '—'} <span class="muted" style="font-size:0.75rem;">(${data.programmeYears ? `${data.programmeYears}-year programme` : '3-year programme assumed'})</span></div></div>
           <div><div class="meta">CGPA</div><div class="tabular" style="font-weight:600;">${data.cgpa != null ? data.cgpa : '—'}</div></div>
           <div><div class="meta">Disciplinary issues</div><div>${data.disciplinaryIssueCount}</div></div>
+          ${data.accessCode ? `<div><div class="meta">Access code</div><div class="tabular" style="letter-spacing:.12em; font-weight:700;">${esc(data.accessCode)} <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(data.accessCode)}">Copy</button></div></div>` : ''}
         </div>
       </div>
 
@@ -2650,7 +2779,8 @@
         <h3 style="margin-bottom:12px; font-size:1rem;">Update academic details</h3>
         <form id="academic-details-form" class="card" style="padding:20px; margin-bottom:26px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
           <div class="field" style="margin-bottom:0;"><label>Year admitted</label><input type="number" id="academic-year" value="${data.yearOfAdmission || ''}" placeholder="e.g. 2024" style="width:140px;"></div>
-          <div class="field" style="margin-bottom:0;"><label>Programme length (years)</label><input type="number" min="1" max="8" id="academic-programme" value="${data.programmeYears || ''}" placeholder="e.g. 4" style="width:140px;"></div>
+          <div class="field" style="margin-bottom:0;"><label>Programme length (years)</label><input type="number" min="1" max="8" id="academic-programme" value="${data.programmeYears || ''}" placeholder="e.g. 3" style="width:140px;"></div>
+          <div class="field" style="margin-bottom:0;"><label>CGPA (0 to 5)</label><input type="number" min="0" max="5" step="0.01" id="academic-cgpa" value="${data.cgpaEntered && data.cgpa != null ? data.cgpa : ''}" placeholder="e.g. 3.75" style="width:130px;"></div>
           <div class="field" style="margin-bottom:0;"><label>Position held</label><input type="text" id="academic-position" value="${esc(data.classPosition || '')}" placeholder="e.g. Class Governor" style="width:200px;"></div>
           <button class="btn btn-primary btn-sm" type="submit">Save</button>
         </form>
@@ -2696,6 +2826,7 @@
             yearOfAdmission: document.getElementById('academic-year').value,
             programmeYears: document.getElementById('academic-programme').value,
             classPosition: document.getElementById('academic-position').value,
+            cgpa: document.getElementById('academic-cgpa').value,
           },
         });
         toast('Saved');
@@ -2878,7 +3009,7 @@
       <div class="card" id="dash-profile-card" style="padding:20px; margin-bottom:22px; cursor:pointer;">
         <div style="display:flex; align-items:center; gap:16px;">
           ${selfAvatarHtml('avatar-staff-dash')}
-          <div>${profileLines().map((l, i) => i === 0 ? `<div style="font-weight:700;">${l}</div>` : `<div class="meta">${l}</div>`).join('')}${u.position ? `<div class="meta">${esc(u.position)}</div>` : ''}</div>
+          ${greetingBlock(u.position)}
         </div>
       </div>
       <div class="grid-cards">
@@ -2895,7 +3026,7 @@
     if (state.user.role === 'ADMIN' || state.user.role === 'STAFF') return renderPlainDigitalId();
     if (state.user.role === 'LECTURER') return renderLecturerDigitalId();
     if (state.user.isIndividual) return renderIndividualDigitalId();
-    const [{ courses }, { results }, { results: formalResults }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }] = await Promise.all([
+    const [{ courses }, { results }, { results: formalResults }, { active, subscription }, { request: transcriptReq }, { request: clearanceReq }, { application: hostelApp }, { credentials }, record] = await Promise.all([
       api('/students/me/courses'),
       api('/students/me/results'),
       api('/students/me/formal-results'),
@@ -2904,12 +3035,16 @@
       api('/students/me/clearance-request'),
       api('/students/me/hostel-application'),
       api('/students/me/credentials'),
+      api('/students/me/academic-record'),
     ]);
     const u = state.user;
 
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
       <div id="lzx-id-host"></div>
+
+      <h3 style="margin:22px 0 12px; font-size:1rem;">My profile</h3>
+      ${studentDetailsCard(record, { own: true })}
 
       <h3 style="margin-bottom:12px; font-size:1rem;">Digital credentials</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
@@ -3429,7 +3564,7 @@
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-student-dash')}
-        <div>${profileLines().map((l) => `<div>${l}</div>`).join('')}</div>
+        ${greetingBlock()}
       </div>
       <div class="grid-cards" style="margin-bottom:26px;">
         ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
@@ -5061,16 +5196,9 @@
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:600;">Teach this course live</div>
-          <div class="meta">Students with an active subscription can join and watch in real time.</div>
+          <div class="meta">Students of this class join by one tap and listen. Everything is spoken, and the class is recorded for you and them to watch again.</div>
         </div>
-        <button class="btn btn-accent" id="go-live-btn">🔴 Go live</button>
-      </div>
-      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div>
-          <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
-          <div class="meta">Add curated practicals, or review AI-drafted ones students have requested.</div>
-        </div>
-        <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-ghost" id="class-recordings-btn">🎞 Class recordings</button><button class="btn btn-accent" id="go-live-btn">🔴 Go live</button></div>
       </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
@@ -5092,7 +5220,7 @@
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
-    document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
+    document.getElementById('class-recordings-btn').addEventListener('click', () => navigate('class-recordings'));
     document.getElementById('go-live-btn').addEventListener('click', async () => {
       const title = prompt('Title your live class:', `${course.code} live session`);
       if (!title || !title.trim()) return;
@@ -5241,11 +5369,7 @@
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-lect-dash')}
-        <div>
-          <div>${esc(u.fullName)} · Lecturer</div>
-          <div>${state.school ? [state.school.name, state.school.state].filter(Boolean).map(esc).join(', ') : ''}</div>
-          <div>${[department && department.name, u.staffId].filter(Boolean).map(esc).join(' · ')}</div>
-        </div>
+        ${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}
       </div>
       <div class="grid-cards" style="margin-bottom:26px;">
         <div class="card course-card" data-jump-nav="lect-courses" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
@@ -5358,6 +5482,7 @@
   async function renderLecturerStudentsHub() {
     const { courses } = await ensureLectCourses();
     const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
+    const { students: allStudents } = await api('/lect/students').catch(() => ({ students: [] }));
     view.innerHTML = `
       <div class="page-head"><h1>My Students</h1><button class="btn btn-accent btn-sm" id="new-student-btn">+ Add a new student</button></div>
       <p class="muted" style="margin-bottom:18px;">Pick a class to see its students. Only lecturers add students: you add them to your department and classes, give each one their access code, and they sign in with it.</p>
@@ -5370,7 +5495,16 @@
           </div>
         `).join('') || '<p class="muted">You don\'t have any classes yet. Add a course under <strong>My Courses</strong> and it will appear here, or ask your school admin to assign you to one.</p>'}
       </div>
+      <h3 style="margin:26px 0 10px; font-size:1rem;">All my students (${allStudents.length})</h3>
+      <div class="card">
+        ${allStudents.map((s) => `
+          <div class="list-row clickable" data-open-any="${s.id}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${esc(s.matricNumber || '—')}${s.yearOfStudy ? ' · ' + s.yearOfStudy * 100 + 'L' : ''} · ${s.classes.length ? esc(s.classes.join(', ')) : '<b>not in a class yet</b>'}</div></div>
+            ${statusPillHtml(s.status)}
+          </div>`).join('') || '<p class="muted" style="padding:16px;">No students yet. Add one above: they appear here straight away, whichever class they are in.</p>'}
+      </div>
     `;
+    view.querySelectorAll('[data-open-any]').forEach((row) => row.addEventListener('click', () => navigate('lect-student-detail', { studentId: row.dataset.openAny })));
     view.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-class-roster', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
     });
@@ -5456,8 +5590,8 @@
     search();
   }
 
-  // A lecturer adds a brand-new student to their department and classes. The student gets an
-  // access code, shown here once, which the lecturer passes on; they sign in with it.
+  // A lecturer adds a brand-new student to their department and classes. The student gets a
+  // permanent access code, which the lecturer passes on; they sign in with it.
   async function openNewStudentDialog(courseId) {
     let opts;
     try { opts = await api('/lect/add-student-options'); } catch (err) { toast(err.message); return; }
@@ -5470,13 +5604,18 @@
     const levels = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n * 100}L</option>`).join('');
     box.innerHTML = `
       <h3 style="margin-bottom:6px;">Add a new student</h3>
-      <p class="muted" style="font-size:13px; margin-bottom:14px;">They join your department and the classes you tick. You'll get their access code to give them.</p>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">They join your department and the classes you tick. Their access code is made for them now and stays the same: you and the student can see it any time in their details.</p>
       <form id="ns-form">
         <div class="field"><label>Full name</label><input id="ns-name" required></div>
         <div class="field"><label>Matric number</label><input id="ns-matric" required></div>
         <div class="field"><label>Department</label><select id="ns-dept">${opts.departments.map((d) => `<option value="${d.id}" ${d.mine ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></div>
         <div class="field"><label>Level</label><select id="ns-level" required><option value="">Select…</option>${levels}</select></div>
-        <div class="field"><label>Your classes</label>${opts.courses.map((c) => `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:4px 0;"><input type="checkbox" value="${c.id}" ${c.id === courseId ? 'checked' : ''} style="width:auto;"> ${esc(c.code)} — ${esc(c.title)}</label>`).join('') || '<p class="muted" style="font-size:13px;">You have no classes yet; the student will join your department only.</p>'}</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <div class="field" style="flex:1; min-width:150px;"><label>Year admitted</label><input id="ns-year" type="number" min="1980" max="${new Date().getFullYear() + 1}" value="${new Date().getFullYear()}" required></div>
+          <div class="field" style="flex:1; min-width:170px;"><label>Programme length</label><select id="ns-length"><option value="1">1 year</option><option value="2">2 years</option><option value="3">3 years</option><option value="4" selected>4 years</option><option value="5">5 years</option><option value="6">6 years</option><option value="7">7 years</option></select></div>
+        </div>
+        <p class="muted" style="font-size:12px; margin:-4px 0 12px;">The expected graduation year is worked out from these two.</p>
+        <div class="field"><label>Your classes</label>${opts.courses.map((c) => `<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin:4px 0;"><input type="checkbox" value="${c.id}" ${c.id === courseId || opts.courses.length === 1 ? 'checked' : ''} style="width:auto;"> ${esc(c.code)} — ${esc(c.title)}</label>`).join('') || '<p class="muted" style="font-size:13px;">You have no classes yet; the student will join your department only.</p>'}</div>
         <div class="field"><label>Phone number (optional)</label><input id="ns-phone" type="tel"></div>
         <div class="field"><label>Email (optional)</label><input id="ns-email" type="email"></div>
         <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Add student</button><button class="btn btn-ghost" type="button" id="ns-cancel">Cancel</button></div>
@@ -5499,7 +5638,7 @@
         } });
         box.innerHTML = `
           <h3 style="margin-bottom:8px;">${esc(r.user.fullName)} has been added</h3>
-          <p class="muted" style="margin-bottom:12px;">Give them this access code. They sign in to Learnza for Schools with their full name, your school's name and this code.</p>
+          <p class="muted" style="margin-bottom:12px;">Give them this access code. They sign in to Learnza for Schools with their full name, your school's name and this code. It is permanent: it is also kept in their details, which the student, you and the school admin can see at any time.</p>
           <div class="code tabular" style="font-size:1.6rem; letter-spacing:.12em; margin-bottom:16px;">${esc(r.accessCode)}</div>
           <div style="display:flex; gap:10px;"><button class="btn btn-ghost" id="ns-copy">Copy code</button><button class="btn btn-primary" id="ns-done">Done</button></div>`;
         box.querySelector('#ns-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(r.accessCode); toast('Copied'); } catch { toast(r.accessCode); } });
@@ -5508,28 +5647,46 @@
     });
   }
 
+  // Everything on record about a student, shown the same way to the student and to the lecturer:
+  // what the lecturer entered when registering them, and what the school admin added since.
+  function studentDetailsCard(d, opts = {}) {
+    const row = (k, v, extra) => `<div><div class="meta">${esc(k)}</div><div class="tabular"${extra || ''}>${v}</div></div>`;
+    return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
+      ${row('Matric No.', esc(d.matricNumber || '—'))}
+      ${row('Department', esc(d.department || '—'))}
+      ${row('Level', esc(d.level || '—'))}
+      ${row('Status', statusPillHtml(d.status))}
+      ${row('Email', esc(shownEmail(d.email) || '—'))}
+      ${row('Phone', esc(d.phone || '—'))}
+      ${row('Year admitted', d.yearOfAdmission || '—')}
+      ${row('Expected graduation', d.expectedGraduationYear ? `${d.expectedGraduationYear} <span class="muted" style="font-size:.75rem;">(${d.programmeYears || 4}-year programme)</span>` : '—')}
+      ${row('CGPA', d.cgpa != null ? `${d.cgpa}${d.cgpaEntered ? '' : ' <span class="muted" style="font-size:.75rem;">(from published grades)</span>'}` : '—')}
+      ${row('Position held', esc(d.classPosition || '—'))}
+      ${d.accessCode ? row('Access code', `<span style="letter-spacing:.12em; font-weight:700;">${esc(d.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(d.accessCode)}">Copy</button><div class="muted" style="font-size:.74rem; font-weight:400; margin-top:2px;">${opts.own ? 'You sign in with your full name and this code. It does not change.' : 'The student signs in with their full name and this code. It does not change.'}</div>`) : ''}
+    </div></div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-copy-code]');
+    if (!b) return;
+    const code = b.dataset.copyCode;
+    (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => toast('Access code copied'), () => toast(code));
+  });
+
   // Comprehensive detail for one student in the lecturer's class -- reuses the exact
   // same computation as the student/admin Academic Record screens.
   async function renderLecturerStudentDetail() {
     const { studentId, courseId, courseTitle, courseCode } = state.view;
     const data = await api(`/lect/students/${studentId}`);
     view.innerHTML = `
-      <div class="page-head"><h1>${esc(data.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to class</button></div>
+      <div class="page-head"><h1>${esc(data.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">${courseId ? "← Back to class" : "← Back to My Students"}</button></div>
       <div id="lzx-id-host" style="margin-bottom:6px;"></div>
-      <div class="card" style="padding:24px; max-width:640px; margin-bottom:22px;">
-        <div class="id-grid">
-          <div><div class="meta">Matric No.</div><div class="tabular">${esc(data.matricNumber || '—')}</div></div>
-          <div><div class="meta">Department</div><div>${esc(data.department || '—')}</div></div>
-          <div><div class="meta">Level</div><div>${esc(data.level || '—')}</div></div>
-          <div><div class="meta">Status</div><div>${statusPillHtml(data.status)}</div></div>
-          <div><div class="meta">Email</div><div>${esc(shownEmail(data.email))}</div></div>
-          <div><div class="meta">Phone</div><div>${esc(data.phone || '—')}</div></div>
-          <div><div class="meta">Year admitted</div><div>${data.yearOfAdmission || '—'}</div></div>
-          <div><div class="meta">Expected graduation</div><div>${data.expectedGraduationYear || '—'}</div></div>
-          <div><div class="meta">CGPA</div><div>${data.cgpa ?? '—'}</div></div>
-          <div><div class="meta">Class position</div><div>${esc(data.classPosition || '—')}</div></div>
-        </div>
-      </div>
+      ${studentDetailsCard(data)}
+      <form id="lect-student-edit" class="card" style="padding:18px 22px; max-width:680px; margin-bottom:22px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="field" style="margin:0;"><label>Year admitted</label><input type="number" id="le-year" min="1980" max="${new Date().getFullYear() + 1}" value="${data.yearOfAdmission || ''}" placeholder="e.g. ${new Date().getFullYear()}" style="width:130px;"></div>
+        <div class="field" style="margin:0;"><label>Programme length</label><select id="le-length" style="width:190px;">${[1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}" ${(data.programmeYears || 4) === n ? 'selected' : ''}>${n} year${n === 1 ? '' : 's'}</option>`).join('')}</select></div>
+        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+        <div class="muted" style="font-size:.78rem; flex-basis:100%;">The CGPA is entered by the school admin.</div>
+      </form>
       <div class="grid-cards" style="margin-bottom:22px;">
         <div class="card course-card"><div class="code">${data.exams.done}/${data.exams.total}</div><div class="meta">Exams done</div></div>
         <div class="card course-card"><div class="code">${data.tests.done}/${data.tests.total}</div><div class="meta">Tests done</div></div>
@@ -5548,7 +5705,15 @@
       school: state.school, department: { name: data.department }, api, esc, toast,
       photoPath: `/lect/students/${data.id}/photo`,
     });
-    document.getElementById('back-btn').addEventListener('click', () => navigate('lect-class-roster', { courseId, courseTitle, courseCode }));
+    document.getElementById('back-btn').addEventListener('click', () => (courseId ? navigate('lect-class-roster', { courseId, courseTitle, courseCode }) : navigate('lect-students')));
+    document.getElementById('lect-student-edit').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/lect/students/${data.id}`, { method: 'PATCH', body: { fullName: data.fullName, matricNumber: data.matricNumber, yearOfAdmission: document.getElementById('le-year').value, programmeYears: document.getElementById('le-length').value } });
+        toast('Saved');
+        render();
+      } catch (err) { toast(err.message); }
+    });
   }
 
   // Attendance stays a per-class, per-day marking workflow (unchanged) -- this hub is
@@ -6446,7 +6611,12 @@
         { key: 'matricNumber', label: 'Matric number', required: true },
         { key: 'departmentId', label: 'Department', type: 'department', required: true },
         { key: 'yearOfStudy', label: 'Level', type: 'year', required: true },
+        { key: 'yearOfAdmission', label: 'Year admitted', type: 'number', attrs: 'min="1980" max="2100" placeholder="e.g. 2025"' },
+        { key: 'programmeYears', label: 'Programme length (years)', type: 'number', attrs: 'min="1" max="8" placeholder="4 for a degree"' },
+        { key: 'cgpa', label: 'CGPA (0 to 5)', type: 'number', attrs: 'min="0" max="5" step="0.01" placeholder="e.g. 3.75"' },
+        { key: 'classPosition', label: 'Position held', attrs: 'placeholder="e.g. Class Governor"' },
         { key: 'courseIds', label: 'Course(s)', type: 'courses' },
+        { key: 'email', label: 'Email', type: 'email' },
         { key: 'phone', label: 'Phone number', type: 'tel' },
       ],
     },
@@ -6508,20 +6678,19 @@
 
   async function renderAdminDashboard() {
     const u = state.user;
-    const [{ school }, { students }, { lecturers }, { staff }] = await Promise.all([
+    const [{ school }, { students }, { lecturers }, { staff }, { admins }, { courses }] = await Promise.all([
       api('/admin/school'),
       api('/admin/students'),
       api('/admin/lecturers'),
       api('/admin/non-academic-staff'),
+      api('/admin/admins').catch(() => ({ admins: [] })),
+      api('/admin/courses').catch(() => ({ courses: [] })),
     ]);
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px;">
         ${selfAvatarHtml('avatar-admin-dash')}
-        <div>
-          <div>${esc(u.fullName)} · Admin</div>
-          <div>${[school.name, school.state].filter(Boolean).map(esc).join(', ')}</div>
-        </div>
+        ${greetingBlock()}
       </div>
       <div class="card" style="padding:16px 20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.4rem; letter-spacing:3px; font-weight:700;">${esc(school.joinCode || '—')}</div></div>
@@ -6531,6 +6700,41 @@
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${students.length}</div><div class="meta">Students</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
+        <div class="card course-card" data-jump-nav="admin-academics" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
+        <div class="card course-card" data-jump-nav="admin-management" style="cursor:pointer;"><div class="code">${admins.length}</div><div class="meta">School admins</div></div>
+      </div>
+
+      <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
+      <div class="grid-cards" style="margin-bottom:26px;">
+        ${[
+          ['admin-directory', '👥', 'Staff & Student Directory'],
+          ['admin-academics', '📚', 'Departments & Courses'],
+          ['admin-results', '📊', 'Results'],
+          ['admin-announce', '📣', 'Announce'],
+          ['admin-bulk-message', '✉️', 'Bulk SMS / Email'],
+          ['admin-fees', '💰', 'Fee Payment'],
+          ['admin-elections', '🗳️', 'Elections'],
+          ['admin-hostel-allocations', '🏠', 'Hostels'],
+          ['admin-student-requests', '📨', 'Student Requests'],
+          ['admin-staff-records', '🗂️', 'Staff Records'],
+          ['digital-id', '🪪', 'Digital ID'],
+          ['admin-management', '🛡️', 'Admin Management'],
+        ].map(([screen, icon, label]) => `<button class="card course-card" data-jump-nav="${screen}" style="text-align:left; cursor:pointer;"><div class="code">${icon}</div><div class="meta">${label}</div></button>`).join('')}
+      </div>
+
+      <div class="page-head" style="margin-bottom:12px;">
+        <h3 style="font-size:1rem;">School admins</h3>
+        <button class="btn btn-accent btn-sm" data-jump-nav="admin-management">Manage admins</button>
+      </div>
+      <div class="card" style="margin-bottom:26px;">
+        ${admins.map((a) => `
+          <div class="list-row">
+            <div>
+              <div style="font-weight:600;">${esc(a.fullName)} ${a.id === u.id ? '<span class="pill pill-muted" style="margin-left:6px;">You</span>' : ''}</div>
+              <div class="meta">${esc(a.email || '')}${a.phone ? ` · ${esc(a.phone)}` : ''}</div>
+            </div>
+            ${statusPillHtml(a.status)}
+          </div>`).join('') || '<p class="muted" style="padding:16px;">No admins yet.</p>'}
       </div>
     `;
     wireSelfAvatarUpload('avatar-admin-dash');
@@ -6738,7 +6942,12 @@
           <div><div class="meta">Status</div><div>${statusPillHtml(u.status)}</div></div>
           <div><div class="meta">Email</div><div>${esc(shownEmail(u.email))}</div></div>
           <div><div class="meta">Phone</div><div>${esc(u.phone || '—')}</div></div>
-          <div><div class="meta">Access code</div><div class="tabular">${esc(u.accessCode || '—')}</div></div>
+          ${state.view.directoryType === 'STUDENT' ? `
+            <div><div class="meta">Year admitted</div><div class="tabular">${u.yearOfAdmission || '—'}</div></div>
+            <div><div class="meta">Expected graduation</div><div class="tabular">${u.yearOfAdmission ? u.yearOfAdmission + (u.programmeYears || 4) : '—'}${u.programmeYears ? ` <span class="muted" style="font-size:.75rem;">(${u.programmeYears}-year programme)</span>` : ''}</div></div>
+            <div><div class="meta">CGPA</div><div class="tabular">${u.cgpa != null ? u.cgpa : '— <span class="muted" style="font-size:.75rem;">(press Edit to enter it)</span>'}</div></div>
+            <div><div class="meta">Position held</div><div>${esc(u.classPosition || '—')}</div></div>` : ''}
+          <div><div class="meta">Access code</div><div class="tabular" style="letter-spacing:.1em; font-weight:700;">${esc(u.accessCode || '—')} ${u.accessCode ? `<button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(u.accessCode)}">Copy</button>` : ''}</div><div class="muted" style="font-size:.74rem;">Permanent: the person signs in with their full name and this code.</div></div>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:16px;">
           <button class="btn btn-accent btn-sm" id="edit-btn">✏️ Edit</button>
@@ -6790,7 +6999,7 @@
         if (f.type === 'courses') {
           return await coursePickerHtml(`edit-${f.key}`, f.label, (u.courses || []).map((c) => c.id));
         }
-        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="edit-${f.key}" value="${esc(f.key === 'email' ? shownEmail(u.email) : (u[f.key] || ''))}" ${f.required ? 'required' : ''}></div>`;
+        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" ${f.attrs || ''} id="edit-${f.key}" value="${esc(f.key === 'email' ? shownEmail(u.email) : (u[f.key] == null ? '' : u[f.key]))}" ${f.required ? 'required' : ''}></div>`;
       }));
       box.innerHTML = `<form id="edit-form" class="card" style="padding:20px; margin-top:6px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">Save changes</button></form>`;
       box.hidden = false;

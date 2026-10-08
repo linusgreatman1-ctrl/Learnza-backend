@@ -237,9 +237,11 @@ async function computeAcademicRecord(student) {
   });
 
   const gradedResults = results.filter((r) => r.grade && GRADE_POINTS[r.grade.toUpperCase()] != null);
-  const cgpa = gradedResults.length
+  const computedCgpa = gradedResults.length
     ? Number((gradedResults.reduce((sum, r) => sum + GRADE_POINTS[r.grade.toUpperCase()], 0) / gradedResults.length).toFixed(2))
     : null;
+  // The campus admin's own figure wins; otherwise the average of the published grades.
+  const cgpa = student.cgpa != null ? student.cgpa : computedCgpa;
 
   return {
     id: student.id,
@@ -250,6 +252,7 @@ async function computeAcademicRecord(student) {
     email: student.email,
     phone: student.phone,
     matricNumber: student.matricNumber,
+    accessCode: student.accessCode,
     status: student.status,
     department: student.department ? student.department.name : null,
     level: student.yearOfStudy ? `${student.yearOfStudy * 100}L` : null,
@@ -258,6 +261,7 @@ async function computeAcademicRecord(student) {
     programmeYears: student.programmeYears,
     expectedGraduationYear: student.yearOfAdmission ? student.yearOfAdmission + (student.programmeYears || DEFAULT_PROGRAMME_YEARS) : null,
     cgpa,
+    cgpaEntered: student.cgpa != null,
     exams: countDoneMissed(exams, submittedAssessmentIds),
     tests: countDoneMissed(tests, submittedAssessmentIds),
     assignments: countDoneMissed(assignments, submittedAssignmentIds),
@@ -297,7 +301,8 @@ router.post('/admin/disciplinary-records/:id/resolve', requireAuth, requireRole(
 });
 
 router.post('/admin/students/:id/academic-details', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const { yearOfAdmission, classPosition, programmeYears } = req.body;
+  const { yearOfAdmission, classPosition, programmeYears, cgpa } = req.body;
+  if (cgpa !== undefined && cgpa !== '' && cgpa !== null && !(Number(cgpa) >= 0 && Number(cgpa) <= 5)) return res.status(400).json({ error: 'CGPA must be a number from 0 to 5.' });
   const student = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role: 'STUDENT' } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
   const updated = await prisma.user.update({
@@ -306,6 +311,7 @@ router.post('/admin/students/:id/academic-details', requireAuth, requireRole('AD
       yearOfAdmission: yearOfAdmission ? parseInt(yearOfAdmission, 10) : student.yearOfAdmission,
       programmeYears: programmeYears ? parseInt(programmeYears, 10) : student.programmeYears,
       classPosition: classPosition !== undefined ? (classPosition || null) : student.classPosition,
+      ...(cgpa !== undefined ? { cgpa: cgpa === '' || cgpa === null ? null : Number(Number(cgpa).toFixed(2)) } : {}),
     },
   });
   res.json({ student: updated });

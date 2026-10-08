@@ -92,3 +92,38 @@ select.lg-input { appearance: none; cursor: pointer; background-image: linear-gr
   .lg-hero { padding-top: 90px; }
   .lg-word { font-size: 60px; }
 }
+
+/* ---- Desktop: sized like PassNow's sign-in screens (a narrow column, smaller type) ---- */
+@media (min-width: 900px) {
+  #auth-screen .lg-inner { max-width: 360px; padding: 0 18px; }
+  .lg-hero { padding: 40px 24px 10px; }
+  .lg-logo { width: 64px; height: 64px; border-radius: 19px; font-size: 34px; margin-bottom: 12px; }
+  .lg-word { font-size: 38px; letter-spacing: -1.2px; }
+  .lg-tag { font-size: 11.5px; letter-spacing: 1.6px; margin-top: 7px; }
+  .lg-pill { margin-top: 16px; padding: 5px 13px; font-size: 11px; }
+  .lg-actions { max-width: 360px; padding: 0 20px 28px; gap: 9px; }
+  .lg-btn { padding: 13px; font-size: 14.5px; border-radius: 12px; }
+  .lg-title { font-size: 21px; }
+  .lg-sub { font-size: 13px; margin-bottom: 18px; }
+  .lg-card { padding: 14px; gap: 12px; border-radius: 16px; margin-bottom: 9px; }
+  .lg-card-icon { width: 42px; height: 42px; border-radius: 13px; font-size: 21px; }
+  .lg-card-name { font-size: 15px; margin-bottom: 2px; }
+  .lg-card-desc { font-size: 12px; }
+  .lg-foot { font-size: 11px; }
+  .lg-light { background: #eef1f6; }
+  .lg-light .lg-bar, .lg-light .lg-head { width: 100%; max-width: 400px; margin-left: auto; margin-right: auto; }
+  .lg-light .lg-form { width: 100%; max-width: 400px; background: #fff; flex: 1; padding: 16px 22px 30px; }
+  .lg-bar { padding: 10px 0; }
+  .lg-bar-title { font-size: 15px; }
+  .lg-back { width: 34px; height: 34px; border-radius: 10px; font-size: 16px; }
+  .lg-head { padding: 14px 0 20px; }
+  .lg-head-icon { width: 50px; height: 50px; border-radius: 16px; font-size: 25px; margin: 6px auto 10px; }
+  .lg-head h2 { font-size: 19px; }
+  .lg-head p { font-size: 12.5px; }
+  .lg-info { font-size: 12px; padding: 10px 12px; margin-bottom: 12px; }
+  .lg-fg { margin-bottom: 11px; }
+  .lg-label { font-size: 11px; margin-bottom: 4px; }
+  .lg-input { padding: 10px 13px; font-size: 14px; border-radius: 11px; }
+  .lg-check span, .lg-forgot, .lg-switch { font-size: 12.5px; }
+  .lg-note { font-size: 11.5px; }
+}

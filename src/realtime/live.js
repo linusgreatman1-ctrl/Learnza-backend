@@ -260,11 +260,6 @@ function attachLiveNamespace(io) {
       nsp.to(`live:${liveClassId}`).emit('live:speaker-stopped', { studentSocketId });
     });
 
-    socket.on('chat:message', ({ liveClassId, text }) => {
-      if (!text || !text.trim() || socket.liveClassId !== liveClassId) return;
-      nsp.to(`live:${liveClassId}`).emit('chat:message', { from: socket.user.fullName, role: socket.user.role, text: text.trim() });
-    });
-
     socket.on('teacher:end', async ({ liveClassId }) => {
       if (teacherSocketByLiveClass.get(liveClassId) !== socket.id) return; // only the registered host may end it
       await endLiveClass(liveClassId);

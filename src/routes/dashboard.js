@@ -70,7 +70,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
     // route for why this lives on LiveClass rather than as a Lesson).
     courseIds.length
       ? prisma.liveClass.findMany({
-          where: { courseId: { in: courseIds }, recordingUrl: { not: null } },
+          where: { courseId: { in: courseIds }, recordingUrl: { not: null }, status: 'ENDED' },
           include: { course: { select: { code: true } }, host: { select: { fullName: true } } },
           orderBy: { endedAt: 'desc' },
           take: 20,

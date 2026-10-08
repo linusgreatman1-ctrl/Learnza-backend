@@ -88,6 +88,7 @@ model User {
   loginAttempts      Int       @default(0) // consecutive failed password logins -- reset on success
   lockedUntil        DateTime? // set after 5 failed password logins; blocks password login until it passes
   yearOfAdmission    Int?      // school students: the year they were admitted, for admission-status/graduation-year calculations
+  cgpa               Float?    // entered by the campus admin; when empty the portal shows the average of the published grades
   classPosition      String?   // e.g. "Class Governor", "Course Representative" -- admin-assigned
   status         String    @default("ACTIVE") // ACTIVE | SUSPENDED | DISMISSED (lecturer) | EXPELLED (student)
   department     Department? @relation(fields: [departmentId], references: [id])
