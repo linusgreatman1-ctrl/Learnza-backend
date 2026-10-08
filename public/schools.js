@@ -1136,8 +1136,8 @@
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await api(`/courses/${btn.dataset.enroll}/enroll`, { method: 'POST' });
-        toast('Enrolled! Opening course…');
-        navigate('course-detail', { courseId: btn.dataset.enroll });
+        toast('Enrolled. Open the course, and start the AI Lecturer class, whenever you are ready.');
+        renderStudentCourses();
       });
     });
     view.querySelectorAll('[data-unenroll]').forEach((btn) => {
@@ -1364,7 +1364,7 @@
     });
   }
 
-  // ================= AI TEACHER (live interactive session) =================
+  // ================= AI LECTURER (live interactive session) =================
 
   function speak(text, avatarEl, onDone) {
     if (!window.speechSynthesis) { if (onDone) onDone(); return; }
@@ -1671,7 +1671,7 @@
         </div>
 
         <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the teacher to start…</div></div>
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the AI Lecturer to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -4084,7 +4084,7 @@
         </div>
 
         <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the teacher to start…</div></div>
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the AI Lecturer to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -4320,14 +4320,14 @@
     ]);
     view.innerHTML = `
       <div class="page-head"><h1>Digital Lab</h1></div>
-      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI teacher and a smart board — pick a course to see what's available.</p>
+      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI Lecturer and a smart board — pick a course to see what's available.</p>
       ${rows.map(({ course, isIndividual, demonstrations }) => `
         <div style="margin-bottom:22px;">
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
-          ${isIndividual ? `
+          ${true ? `
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
               <input type="text" class="gen-demo-topic" data-gen-course="${course.id}" placeholder="e.g. Titration of acid and base" style="flex:1; min-width:220px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
-              <button class="btn btn-accent btn-sm request-demo-btn" data-gen-course="${course.id}">Generate practical</button>
+              <button class="btn btn-accent btn-sm request-demo-btn" data-gen-course="${course.id}" data-gen-individual="${isIndividual}">Generate practical</button>
             </div>
           ` : ''}
           ${demonstrations.map((d) => demoCardHtml(d, { courseId: course.id, isIndividual })).join('') || '<p class="muted" style="padding:8px 0;">No practicals published yet.</p>'}
@@ -4347,7 +4347,7 @@
         btn.disabled = true;
         btn.textContent = 'Generating…';
         try {
-          await api(`/individual-courses/${courseId}/lab/generate`, { method: 'POST', body: { topic } });
+          await api(btn.dataset.genIndividual === 'true' ? `/individual-courses/${courseId}/lab/generate` : `/courses/${courseId}/lab/generate`, { method: 'POST', body: { topic } });
           toast('Practical ready');
           render();
         } catch (err) {
@@ -5205,7 +5205,7 @@
       <h3 style="margin-bottom:14px;">Add a course</h3>
       <p class="muted" style="font-size:13px; margin-bottom:14px;">Department: ${department ? esc(department.name) : '—'}</p>
       <div class="field"><label>Course code</label><input type="text" id="ac-code" placeholder="e.g. CSC 201" required></div>
-      <div class="field"><label>Course title</label><input type="text" id="ac-title" placeholder="e.g. Data Structures" required></div>
+      <div class="field"><label>Course Title</label><input type="text" id="ac-title" placeholder="e.g. Data Structures" required></div>
       <div class="field"><label>Level</label><select id="ac-level"><option>100L</option><option>200L</option><option>300L</option><option>400L</option><option>500L</option><option>600L</option></select></div>
       <div class="field"><label>Semester</label><select id="ac-semester"><option>First</option><option>Second</option></select></div>
       <div style="display:flex; gap:10px; margin-top:10px;">
@@ -5256,6 +5256,13 @@
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-ghost" id="class-recordings-btn">🎞 Class recordings</button><button class="btn btn-accent" id="go-live-btn">🔴 Go live</button></div>
       </div>
+      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
+          <div class="meta">Add curated practicals for this course. Students can also ask the AI Lecturer to draft one.</div>
+        </div>
+        <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
+      </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
         <form id="lesson-form">
@@ -5277,6 +5284,7 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
     document.getElementById('class-recordings-btn').addEventListener('click', () => navigate('class-recordings'));
+    document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
     document.getElementById('go-live-btn').addEventListener('click', async () => {
       const title = prompt('Title your live class:', `${course.code} live session`);
       if (!title || !title.trim()) return;
@@ -7122,7 +7130,7 @@
           <form id="course-form">
             <div class="field"><label>Department</label><select id="course-dept">${departments.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select></div>
             <div class="field"><label>Code</label><input type="text" id="course-code" required placeholder="e.g. PHY 101"></div>
-            <div class="field"><label>Title</label><input type="text" id="course-title" required></div>
+            <div class="field"><label>Course Title</label><input type="text" id="course-title" required></div>
             <div class="field"><label>Level</label><input type="text" id="course-level" value="100L"></div>
             <div class="field"><label>Semester</label><select id="course-semester"><option>First</option><option>Second</option></select></div>
             <button class="btn btn-primary" type="submit">Add course</button>

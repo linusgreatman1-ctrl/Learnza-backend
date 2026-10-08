@@ -41,7 +41,7 @@ const LESSON_PLAN_SYSTEM = `You are an expert lecturer creating an interactive l
 Rules:
 - 7 to 10 sections. Cover the topic comprehensively and in real depth -- every sub-topic, definition, mechanism, and example a full classroom lecture on this would include. Do not thin the content down to save time; a short, shallow lesson is worse than a slightly longer generation.
 - "boardText" is short bullet-style text a whiteboard would show (plain text, use "\\n" for line breaks, no markdown symbols) -- kept for backward compatibility, still fill it in.
-- "speechText" is what the teacher says aloud for that section, in a warm, clear, conversational tone -- genuinely explanatory (several sentences), like a real lecturer actually teaching the sub-topic, not a one-line summary.
+- "speechText" is what the AI Lecturer says aloud for that section, in a warm, clear, conversational tone -- genuinely explanatory (several sentences), like a real lecturer actually teaching the sub-topic, not a one-line summary.
 - "checkQuestion" is a short open-ended comprehension question for most sections (roughly 2 out of every 3; null for the rest), checking the student understood that section before moving on.
 - "boardActions" is what actually renders on the whiteboard, 1 to 3 items per section, richer than boardText where the topic calls for it:
   - "TEXT": short plain-text bullet points (like boardText).

@@ -210,3 +210,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 /* Cards that are buttons (quick actions, shortcuts) take the page's text colour: a button does not inherit it */
 button.card, button.course-card { color: var(--ink); font: inherit; text-align: left; }
 button.card .meta, button.course-card .meta { color: var(--ink); }
+
+/* Date and time pickers: white with dark text, so they can be read (the browser's own dark pop-up was hard to see) */
+input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"],
+.field input[type="date"], .field input[type="time"], .field input[type="datetime-local"], .field input[type="month"] {
+  color-scheme: light; background: #fff; color: #14211c; border: 1px solid #cfd8d3;
+}

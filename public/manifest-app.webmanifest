@@ -1,7 +1,7 @@
 {
   "name": "Learnza",
   "short_name": "Learnza",
-  "description": "Learn smart, anywhere — AI teacher, tests, past questions and study groups for Nigerian higher-institution students.",
+  "description": "Learn smart, anywhere — AI Lecturer, tests, past questions and study groups for Nigerian higher-institution students.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",

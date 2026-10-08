@@ -1075,7 +1075,7 @@
     });
   }
 
-  // ================= AI TEACHER (live interactive session) =================
+  // ================= AI LECTURER (live interactive session) =================
 
   function speak(text, avatarEl, onDone) {
     if (!window.speechSynthesis) { if (onDone) onDone(); return; }
@@ -1382,7 +1382,7 @@
         </div>
 
         <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the teacher to start…</div></div>
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the AI Lecturer to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -2717,7 +2717,7 @@
         </div>
 
         <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the teacher to start…</div></div>
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the AI Lecturer to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -2953,7 +2953,7 @@
     ]);
     view.innerHTML = `
       <div class="page-head"><h1>Digital Lab</h1></div>
-      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI teacher and a smart board — pick a course to see what's available.</p>
+      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI Lecturer and a smart board — pick a course to see what's available.</p>
       ${rows.map(({ course, isIndividual, demonstrations }) => `
         <div style="margin-bottom:22px;">
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>

@@ -100,7 +100,7 @@ router.post('/lab/:id/ask', requireAuth, aiGuard, loadDemo(), requireActiveSubsc
   const demo = req.demo;
 
   const steps = JSON.parse(demo.stepsJson).map((s, i) => `${i + 1}. ${s.title}: ${s.instruction}`).join('\n');
-  const systemPrompt = `You are the AI teacher guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
+  const systemPrompt = `You are the AI Lecturer guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
   try {
     const answer = await ai.askForText(systemPrompt, question.trim());
     await logAiConversation(req.user.id, 'LAB', question.trim(), answer);

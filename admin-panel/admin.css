@@ -151,3 +151,9 @@ textarea { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var
 .ce-match { display: block; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; font-weight: 400; }
 .ce-match pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .ce-match mark { background: #ffe58a; padding: 0 1px; }
+
+/* Date and time pickers: white with dark text, so they can be read (the browser's own dark pop-up was hard to see) */
+input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"],
+.field input[type="date"], .field input[type="time"], .field input[type="datetime-local"], .field input[type="month"] {
+  color-scheme: light; background: #fff; color: #14211c; border: 1px solid #cfd8d3;
+}
