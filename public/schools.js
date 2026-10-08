@@ -1022,9 +1022,9 @@
       ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
       <div class="card" style="padding:24px; text-align:center; margin-bottom:22px;">
         ${subBadge}
-        <h3 style="margin:14px 0 8px;">Start an AI Lecturer lesson</h3>
+        <h3 style="margin:14px 0 8px;">Start AI Lectures</h3>
         <p class="muted" style="margin-bottom:18px;">Tell the AI Lecturer what to cover in this course.</p>
-        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lecturer</button>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lectures</button>
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lessons</h3>
@@ -1170,7 +1170,7 @@
           <div style="font-weight:600; margin-top:8px;">AI Lecturer — ask about any topic in this course</div>
           <div class="meta">A real AI lecturer builds a live lesson on the spot, section by section, and answers your questions.</div>
         </div>
-        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lecturer</button>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lectures</button>
       </div>
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>

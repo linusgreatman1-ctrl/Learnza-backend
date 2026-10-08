@@ -926,7 +926,7 @@
       <h3 style="margin-bottom:10px; font-size:1rem;">Recorded lessons</h3>
       <div class="card" style="margin-bottom:24px;">${data.lessons.map(lectureRowHtml).join('') || '<p class="muted" style="padding:16px;">No lessons yet. Create a course under <strong>My Courses</strong> and the AI Lecturer prepares your first lessons.</p>'}</div>
       <h3 style="margin-bottom:10px; font-size:1rem;">My AI Lecturer classes</h3>
-      <div class="card">${data.sessions.map(sessionRowHtml).join('') || '<p class="muted" style="padding:16px;">You have not taken an AI Lecturer class yet. Open a course and tap <strong>Start AI Lecturer</strong>.</p>'}</div>`;
+      <div class="card">${data.sessions.map(sessionRowHtml).join('') || '<p class="muted" style="padding:16px;">You have not taken an AI Lecturer class yet. Open a course and tap <strong>Start AI Lectures</strong>.</p>'}</div>`;
     wireLectureRows(view, data);
   }
 
@@ -944,9 +944,9 @@
       ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
       <div class="card" style="padding:24px; text-align:center; margin-bottom:22px;">
         ${subBadge}
-        <h3 style="margin:14px 0 8px;">Start an AI Lecturer lesson</h3>
+        <h3 style="margin:14px 0 8px;">Start AI Lectures</h3>
         <p class="muted" style="margin-bottom:18px;">Tell the AI Lecturer what to cover in this course.</p>
-        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lecturer</button>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lectures</button>
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lessons</h3>
