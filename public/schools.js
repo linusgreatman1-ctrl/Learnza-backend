@@ -450,6 +450,9 @@
     STUDENT: [
       ['my-dashboard', 'My Dashboard'],
       ['courses', 'My Courses'],
+      ['my-assignments', 'Assignments'],
+      ['my-attendance', 'Attendance'],
+      ['my-lectures', 'Lectures'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['class-recordings', 'Class Recordings'],
@@ -459,6 +462,7 @@
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
       ['student-results', 'Results'],
+      ['my-activity', 'Recent Activity'],
       ['research', 'AI Research Assistant'],
       ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
@@ -474,6 +478,7 @@
     STUDENT_INDIVIDUAL: [
       ['my-dashboard', 'My Dashboard'],
       ['individual-courses', 'My Courses'],
+      ['my-assessments', 'Assignments & Tests'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -573,12 +578,12 @@
     const hour = new Date().getHours();
     const hello = hour < 12 ? 'Good morning,' : hour < 18 ? 'Good afternoon,' : 'Good evening,';
     const lines = profileLines().slice(1);
+    const role = esc((typeof ROLE_NAMES !== 'undefined' && ROLE_NAMES[u.role]) || 'Student');
+    const rest = [...lines, extraLine ? esc(extraLine) : ''].filter(Boolean);
     return `<div class="greet">
       <div class="meta">${hello}</div>
       <div class="greet-name">${esc(u.fullName)} 👋</div>
-      <div class="meta"><b>${esc(ROLE_NAMES[u.role] || '')}</b>${lines.length ? ' · ' + lines[0] : ''}</div>
-      ${lines.slice(1).map((l) => `<div class="meta">${l}</div>`).join('')}
-      ${extraLine ? `<div class="meta">${esc(extraLine)}</div>` : ''}
+      <div class="meta"><b>${role}</b>${rest.length ? ' · ' + rest.join(' · ') : ''}</div>
     </div>`;
   }
 
@@ -880,6 +885,11 @@
         case 'groups': return renderGroups();
         case 'group-chat': return renderGroupChat();
         case 'my-dashboard': return renderMyDashboard();
+        case 'my-assignments': return renderMyDashboard('assignments');
+        case 'my-attendance': return renderMyDashboard('attendance');
+        case 'my-lectures': return renderMyDashboard('lessons');
+        case 'my-assessments': return renderMyDashboard('assessments');
+        case 'my-activity': return renderMyDashboard('activity');
         case 'cbt-mock': return renderAssessments(false, { heading: 'CBT Mock Exam Practice', typeFilter: ['Mock'] });
         case 'tests-hub': return renderAssessments(false, { heading: 'Tests', typeFilter: ['CA', 'Test'] });
         case 'academic-record': return renderAcademicRecord();
@@ -3032,14 +3042,11 @@
   async function renderStaffDashboard() {
     const u = state.user;
     view.innerHTML = `
-      <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card" id="dash-profile-card" style="padding:20px; margin-bottom:22px; cursor:pointer;">
-        <div style="display:flex; align-items:center; gap:16px;">
-          ${selfAvatarHtml('avatar-staff-dash')}
-          ${greetingBlock(u.position)}
-        </div>
+            <div class="card hero" id="dash-profile-card" style="display:flex; align-items:center; gap:14px; cursor:pointer;">
+        ${selfAvatarHtml('avatar-staff-dash')}
+        ${greetingBlock(u.position)}
       </div>
-      <div class="grid-cards">
+      <div class="grid-cards tiles">
         <button class="card course-card" id="staff-go-id" style="text-align:left; cursor:pointer;"><div class="code">🪪</div><div class="meta">Your Digital ID</div></button>
         <button class="card course-card" id="staff-go-lib" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">e-Library</div></button>
       </div>`;
@@ -3456,7 +3463,7 @@
     document.getElementById('return-dash-btn').addEventListener('click', () => navigate(defaultScreenFor(u.role)));
   }
 
-  async function renderMyDashboard() {
+  async function renderMyDashboard(only) {
     const isIndividual = state.user.isIndividual;
     const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }] = await Promise.all([
       api('/students/me/dashboard'),
@@ -3589,58 +3596,34 @@
       return `<div class="card" id="dash-${key}-list" style="margin-bottom:10px;">${shown}</div>${moreBtn ? `<div style="margin-bottom:26px;">${moreBtn}</div>` : '<div style="margin-bottom:16px;"></div>'}`;
     }
 
-    view.innerHTML = `
-      <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+    const SECTION_TITLES = { assignments: 'Assignments', attendance: 'Attendance', lessons: 'Lectures', assessments: 'Assignments & Tests', activity: 'Recent Activity' };
+    const sectionHtml = {
+      assignments: () => dashSection('assignments', assignments, assignmentRowHtml, 'No assignments posted yet.'),
+      attendance: () => dashSection('attendance', attendanceRows, attendanceRowHtml, 'No attendance recorded yet.'),
+      lessons: () => dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lectures yet.'),
+      assessments: () => dashSection('individualAssessments', individualAssessments || [], individualAssessmentRowHtml, 'Nothing yet — check back shortly.'),
+      activity: () => `<h3 style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
+        ${dashSection('results', recentResults, resultRowHtml, `No ${isIndividual ? 'tests or assignments' : 'test results'} yet.`)}
+        <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
+        ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}`,
+    };
+    const pendingCount = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
+    const homeStats = isIndividual
+      ? [[pendingCount, 'Assignments & tests pending', 'my-assessments'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', 'my-activity'], [recentResults.length, 'Tests & assignments taken', 'my-activity']]
+      : [[pendingCount, 'Assignments pending', 'my-assignments'], [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate', 'my-attendance'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', 'my-activity']];
+    const homeTiles = isIndividual ? `<button class="card course-card" data-jump-nav="individual-courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button><button class="card course-card" data-jump-nav="my-ai-lectures" style="text-align:left; cursor:pointer;"><div class="code">🎓</div><div class="meta">My AI Lectures</div></button><button class="card course-card" data-jump-nav="my-assessments" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Assignments & Tests</div></button><button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button><button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button><button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button><button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button><button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button><button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>` : `<button class="card course-card" data-jump-nav="courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button><button class="card course-card" data-jump-nav="my-assignments" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Assignments</div></button><button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button><button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button><button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button><button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button><button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button><button class="card course-card" data-jump-nav="student-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button><button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>`;
+
+    view.innerHTML = (only && sectionHtml[only])
+      ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
+      : `
+      <div class="card hero" style="display:flex; align-items:center; gap:14px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-student-dash')}
         ${greetingBlock()}
       </div>
-      <div class="grid-cards stats" style="margin-bottom:26px;">
-        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
-      </div>
-      <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
-      <div class="grid-cards tiles" style="margin-bottom:26px;">
-        <button class="card course-card" data-jump-nav="courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button>
-        <button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button>
-        <button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button>
-        <button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button>
-        <button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button>
-        <button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button>
-        <button class="card course-card" data-jump-nav="student-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button>
-        <button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>
-      </div>
-      ${myRecord ? `<h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>${studentDetailsCard(myRecord, { own: true })}` : ''}
-
-      ${isIndividual ? '' : `
-      <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
-      ${dashSection('assignments', assignments, assignmentRowHtml, 'No assignments posted yet.')}
-
-      <h3 id="dash-attendance" style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
-      ${dashSection('attendance', attendanceRows, attendanceRowHtml, 'No attendance recorded yet.')}
-
-      <h3 id="dash-recordings" style="margin-bottom:10px; font-size:1rem;">Live class recordings</h3>
-      ${dashSection('recordings', liveRecordings || [], liveRecordingRowHtml, 'No recorded live classes yet.')}
-
-      <h3 id="dash-lessons" style="margin-bottom:10px; font-size:1rem;">Lectures</h3>
-      ${dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lectures yet.')}
-      `}
-
-      ${isIndividual ? `
-      <h3 id="dash-individualAssessments" style="margin-bottom:10px; font-size:1rem;">Assignments &amp; Tests</h3>
-      ${dashSection('individualAssessments', individualAssessments || [], individualAssessmentRowHtml, 'Nothing yet — check back shortly.')}
-      ` : ''}
-
-      <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
-      ${dashSection('results', recentResults, resultRowHtml, `No ${isIndividual ? 'tests or assignments' : 'test results'} yet.`)}
-
-      <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
-      ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}
-
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button>
-        <button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>
-      </div>
-    `;
+      <div class="grid-cards tiles">${homeTiles}</div>
+      <div class="grid-cards stats">
+        ${homeStats.map(([value, label, nav]) => `<div class="card course-card" data-jump-nav="${nav}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
+      </div>`;
 
     // Item-level interactions live in one wiring pass, scoped to a container, so it can
     // be re-run on just the newly-revealed rows after a "View more" expand instead of
@@ -3674,8 +3657,8 @@
     if (leaderboardBtn) leaderboardBtn.addEventListener('click', () => navigate('leaderboard'));
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
-    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
-    wireSelfAvatarUpload('avatar-student-dash');
+    const profileCard = document.getElementById('dash-profile-card');
+    if (profileCard) { profileCard.addEventListener('click', () => navigate('digital-id')); wireSelfAvatarUpload('avatar-student-dash'); }
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
@@ -5416,31 +5399,14 @@
     const totalStudents = counts.reduce((sum, c) => sum + c.count, 0);
     const u = state.user;
     view.innerHTML = `
-      <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+      <div class="card hero" style="display:flex; align-items:center; gap:14px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-lect-dash')}
         ${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}
       </div>
-      <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
-      ${lecturerDetailsCard(u, department, courses.length, totalStudents)}
-      <div class="grid-cards stats" style="margin-bottom:26px;">
+      <div class="grid-cards tiles"><button class="card course-card" data-jump-nav="lect-lessons-entry" style="text-align:left; cursor:pointer;"><div class="code">📹</div><div class="meta">Upload Lecture</div></button><button class="card course-card" data-jump-nav="lect-tests" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Create Test</div></button><button class="card course-card" data-jump-nav="lect-students" style="text-align:left; cursor:pointer;"><div class="code">👥</div><div class="meta">My Students</div></button><button class="card course-card" data-jump-nav="lect-classwork-quiz" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Classwork / Quiz</div></button><button class="card course-card" data-jump-nav="lect-mark-work" style="text-align:left; cursor:pointer;"><div class="code">✅</div><div class="meta">Mark Work</div></button><button class="card course-card" data-jump-nav="lect-attendance-hub" style="text-align:left; cursor:pointer;"><div class="code">🗓️</div><div class="meta">Attendance</div></button><button class="card course-card" id="dash-announce-btn" style="text-align:left; cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></button><button class="card course-card" data-jump-nav="class-recordings" style="text-align:left; cursor:pointer;"><div class="code">🎞️</div><div class="meta">Class Recordings</div></button><button class="card course-card" data-jump-nav="lect-library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button></div>
+      <div class="grid-cards stats">
         <div class="card course-card" data-jump-nav="lect-courses" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
         <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">${totalStudents}</div><div class="meta">Students</div></div>
-      </div>
-      <h3 style="margin-bottom:10px; font-size:1rem;">Quick actions</h3>
-      <div class="grid-cards tiles" style="margin-bottom:26px;">
-        <div class="card course-card" data-jump-nav="lect-lessons-entry" style="cursor:pointer;"><div class="code">📹</div><div class="meta">Upload Lecture</div></div>
-        <div class="card course-card" data-jump-nav="lect-tests" style="cursor:pointer;"><div class="code">📝</div><div class="meta">Create Test</div></div>
-        <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">👥</div><div class="meta">My Students</div></div>
-        <div class="card course-card" data-jump-nav="lect-classwork-quiz" style="cursor:pointer;"><div class="code">📋</div><div class="meta">Classwork / Quiz</div></div>
-        <div class="card course-card" data-jump-nav="lect-mark-work" style="cursor:pointer;"><div class="code">✅</div><div class="meta">Mark Work</div></div>
-        <div class="card course-card" data-jump-nav="lect-attendance-hub" style="cursor:pointer;"><div class="code">🗓️</div><div class="meta">Attendance</div></div>
-        <div class="card course-card" id="dash-announce-btn" style="cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></div>
-        <div class="card course-card" data-jump-nav="class-recordings" style="cursor:pointer;"><div class="code">🎞️</div><div class="meta">Class Recordings</div></div>
-      </div>
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
-        <button class="btn btn-ghost" id="dash-staff-profile-btn">👤 My Staff Profile</button>
       </div>
     `;
     document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
@@ -5449,8 +5415,6 @@
       if (el.dataset.jumpNav === 'lect-lessons-entry') return openLessonCoursePicker(courses);
       navigate(el.dataset.jumpNav);
     }));
-    document.getElementById('dash-digital-id-btn').addEventListener('click', () => navigate('digital-id'));
-    document.getElementById('dash-staff-profile-btn').addEventListener('click', () => navigate('staff-profile'));
     document.getElementById('dash-announce-btn').addEventListener('click', () => openAnnounceDialog(courses));
   }
 
@@ -5521,9 +5485,13 @@
   async function renderLecturerDigitalId() {
     const { department, courses } = await ensureLectCourses();
     const u = state.user;
+    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
+    const totalStudents = counts.reduce((sum, c) => sum + c.count, 0);
     view.innerHTML = `
       <div class="page-head"><h1>Digital ID</h1></div>
       <div id="lzx-id-host"></div>
+      <h3 style="margin:22px 0 12px; font-size:1rem;">My details</h3>
+      ${lecturerDetailsCard(u, department, courses.length, totalStudents)}
     `;
     mountMyDigitalId();
   }
@@ -6757,39 +6725,21 @@
       api('/admin/courses').catch(() => ({ courses: [] })),
     ]);
     view.innerHTML = `
-      <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px;">
+      <div class="card hero" style="display:flex; align-items:center; gap:14px;">
         ${selfAvatarHtml('avatar-admin-dash')}
         ${greetingBlock()}
       </div>
-      <div class="card joincode" style="padding:16px 20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.4rem; letter-spacing:3px; font-weight:700;">${esc(school.joinCode || '—')}</div></div>
+      <div class="grid-cards tiles"><button class="card course-card" data-jump-nav="admin-directory" style="text-align:left; cursor:pointer;"><div class="code">👥</div><div class="meta">Staff & Student Directory</div></button><button class="card course-card" data-jump-nav="admin-academics" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">Departments & Courses</div></button><button class="card course-card" data-jump-nav="admin-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button><button class="card course-card" data-jump-nav="admin-announce" style="text-align:left; cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></button><button class="card course-card" data-jump-nav="admin-bulk-message" style="text-align:left; cursor:pointer;"><div class="code">✉️</div><div class="meta">Bulk SMS / Email</div></button><button class="card course-card" data-jump-nav="admin-fees" style="text-align:left; cursor:pointer;"><div class="code">💰</div><div class="meta">Fee Payment</div></button><button class="card course-card" data-jump-nav="admin-elections" style="text-align:left; cursor:pointer;"><div class="code">🗳️</div><div class="meta">Elections</div></button><button class="card course-card" data-jump-nav="admin-hostel-allocations" style="text-align:left; cursor:pointer;"><div class="code">🏠</div><div class="meta">Hostels</div></button><button class="card course-card" data-jump-nav="admin-student-requests" style="text-align:left; cursor:pointer;"><div class="code">📨</div><div class="meta">Student Requests</div></button><button class="card course-card" data-jump-nav="admin-staff-records" style="text-align:left; cursor:pointer;"><div class="code">🗂️</div><div class="meta">Staff Records</div></button><button class="card course-card" data-jump-nav="digital-id" style="text-align:left; cursor:pointer;"><div class="code">🪪</div><div class="meta">Digital ID</div></button><button class="card course-card" data-jump-nav="admin-management" style="text-align:left; cursor:pointer;"><div class="code">🛡️</div><div class="meta">Admin Management</div></button></div>
+      <div class="card joincode" style="padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.2rem; letter-spacing:3px; font-weight:700;">${esc(school.joinCode || '—')}</div></div>
         <button class="btn btn-ghost btn-sm" id="copy-join-code">Copy</button>
       </div>
-      <div class="grid-cards stats" style="margin-bottom:26px;">
+      <div class="grid-cards stats">
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${students.length}</div><div class="meta">Students</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
         <div class="card course-card" data-jump-nav="admin-academics" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
         <div class="card course-card" data-jump-nav="admin-management" style="cursor:pointer;"><div class="code">${admins.length}</div><div class="meta">School admins</div></div>
-      </div>
-
-      <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
-      <div class="grid-cards tiles" style="margin-bottom:26px;">
-        ${[
-          ['admin-directory', '👥', 'Staff & Student Directory'],
-          ['admin-academics', '📚', 'Departments & Courses'],
-          ['admin-results', '📊', 'Results'],
-          ['admin-announce', '📣', 'Announce'],
-          ['admin-bulk-message', '✉️', 'Bulk SMS / Email'],
-          ['admin-fees', '💰', 'Fee Payment'],
-          ['admin-elections', '🗳️', 'Elections'],
-          ['admin-hostel-allocations', '🏠', 'Hostels'],
-          ['admin-student-requests', '📨', 'Student Requests'],
-          ['admin-staff-records', '🗂️', 'Staff Records'],
-          ['digital-id', '🪪', 'Digital ID'],
-          ['admin-management', '🛡️', 'Admin Management'],
-        ].map(([screen, icon, label]) => `<button class="card course-card" data-jump-nav="${screen}" style="text-align:left; cursor:pointer;"><div class="code">${icon}</div><div class="meta">${label}</div></button>`).join('')}
       </div>
 
       <div class="page-head" style="margin-bottom:12px;">

@@ -473,6 +473,7 @@
       ['my-dashboard', 'My Dashboard'],
       ['individual-courses', 'My Courses'],
       ['my-ai-lectures', 'My AI Lectures'],
+      ['my-assessments', 'Assignments & Tests'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -483,6 +484,7 @@
       ['research', 'AI Research Assistant'],
       ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
+      ['my-activity', 'Recent Activity'],
       ['leaderboard', 'Leaderboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
@@ -531,16 +533,17 @@
     </div></div>`;
   }
 
-  function greetingBlock() {
+  function greetingBlock(extraLine) {
     const u = state.user;
     const hour = new Date().getHours();
     const hello = hour < 12 ? 'Good morning,' : hour < 18 ? 'Good afternoon,' : 'Good evening,';
     const lines = profileLines().slice(1);
+    const role = esc((typeof ROLE_NAMES !== 'undefined' && ROLE_NAMES[u.role]) || 'Student');
+    const rest = [...lines, extraLine ? esc(extraLine) : ''].filter(Boolean);
     return `<div class="greet">
       <div class="meta">${hello}</div>
       <div class="greet-name">${esc(u.fullName)} 👋</div>
-      <div class="meta"><b>Student</b>${lines.length ? ' · ' + lines[0] : ''}</div>
-      ${lines.slice(1).map((l) => `<div class="meta">${l}</div>`).join('')}
+      <div class="meta"><b>${role}</b>${rest.length ? ' · ' + rest.join(' · ') : ''}</div>
     </div>`;
   }
 
@@ -792,6 +795,8 @@
         case 'groups': return renderGroups();
         case 'group-chat': return renderGroupChat();
         case 'my-dashboard': return renderMyDashboard();
+        case 'my-assessments': return renderMyDashboard('assessments');
+        case 'my-activity': return renderMyDashboard('activity');
         case 'cbt-mock': return renderAssessments(false, { heading: 'CBT Mock Exam Practice', typeFilter: ['Mock'] });
         case 'tests-hub': return renderAssessments(false, { heading: 'Tests', typeFilter: ['CA', 'Test'] });
         case 'take-assessment': return renderTakeAssessment();
@@ -1804,6 +1809,9 @@
       <div class="page-head"><h1>Digital ID</h1></div>
       <div id="lzx-id-host"></div>
 
+      <h3 style="margin:22px 0 12px; font-size:1rem;">My details</h3>
+      ${learnerDetailsCard(u)}
+
       <h3 style="margin-bottom:12px; font-size:1rem;">Learnza account</h3>
       <ul class="credential-list" style="margin-bottom:28px;">
         <li class="clickable" id="cred-courses" style="cursor:pointer;"><span>Self-directed courses</span><span class="pill pill-pass">${courses.length} course${courses.length === 1 ? '' : 's'}</span></li>
@@ -2154,13 +2162,13 @@
   // all follow the same "show 3, View more reveals the rest" pattern.
   const DASH_LIMIT = 3;
 
-  async function renderMyDashboard() {
+  async function renderMyDashboard(only) {
     const isIndividual = state.user.isIndividual;
     const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }] = await Promise.all([
       api('/students/me/dashboard'),
       api('/notifications'),
     ]);
-    const myAiLectures = isIndividual ? await loadMyAiLectures().catch(() => null) : null;
+    const myAiLectures = null;
     const attendancePct = attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
     const avgScorePct = recentResults.length
       ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length)
@@ -2286,61 +2294,34 @@
       return `<div class="card" id="dash-${key}-list" style="margin-bottom:10px;">${shown}</div>${moreBtn ? `<div style="margin-bottom:26px;">${moreBtn}</div>` : '<div style="margin-bottom:16px;"></div>'}`;
     }
 
-    view.innerHTML = `
-      <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+    const SECTION_TITLES = { assignments: 'Assignments', attendance: 'Attendance', lessons: 'Lectures', assessments: 'Assignments & Tests', activity: 'Recent Activity' };
+    const sectionHtml = {
+      assignments: () => dashSection('assignments', assignments, assignmentRowHtml, 'No assignments posted yet.'),
+      attendance: () => dashSection('attendance', attendanceRows, attendanceRowHtml, 'No attendance recorded yet.'),
+      lessons: () => dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lectures yet.'),
+      assessments: () => dashSection('individualAssessments', individualAssessments || [], individualAssessmentRowHtml, 'Nothing yet — check back shortly.'),
+      activity: () => `<h3 style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
+        ${dashSection('results', recentResults, resultRowHtml, `No ${isIndividual ? 'tests or assignments' : 'test results'} yet.`)}
+        <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
+        ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}`,
+    };
+    const pendingCount = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
+    const homeStats = isIndividual
+      ? [[pendingCount, 'Assignments & tests pending', 'my-assessments'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', 'my-activity'], [recentResults.length, 'Tests & assignments taken', 'my-activity']]
+      : [[pendingCount, 'Assignments pending', 'my-assignments'], [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate', 'my-attendance'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', 'my-activity']];
+    const homeTiles = isIndividual ? `<button class="card course-card" data-jump-nav="individual-courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button><button class="card course-card" data-jump-nav="my-ai-lectures" style="text-align:left; cursor:pointer;"><div class="code">🎓</div><div class="meta">My AI Lectures</div></button><button class="card course-card" data-jump-nav="my-assessments" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Assignments & Tests</div></button><button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button><button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button><button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button><button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button><button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button><button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>` : `<button class="card course-card" data-jump-nav="courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button><button class="card course-card" data-jump-nav="my-assignments" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Assignments</div></button><button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button><button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button><button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button><button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button><button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button><button class="card course-card" data-jump-nav="student-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button><button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>`;
+
+    view.innerHTML = (only && sectionHtml[only])
+      ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
+      : `
+      <div class="card hero" style="display:flex; align-items:center; gap:14px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-student-dash')}
         ${greetingBlock()}
       </div>
-      <div class="grid-cards stats" style="margin-bottom:26px;">
-        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
-      </div>
-      <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
-      <div class="grid-cards tiles" style="margin-bottom:26px;">
-        <button class="card course-card" data-jump-nav="individual-courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button>
-        <button class="card course-card" data-jump-nav="my-ai-lectures" style="text-align:left; cursor:pointer;"><div class="code">🎓</div><div class="meta">My AI Lectures</div></button>
-        <button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button>
-        <button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button>
-        <button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button>
-        <button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button>
-        <button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button>
-        <button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>
-      </div>
-      <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
-      ${learnerDetailsCard(state.user)}
-      ${myAiLectures ? `<div class="page-head" style="margin-bottom:10px;"><h3 style="font-size:1rem;">My recorded AI lectures</h3><button class="btn btn-ghost btn-sm" id="all-ai-lectures-btn">See all</button></div>
-        <div class="card" style="margin-bottom:22px;" id="dash-ai-lectures">${myAiLectures.lessons.slice(0, 5).map(lectureRowHtml).join('') || '<p class="muted" style="padding:16px;">No lessons yet — create a course and the AI Lecturer prepares them.</p>'}</div>` : ''}
-
-      ${isIndividual ? '' : `
-      <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
-      ${dashSection('assignments', assignments, assignmentRowHtml, 'No assignments posted yet.')}
-
-      <h3 id="dash-attendance" style="margin-bottom:10px; font-size:1rem;">Attendance</h3>
-      ${dashSection('attendance', attendanceRows, attendanceRowHtml, 'No attendance recorded yet.')}
-
-      <h3 id="dash-recordings" style="margin-bottom:10px; font-size:1rem;">Live class recordings</h3>
-      ${dashSection('recordings', liveRecordings || [], liveRecordingRowHtml, 'No recorded live classes yet.')}
-
-      <h3 id="dash-lessons" style="margin-bottom:10px; font-size:1rem;">Lectures</h3>
-      ${dashSection('lessons', lessons || [], lessonRowHtml, 'No lecturer-uploaded lectures yet.')}
-      `}
-
-      ${isIndividual ? `
-      <h3 id="dash-individualAssessments" style="margin-bottom:10px; font-size:1rem;">Assignments &amp; Tests</h3>
-      ${dashSection('individualAssessments', individualAssessments || [], individualAssessmentRowHtml, 'Nothing yet — check back shortly.')}
-      ` : ''}
-
-      <h3 id="dash-results" style="margin-bottom:10px; font-size:1rem;">Recent test${isIndividual ? '/assignment' : ''} results</h3>
-      ${dashSection('results', recentResults, resultRowHtml, `No ${isIndividual ? 'tests or assignments' : 'test results'} yet.`)}
-
-      <h3 style="margin-bottom:10px; font-size:1rem;">Notifications</h3>
-      ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}
-
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="dash-leaderboard-btn">🏆 See leaderboard</button>
-        <button class="btn btn-ghost" id="dash-profile-btn">👤 My profile</button>
-      </div>
-    `;
+      <div class="grid-cards tiles">${homeTiles}</div>
+      <div class="grid-cards stats">
+        ${homeStats.map(([value, label, nav]) => `<div class="card course-card" data-jump-nav="${nav}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
+      </div>`;
 
     // Item-level interactions live in one wiring pass, scoped to a container, so it can
     // be re-run on just the newly-revealed rows after a "View more" expand instead of
@@ -2374,8 +2355,8 @@
     if (leaderboardBtn) leaderboardBtn.addEventListener('click', () => navigate('leaderboard'));
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
-    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
-    wireSelfAvatarUpload('avatar-student-dash');
+    const profileCard = document.getElementById('dash-profile-card');
+    if (profileCard) { profileCard.addEventListener('click', () => navigate('digital-id')); wireSelfAvatarUpload('avatar-student-dash'); }
     if (myAiLectures) {
       wireLectureRows(document.getElementById('dash-ai-lectures'), myAiLectures);
       const allBtn = document.getElementById('all-ai-lectures-btn');

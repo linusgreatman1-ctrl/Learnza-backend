@@ -257,3 +257,48 @@ table.data-table tr:hover td { background: color-mix(in srgb, var(--accent-soft)
   .grid-cards.stats > .course-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 @media print { .card.hero { background: #fff !important; color: #000 !important; box-shadow: none; } }
+
+/* ======== v2: PassNow's proportions — smaller type, a centred column, three tiles to a row ======== */
+html { font-size: 14.5px; }
+@media (min-width: 1024px) {
+  main.content { padding-left: max(28px, calc((100% - 1000px) / 2)); padding-right: max(28px, calc((100% - 1000px) / 2)); }
+}
+/* homes have no title bar: the welcome panel comes first */
+#view > :first-child:not(.page-head) { margin-top: 18px; }
+
+.page-head h1 { font-size: 1.35rem; }
+.card.hero { padding: 14px 18px !important; gap: 14px !important; border-radius: 18px; margin-bottom: 14px; box-shadow: 0 14px 28px -18px rgba(10, 20, 40, .7); }
+.card.hero::before { width: 170px; height: 170px; top: -60px; right: -40px; }
+.card.hero::after { display: none; }
+.card.hero .greet { min-width: 0; }
+.card.hero .greet > .meta:first-child { font-size: .72rem; line-height: 1.2; }
+.card.hero .greet-name { font-size: 1.15rem; margin: 1px 0 2px; }
+.card.hero .greet > .meta:last-child { font-size: .74rem; line-height: 1.35; }
+.card.hero [id^="avatar-"], .card.hero .id-avatar { width: 46px !important; height: 46px !important; flex: 0 0 46px; font-size: 1rem !important; box-shadow: 0 0 0 2px rgba(243, 213, 140, .9); }
+.card.hero img { width: 46px; height: 46px; }
+
+/* three to a row, small */
+.grid-cards { gap: 10px; }
+.grid-cards.tiles { grid-template-columns: repeat(3, 1fr) !important; margin-bottom: 14px !important; }
+.grid-cards.tiles > .course-card { min-height: 0; padding: 14px 15px 13px; border-radius: 16px; }
+.grid-cards.tiles > .course-card::after { width: 78px; height: 78px; right: -22px; top: -22px; }
+.grid-cards.tiles > .course-card .code { font-size: 1.5rem; margin-bottom: 6px; }
+.grid-cards.tiles > .course-card .meta { font-size: .8rem; line-height: 1.25; }
+.grid-cards.stats { grid-template-columns: repeat(3, 1fr) !important; margin-bottom: 14px !important; }
+.grid-cards.stats > .course-card { padding: 11px 13px 10px; border-radius: 14px; }
+.grid-cards.stats > .course-card::before { height: 3px; }
+.grid-cards.stats > .course-card .code { font-size: 1.35rem; }
+.grid-cards.stats > .course-card .meta { font-size: .64rem; }
+.card.joincode { border-radius: 14px; }
+@media (max-width: 760px) {
+  main.content { padding: 0 14px 24px; }
+  .grid-cards.tiles { grid-template-columns: 1fr 1fr !important; }
+  .grid-cards.tiles > .course-card { padding: 12px 13px; }
+  .grid-cards.stats { grid-template-columns: repeat(3, 1fr) !important; }
+  .grid-cards.stats > .course-card { padding: 9px 9px 8px; }
+  .grid-cards.stats > .course-card .meta { font-size: .58rem; }
+  .grid-cards.stats > .course-card:last-child:nth-child(odd) { grid-column: auto; }
+  .card.hero { padding: 12px 14px !important; }
+}
+@media (min-width: 761px) { .card.hero { margin-right: 54px; } }
+@media (min-width: 761px) { .grid-cards.stats:has(> :nth-child(4)) { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important; } }
