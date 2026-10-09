@@ -641,10 +641,104 @@
     nav.querySelectorAll('.nav-item').forEach((btn) => {
       btn.addEventListener('click', () => { navigate(btn.dataset.screen); closeMobileNav(); });
     });
+    buildBottomNav();
+  }
+
+  // ---- A back arrow on every screen, the bottom bar on phones and tablets, and the home-page building blocks ----
+  const navStack = [];
+  let navGoingBack = false;
+  function goBack() {
+    const prev = navStack.pop();
+    navGoingBack = true;
+    try {
+      if (prev) { const { screen, ...rest } = prev; navigate(screen, rest); } else navigate(defaultScreenFor(state.user.role));
+    } finally { navGoingBack = false; }
+  }
+  const HOME_SCREENS = ['my-dashboard', 'lect-dashboard', 'admin-dashboard', 'staff-dashboard'];
+  function addBackArrow() {
+    const v = document.getElementById('view');
+    if (!v || !state.user || !state.view || !state.view.screen || HOME_SCREENS.includes(state.view.screen) || state.view.screen === 'live-class') return;
+    let head = v.querySelector(':scope > .page-head');
+    if (!head) {
+      if (!v.children.length) return;
+      head = document.createElement('div');
+      head.className = 'page-head bk-only';
+      v.insertBefore(head, v.firstChild);
+    }
+    if (head.querySelector(':scope > .bk-arrow')) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'bk-arrow'; b.setAttribute('aria-label', 'Back'); b.textContent = '←';
+    b.addEventListener('click', goBack);
+    head.insertBefore(b, head.firstChild);
+    head.classList.add('has-bk');
+  }
+  new MutationObserver(addBackArrow).observe(document.getElementById('view'), { childList: true });
+
+  const BOTTOM_NAV = {
+    STUDENT: [['my-dashboard', '🏠', 'Home'], ['courses', '📚', 'Courses'], ['tests-hub', '📝', 'Tests'], ['digital-id', '🪪', 'My ID'], ['__more', '☰', 'More']],
+    STUDENT_INDIVIDUAL: [['my-dashboard', '🏠', 'Home'], ['individual-courses', '📚', 'Courses'], ['my-ai-lectures', '🎓', 'AI Lectures'], ['tests-hub', '📝', 'Tests'], ['__more', '☰', 'More']],
+    LECTURER: [['lect-dashboard', '🏠', 'Home'], ['lect-courses', '📚', 'Courses'], ['lect-students', '👥', 'Students'], ['lect-tests', '📝', 'Tests'], ['__more', '☰', 'More']],
+    STAFF: [['staff-dashboard', '🏠', 'Home'], ['library', '📖', 'Library'], ['digital-id', '🪪', 'My ID'], ['settings', '⚙️', 'Settings']],
+    ADMIN: [['admin-dashboard', '🏠', 'Home'], ['admin-directory', '👥', 'Directory'], ['admin-academics', '📚', 'Courses'], ['admin-results', '📊', 'Results'], ['__more', '☰', 'More']],
+  };
+  function buildBottomNav() {
+    const bar = document.getElementById('bnav');
+    if (!bar || !state.user) return;
+    const key = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
+    bar.innerHTML = (BOTTOM_NAV[key] || []).map(([screen, icon, label]) => `<button type="button" class="bn" data-bn="${screen}"><span class="bn-i">${icon}</span><span class="bn-l">${esc(label)}</span></button>`).join('');
+    bar.querySelectorAll('.bn').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.bn === '__more') return document.getElementById('mobile-menu-toggle').click();
+      navigate(b.dataset.bn);
+    }));
+    markActiveNav(state.view && state.view.screen);
+  }
+
+  const SJ_COLORS = ['#142033,#234672', '#00c853,#00913b', '#6a1b9a,#4a148c', '#ff6b35,#d9481a', '#0f766e,#065f46', '#e02020,#a31616', '#2979ff,#1a4fb8', '#e3ac4c,#b8791a'];
+  const SJ_ICONS = ['📘', '📗', '📙', '📕', '📒', '📓', '📔', '📚'];
+  function homeTile(nav, icon, label, sub) {
+    return `<button type="button" class="card course-card" data-jump-nav="${nav}"><div class="code">${icon}</div><div class="meta">${label}</div><div class="sub">${sub}</div></button>`;
+  }
+  function homeBanner(icon, title, sub, nav) {
+    return `<div class="pn-banner" data-jump-nav="${nav}"><div class="pn-banner-ico">${icon}</div><div class="pn-banner-txt"><div class="pn-banner-t">${title}</div><div class="pn-banner-s">${sub}</div></div><div class="pn-banner-go">Go!</div></div>`;
+  }
+  function homeSection(title, seeNav, body) {
+    return `<div class="sec"><div class="sh"><div class="st">${title}</div>${seeNav ? `<div class="sa" data-jump-nav="${seeNav}">See all</div>` : ''}</div>${body}</div>`;
+  }
+  function sjStrip(items) {
+    return `<div class="sj-strip">${items.map((c, i) => `<div class="sj" data-sj-screen="${c.screen}" data-sj-params="${esc(JSON.stringify(c.params || {}))}" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})"><div class="sj-ico">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="sj-name">${esc(c.title)}</div><div class="sj-sub">${esc(c.sub || '')}</div></div>`).join('')}</div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const sj = e.target.closest('[data-sj-screen]');
+    if (!sj) return;
+    let p = {};
+    try { p = JSON.parse(sj.dataset.sjParams || '{}'); } catch { p = {}; }
+    navigate(sj.dataset.sjScreen, p);
+  });
+  function pnRows(rows) {
+    return `<div class="card pn-list">${rows.map((r) => `<div class="pn-row"><div class="pn-ico">${r.icon}</div><div class="pn-main"><div class="pn-t">${esc(r.title)}</div>${r.sub ? `<div class="pn-s">${esc(r.sub)}</div>` : ''}</div>${r.side ? `<div class="pn-d">${esc(r.side)}</div>` : ''}</div>`).join('') || `<div class="pn-empty">${esc('Nothing here yet.')}</div>`}</div>`;
+  }
+  function notifRows(list) {
+    return pnRows((list || []).slice(0, 3).map((n) => ({ icon: '🔔', title: n.title, sub: n.body, side: new Date(n.createdAt).toLocaleDateString() })));
+  }
+  // What sits under the tiles on a student's home: the semester banner, their courses, what is due, what is new.
+  async function studentHomeExtras({ isIndividual, assignments, notifications }) {
+    let courses = [];
+    try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; }
+    const sem = !isIndividual && (state.semesters || []).find((x) => x.isCurrent);
+    const banner = isIndividual
+      ? homeBanner('🎓', 'AI Lectures', 'Pick a course and start an AI lecture', 'my-ai-lectures')
+      : homeBanner('📅', sem ? esc(semesterLabel(sem.name)) : 'This semester', 'Open your courses and keep up with every class', 'courses');
+    const strip = courses.length
+      ? sjStrip(courses.map((c) => ({ title: c.title, sub: c.code || '', screen: isIndividual ? 'individual-course-detail' : 'course-detail', params: { courseId: c.id } })))
+      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lessons.' : 'Open My Courses to enrol.' }]);
+    const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
+    const upcoming = isIndividual ? '' : homeSection('⏰ Coming Up', 'my-assignments', pnRows(due.map((a) => ({ icon: '📋', title: a.title, sub: a.course ? a.course.code : '', side: 'Due ' + new Date(a.dueAt).toLocaleDateString() })).concat(due.length ? [] : [{ icon: '✅', title: 'Nothing due right now' }])));
+    return `${banner}${homeSection('📚 My Courses', isIndividual ? 'individual-courses' : 'courses', strip)}${upcoming}${homeSection('🔔 Latest', null, notifRows(notifications))}`;
   }
 
   function markActiveNav(screen) {
     document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen));
+    document.querySelectorAll('#bnav .bn').forEach((b) => b.classList.toggle('on', b.dataset.bn === screen));
   }
 
   function closeMobileNav() {
@@ -812,6 +906,7 @@
     }
     speechCtrl = null;
     if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopped */ } voiceRecognizer = null; }
+    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen) { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -3042,11 +3137,10 @@
   async function renderStaffDashboard() {
     const u = state.user;
     view.innerHTML = `
-            <div class="card hero" id="dash-profile-card" style="display:flex; align-items:center; gap:14px; cursor:pointer;">
-        ${selfAvatarHtml('avatar-staff-dash')}
-        ${greetingBlock(u.position)}
+            <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
+        <div class="hero-top">${greetingBlock(u.position)}${selfAvatarHtml('avatar-staff-dash')}</div>
       </div>
-      <div class="grid-cards tiles">
+      <div class="grid-cards tiles center">
         <button class="card course-card" id="staff-go-id" style="text-align:left; cursor:pointer;"><div class="code">🪪</div><div class="meta">Your Digital ID</div></button>
         <button class="card course-card" id="staff-go-lib" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">e-Library</div></button>
       </div>`;
@@ -3609,21 +3703,23 @@
     };
     const pendingCount = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
     const homeStats = isIndividual
-      ? [[pendingCount, 'Assignments & tests pending', 'my-assessments'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', 'my-activity'], [recentResults.length, 'Tests & assignments taken', 'my-activity']]
-      : [[pendingCount, 'Assignments pending', 'my-assignments'], [attendancePct == null ? '—' : attendancePct + '%', 'Attendance rate', 'my-attendance'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Recent test average', 'my-activity']];
-    const homeTiles = isIndividual ? `<button class="card course-card" data-jump-nav="individual-courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button><button class="card course-card" data-jump-nav="my-ai-lectures" style="text-align:left; cursor:pointer;"><div class="code">🎓</div><div class="meta">My AI Lectures</div></button><button class="card course-card" data-jump-nav="my-assessments" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Assignments & Tests</div></button><button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button><button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button><button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button><button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button><button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button><button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>` : `<button class="card course-card" data-jump-nav="courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button><button class="card course-card" data-jump-nav="my-assignments" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Assignments</div></button><button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button><button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button><button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button><button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button><button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button><button class="card course-card" data-jump-nav="student-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button><button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>`;
+      ? [[pendingCount, 'Pending', 'my-assessments', '#FF6B35'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Avg Score', 'my-activity', '#FFD600'], [recentResults.length, 'Taken', 'my-activity', '#00C853']]
+      : [[pendingCount, 'Assignments', 'my-assignments', '#FF6B35'], [attendancePct == null ? '—' : attendancePct + '%', 'Attendance', 'my-attendance', '#00C853'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Avg Score', 'my-activity', '#FFD600']];
+    const homeTiles = isIndividual ? `${homeTile('individual-courses', '📚', 'My Courses', 'Your own courses')}${homeTile('my-ai-lectures', '🎓', 'My AI Lectures', 'Watch again')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}` : `${homeTile('courses', '📚', 'My Courses', 'Your classes')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('my-assignments', '📋', 'Assignments', 'Due and handed in')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}`;
+    const showHome = !(only && sectionHtml[only]);
+    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications }) : '';
 
-    view.innerHTML = (only && sectionHtml[only])
+    view.innerHTML = !showHome
       ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
       : `
-      <div class="card hero" style="display:flex; align-items:center; gap:14px; cursor:pointer;" id="dash-profile-card">
-        ${selfAvatarHtml('avatar-student-dash')}
-        ${greetingBlock()}
+      <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
+        <div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-student-dash')}</div>
+        <div class="hero-stats">
+          ${homeStats.map(([value, label, nav, colour]) => `<div class="hs" data-jump-nav="${nav}"><div class="hs-n" style="color:${colour}">${value}</div><div class="hs-l">${esc(label)}</div></div>`).join('')}
+        </div>
       </div>
       <div class="grid-cards tiles">${homeTiles}</div>
-      <div class="grid-cards stats">
-        ${homeStats.map(([value, label, nav]) => `<div class="card course-card" data-jump-nav="${nav}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
-      </div>`;
+      ${homeExtra}`;
 
     // Item-level interactions live in one wiring pass, scoped to a container, so it can
     // be re-run on just the newly-revealed rows after a "View more" expand instead of
@@ -3658,7 +3754,7 @@
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     const profileCard = document.getElementById('dash-profile-card');
-    if (profileCard) { profileCard.addEventListener('click', () => navigate('digital-id')); wireSelfAvatarUpload('avatar-student-dash'); }
+    if (profileCard) { profileCard.addEventListener('click', (e) => { if (!e.target.closest('[data-jump-nav]')) navigate('digital-id'); }); wireSelfAvatarUpload('avatar-student-dash'); }
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
@@ -5398,18 +5494,21 @@
     const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
     const totalStudents = counts.reduce((sum, c) => sum + c.count, 0);
     const u = state.user;
+    const notifRes = await api('/notifications').catch(() => ({ notifications: [] }));
     view.innerHTML = `
-      <div class="card hero" style="display:flex; align-items:center; gap:14px; cursor:pointer;" id="dash-profile-card">
-        ${selfAvatarHtml('avatar-lect-dash')}
-        ${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}
+      <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
+        <div class="hero-top">${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}${selfAvatarHtml('avatar-lect-dash')}</div>
+        <div class="hero-stats">
+          <div class="hs" data-jump-nav="lect-courses"><div class="hs-n" style="color:#00C853">${courses.length}</div><div class="hs-l">Courses</div></div>
+          <div class="hs" data-jump-nav="lect-students"><div class="hs-n" style="color:#FFD600">${totalStudents}</div><div class="hs-l">Students</div></div>
+        </div>
       </div>
-      <div class="grid-cards tiles"><button class="card course-card" data-jump-nav="lect-lessons-entry" style="text-align:left; cursor:pointer;"><div class="code">📹</div><div class="meta">Upload Lecture</div></button><button class="card course-card" data-jump-nav="lect-tests" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Create Test</div></button><button class="card course-card" data-jump-nav="lect-students" style="text-align:left; cursor:pointer;"><div class="code">👥</div><div class="meta">My Students</div></button><button class="card course-card" data-jump-nav="lect-classwork-quiz" style="text-align:left; cursor:pointer;"><div class="code">📋</div><div class="meta">Classwork / Quiz</div></button><button class="card course-card" data-jump-nav="lect-mark-work" style="text-align:left; cursor:pointer;"><div class="code">✅</div><div class="meta">Mark Work</div></button><button class="card course-card" data-jump-nav="lect-attendance-hub" style="text-align:left; cursor:pointer;"><div class="code">🗓️</div><div class="meta">Attendance</div></button><button class="card course-card" id="dash-announce-btn" style="text-align:left; cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></button><button class="card course-card" data-jump-nav="class-recordings" style="text-align:left; cursor:pointer;"><div class="code">🎞️</div><div class="meta">Class Recordings</div></button><button class="card course-card" data-jump-nav="lect-library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button></div>
-      <div class="grid-cards stats">
-        <div class="card course-card" data-jump-nav="lect-courses" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
-        <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">${totalStudents}</div><div class="meta">Students</div></div>
-      </div>
+      <div class="grid-cards tiles center">${homeTile('lect-lessons-entry', '📹', 'Upload Lecture', 'Video + notes')}${homeTile('lect-tests', '📝', 'Create Test', 'Notifies students')}${homeTile('lect-students', '👥', 'My Students', 'Your learners')}${homeTile('lect-classwork-quiz', '📋', 'Classwork / Quiz', 'Set work')}${homeTile('lect-mark-work', '✅', 'Mark Work', 'Score and feedback')}${homeTile('lect-attendance-hub', '🗓️', 'Attendance', 'Daily records')}<button type="button" class="card course-card" id="dash-announce-btn"><div class="code">📣</div><div class="meta">Announce</div><div class="sub">To a class</div></button>${homeTile('class-recordings', '🎞️', 'Class Recordings', 'Replays')}</div>
+      ${homeSection('📚 My Courses', 'lect-courses', courses.length ? sjStrip(courses.map((c, i) => ({ title: c.title, sub: `${counts[i].count} student${counts[i].count === 1 ? '' : 's'}`, screen: 'lect-lessons', params: { courseId: c.id } }))) : pnRows([{ icon: '📚', title: 'No courses assigned yet' }]))}
+      ${homeSection('🔔 Latest', null, notifRows(notifRes.notifications))}
     `;
-    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
+    const lectCard = document.getElementById('dash-profile-card');
+    lectCard.addEventListener('click', (e) => { if (!e.target.closest('[data-jump-nav]')) navigate('digital-id'); });
     wireSelfAvatarUpload('avatar-lect-dash');
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => {
       if (el.dataset.jumpNav === 'lect-lessons-entry') return openLessonCoursePicker(courses);
@@ -6725,22 +6824,23 @@
       api('/admin/courses').catch(() => ({ courses: [] })),
     ]);
     view.innerHTML = `
-      <div class="card hero" style="display:flex; align-items:center; gap:14px;">
-        ${selfAvatarHtml('avatar-admin-dash')}
-        ${greetingBlock()}
+      <div class="card hero pn-hero">
+        <div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-admin-dash')}</div>
       </div>
-      <div class="grid-cards tiles"><button class="card course-card" data-jump-nav="admin-directory" style="text-align:left; cursor:pointer;"><div class="code">👥</div><div class="meta">Staff & Student Directory</div></button><button class="card course-card" data-jump-nav="admin-academics" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">Departments & Courses</div></button><button class="card course-card" data-jump-nav="admin-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button><button class="card course-card" data-jump-nav="admin-announce" style="text-align:left; cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></button><button class="card course-card" data-jump-nav="admin-bulk-message" style="text-align:left; cursor:pointer;"><div class="code">✉️</div><div class="meta">Bulk SMS / Email</div></button><button class="card course-card" data-jump-nav="admin-fees" style="text-align:left; cursor:pointer;"><div class="code">💰</div><div class="meta">Fee Payment</div></button><button class="card course-card" data-jump-nav="admin-elections" style="text-align:left; cursor:pointer;"><div class="code">🗳️</div><div class="meta">Elections</div></button><button class="card course-card" data-jump-nav="admin-hostel-allocations" style="text-align:left; cursor:pointer;"><div class="code">🏠</div><div class="meta">Hostels</div></button><button class="card course-card" data-jump-nav="admin-student-requests" style="text-align:left; cursor:pointer;"><div class="code">📨</div><div class="meta">Student Requests</div></button><button class="card course-card" data-jump-nav="admin-staff-records" style="text-align:left; cursor:pointer;"><div class="code">🗂️</div><div class="meta">Staff Records</div></button><button class="card course-card" data-jump-nav="digital-id" style="text-align:left; cursor:pointer;"><div class="code">🪪</div><div class="meta">Digital ID</div></button><button class="card course-card" data-jump-nav="admin-management" style="text-align:left; cursor:pointer;"><div class="code">🛡️</div><div class="meta">Admin Management</div></button></div>
-      <div class="card joincode" style="padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.2rem; letter-spacing:3px; font-weight:700;">${esc(school.joinCode || '—')}</div></div>
+      <div class="grid-cards tiles center">${homeTile('admin-directory', '👥', 'Staff & Student Directory', 'Staff and students')}${homeTile('admin-academics', '📚', 'Departments & Courses', 'Programmes')}${homeTile('admin-results', '📊', 'Results', 'Publish and review')}${homeTile('admin-announce', '📣', 'Announce', 'Notify everyone')}${homeTile('admin-fees', '💰', 'Fee Payment', 'Fees and receipts')}${homeTile('admin-bulk-message', '✉️', 'Bulk SMS / Email', 'Message groups')}</div>
+      <div class="card joincode" style="padding:14px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.5rem; letter-spacing:2px; font-weight:800;">${esc(school.joinCode || '—')}</div></div>
         <button class="btn btn-ghost btn-sm" id="copy-join-code">Copy</button>
       </div>
       <div class="grid-cards stats">
-        <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${students.length}</div><div class="meta">Students</div></div>
-        <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
-        <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
-        <div class="card course-card" data-jump-nav="admin-academics" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
-        <div class="card course-card" data-jump-nav="admin-management" style="cursor:pointer;"><div class="code">${admins.length}</div><div class="meta">School admins</div></div>
+        <div class="card course-card" data-jump-nav="admin-directory"><div class="code">${students.length}</div><div class="meta">Students</div></div>
+        <div class="card course-card" data-jump-nav="admin-directory"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
+        <div class="card course-card" data-jump-nav="admin-directory"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
+        <div class="card course-card" data-jump-nav="admin-academics"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
+        <div class="card course-card" data-jump-nav="admin-management"><div class="code">${admins.length}</div><div class="meta">School admins</div></div>
       </div>
+      ${homeSection('👨‍🏫 Lecturers', 'admin-directory', pnRows(lecturers.slice(0, 5).map((l) => ({ icon: '👨‍🏫', title: l.fullName, sub: [l.staffId, l.departmentName || (l.department && l.department.name)].filter(Boolean).join(' · ') }))))}
+      ${homeSection('🧑‍🎓 Students', 'admin-directory', pnRows(students.slice(0, 5).map((x) => ({ icon: '🧑‍🎓', title: x.fullName, sub: [x.matricNumber, x.departmentName || (x.department && x.department.name)].filter(Boolean).join(' · ') }))))}
 
       <div class="page-head" style="margin-bottom:12px;">
         <h3 style="font-size:1rem;">School admins</h3>
