@@ -6,7 +6,7 @@
      - pages and scripts are network-first (a deploy shows up immediately) and fall back to the
        last copy only when the network fails. */
 const CACHE = 'learnza-shell-v1';
-const SHELL = ['/app', '/schools', '/style.css', '/auth.css', '/extras.js', '/app.js', '/schools.js', '/icon.svg'];
+const SHELL = ['/app', '/schools', '/style.css', '/auth.css', '/ui.css', '/extras.js', '/app.js', '/schools.js', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));

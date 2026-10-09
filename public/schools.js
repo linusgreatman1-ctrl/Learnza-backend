@@ -3591,14 +3591,25 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-student-dash')}
         ${greetingBlock()}
       </div>
-      ${myRecord ? `<h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>${studentDetailsCard(myRecord, { own: true })}` : ''}
-      <div class="grid-cards" style="margin-bottom:26px;">
+      <div class="grid-cards stats" style="margin-bottom:26px;">
         ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
       </div>
+      <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
+      <div class="grid-cards tiles" style="margin-bottom:26px;">
+        <button class="card course-card" data-jump-nav="courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button>
+        <button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button>
+        <button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button>
+        <button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button>
+        <button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button>
+        <button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button>
+        <button class="card course-card" data-jump-nav="student-results" style="text-align:left; cursor:pointer;"><div class="code">📊</div><div class="meta">Results</div></button>
+        <button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>
+      </div>
+      ${myRecord ? `<h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>${studentDetailsCard(myRecord, { own: true })}` : ''}
 
       ${isIndividual ? '' : `
       <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
@@ -3665,6 +3676,7 @@
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
     wireSelfAvatarUpload('avatar-student-dash');
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
         const target = view.querySelector(tile.dataset.jump);
@@ -5405,18 +5417,18 @@
     const u = state.user;
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-lect-dash')}
         ${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}
       </div>
       <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
       ${lecturerDetailsCard(u, department, courses.length, totalStudents)}
-      <div class="grid-cards" style="margin-bottom:26px;">
+      <div class="grid-cards stats" style="margin-bottom:26px;">
         <div class="card course-card" data-jump-nav="lect-courses" style="cursor:pointer;"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
         <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">${totalStudents}</div><div class="meta">Students</div></div>
       </div>
       <h3 style="margin-bottom:10px; font-size:1rem;">Quick actions</h3>
-      <div class="grid-cards" style="margin-bottom:26px;">
+      <div class="grid-cards tiles" style="margin-bottom:26px;">
         <div class="card course-card" data-jump-nav="lect-lessons-entry" style="cursor:pointer;"><div class="code">📹</div><div class="meta">Upload Lecture</div></div>
         <div class="card course-card" data-jump-nav="lect-tests" style="cursor:pointer;"><div class="code">📝</div><div class="meta">Create Test</div></div>
         <div class="card course-card" data-jump-nav="lect-students" style="cursor:pointer;"><div class="code">👥</div><div class="meta">My Students</div></div>
@@ -5424,6 +5436,7 @@
         <div class="card course-card" data-jump-nav="lect-mark-work" style="cursor:pointer;"><div class="code">✅</div><div class="meta">Mark Work</div></div>
         <div class="card course-card" data-jump-nav="lect-attendance-hub" style="cursor:pointer;"><div class="code">🗓️</div><div class="meta">Attendance</div></div>
         <div class="card course-card" id="dash-announce-btn" style="cursor:pointer;"><div class="code">📣</div><div class="meta">Announce</div></div>
+        <div class="card course-card" data-jump-nav="class-recordings" style="cursor:pointer;"><div class="code">🎞️</div><div class="meta">Class Recordings</div></div>
       </div>
       <div style="display:flex; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-ghost" id="dash-digital-id-btn">🪪 Digital ID</button>
@@ -6745,15 +6758,15 @@
     ]);
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px;">
+      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px;">
         ${selfAvatarHtml('avatar-admin-dash')}
         ${greetingBlock()}
       </div>
-      <div class="card" style="padding:16px 20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+      <div class="card joincode" style="padding:16px 20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.4rem; letter-spacing:3px; font-weight:700;">${esc(school.joinCode || '—')}</div></div>
         <button class="btn btn-ghost btn-sm" id="copy-join-code">Copy</button>
       </div>
-      <div class="grid-cards" style="margin-bottom:26px;">
+      <div class="grid-cards stats" style="margin-bottom:26px;">
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${students.length}</div><div class="meta">Students</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-jump-nav="admin-directory" style="cursor:pointer;"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
@@ -6762,7 +6775,7 @@
       </div>
 
       <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
-      <div class="grid-cards" style="margin-bottom:26px;">
+      <div class="grid-cards tiles" style="margin-bottom:26px;">
         ${[
           ['admin-directory', '👥', 'Staff & Student Directory'],
           ['admin-academics', '📚', 'Departments & Courses'],

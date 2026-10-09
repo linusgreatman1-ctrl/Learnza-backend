@@ -2288,17 +2288,28 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
-      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
+      <div class="card hero" style="margin-bottom:22px; display:flex; align-items:center; gap:16px; cursor:pointer;" id="dash-profile-card">
         ${selfAvatarHtml('avatar-student-dash')}
         ${greetingBlock()}
+      </div>
+      <div class="grid-cards stats" style="margin-bottom:26px;">
+        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
+      </div>
+      <h3 style="margin:0 0 10px; font-size:1rem;">Quick actions</h3>
+      <div class="grid-cards tiles" style="margin-bottom:26px;">
+        <button class="card course-card" data-jump-nav="individual-courses" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">My Courses</div></button>
+        <button class="card course-card" data-jump-nav="my-ai-lectures" style="text-align:left; cursor:pointer;"><div class="code">🎓</div><div class="meta">My AI Lectures</div></button>
+        <button class="card course-card" data-jump-nav="library" style="text-align:left; cursor:pointer;"><div class="code">📖</div><div class="meta">e-Library</div></button>
+        <button class="card course-card" data-jump-nav="tests-hub" style="text-align:left; cursor:pointer;"><div class="code">📝</div><div class="meta">Tests</div></button>
+        <button class="card course-card" data-jump-nav="cbt-mock" style="text-align:left; cursor:pointer;"><div class="code">🎯</div><div class="meta">CBT Mock Exam</div></button>
+        <button class="card course-card" data-jump-nav="lab-hub" style="text-align:left; cursor:pointer;"><div class="code">🧪</div><div class="meta">Digital Lab</div></button>
+        <button class="card course-card" data-jump-nav="research" style="text-align:left; cursor:pointer;"><div class="code">🤖</div><div class="meta">AI Research Assistant</div></button>
+        <button class="card course-card" data-jump-nav="leaderboard" style="text-align:left; cursor:pointer;"><div class="code">🏆</div><div class="meta">Leaderboard</div></button>
       </div>
       <h3 style="margin:0 0 10px; font-size:1rem;">My details</h3>
       ${learnerDetailsCard(state.user)}
       ${myAiLectures ? `<div class="page-head" style="margin-bottom:10px;"><h3 style="font-size:1rem;">My recorded AI lectures</h3><button class="btn btn-ghost btn-sm" id="all-ai-lectures-btn">See all</button></div>
         <div class="card" style="margin-bottom:22px;" id="dash-ai-lectures">${myAiLectures.lessons.slice(0, 5).map(lectureRowHtml).join('') || '<p class="muted" style="padding:16px;">No lessons yet — create a course and the AI Lecturer prepares them.</p>'}</div>` : ''}
-      <div class="grid-cards" style="margin-bottom:26px;">
-        ${statTiles.map(([value, label, anchor]) => `<div class="card course-card" data-jump="${anchor}" style="cursor:pointer;"><div class="code">${value}</div><div class="meta">${esc(label)}</div></div>`).join('')}
-      </div>
 
       ${isIndividual ? '' : `
       <h3 id="dash-assignments" style="margin-bottom:10px; font-size:1rem;">Assignments</h3>
@@ -2370,6 +2381,7 @@
       const allBtn = document.getElementById('all-ai-lectures-btn');
       if (allBtn) allBtn.addEventListener('click', () => navigate('my-ai-lectures'));
     }
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
         const target = view.querySelector(tile.dataset.jump);
