@@ -7,8 +7,10 @@ const prisma = require('../db');
 const SECONDS_PER_COIN = 60;
 
 const PACKS = [
-  { id: 'COINS_30', coins: 30, amountKobo: 250000, label: '30 coins', minutes: 30, blurb: '30 minutes of live AI teaching' },
-  { id: 'COINS_100', coins: 100, amountKobo: 750000, label: '100 coins', minutes: 100, blurb: '100 minutes — best value' },
+  { id: 'COINS_30', coins: 30, amountKobo: 250000, label: '30 minutes', minutes: 30, blurb: '30 minutes of live AI teaching' },
+  { id: 'COINS_60', coins: 60, amountKobo: 480000, label: '60 minutes', minutes: 60, blurb: '60 minutes of live AI teaching' },
+  { id: 'COINS_90', coins: 90, amountKobo: 700000, label: '90 minutes', minutes: 90, blurb: '90 minutes of live AI teaching' },
+  { id: 'COINS_120', coins: 120, amountKobo: 900000, label: '120 minutes', minutes: 120, blurb: '120 minutes — best value' },
 ];
 
 function getPack(id) {

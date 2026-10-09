@@ -178,7 +178,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('paid in full -> 30 coins, once, = 30 minutes', r.data.balance === 30 && r.data.minutesLeft === 30, r.data);
   r = await call('GET', '/api/billing/verify/' + coinRef, { token: indie.token });
   check('verify reports coin purchases too', r.data.status === 'SUCCESS' && r.data.kind === 'coins' && r.data.coins === 30, r.data);
-  r = await call('POST', '/api/coins/manual', { token: indie.token, body: { packId: 'COINS_100', method: 'USSD' } });
+  r = await call('POST', '/api/coins/manual', { token: indie.token, body: { packId: 'COINS_120', method: 'USSD' } });
   check('bank/USSD coin request recorded', r.status === 201);
   r = await call('GET', '/api/coins', { token: indie.token });
   check('...and shown as waiting', r.data.pending.length === 1 && r.data.balance === 30);
@@ -186,7 +186,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   r = await call('POST', `/api/super/coins/purchases/${cp.id}/confirm`, { token: SUPER });
   await call('POST', `/api/super/coins/purchases/${cp.id}/confirm`, { token: SUPER });
   r = await call('GET', '/api/coins', { token: indie.token });
-  check('owner confirms: +100 coins, credited exactly once', r.data.balance === 130 && r.data.pending.length === 0, r.data.balance);
+  check('owner confirms: +120 coins, credited exactly once', r.data.balance === 150 && r.data.pending.length === 0, r.data.balance);
 
   // ================================================================ elections
   console.log('== elections ==');
