@@ -1269,11 +1269,11 @@
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
             <div>
               <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-              <div class="meta">${l.isAiTeacher ? 'AI Lecturer · narrated lesson' : 'Recorded lesson'}${l.videoUrl || (!l.locked && l.isAiTeacher) ? ' · video available' : ''}</div>
+              <div class="meta">${l.isAiTeacher ? 'AI Lecturer · narrated lesson' : 'Lecture'}${l.videoUrl ? (isDocUrl(l.videoUrl) ? ' · document' : ' · video') : (!l.locked && l.isAiTeacher ? ' · video available' : '')}</div>
             </div>
-            <span class="pill pill-accent">Lesson ${l.order}</span>
+            <span class="pill pill-accent">${l.isAiTeacher ? 'Lesson' : 'Lecture'} ${l.order}</span>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No lessons uploaded yet.</p>'}
+        `).join('') || '<p class="muted" style="padding:16px;">No lectures uploaded yet.</p>'}
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('courses'));
@@ -1317,7 +1317,7 @@
   async function renderLessonPlayer() {
     const { courseId, lessonId, isIndividual } = state.view;
     const lessonsPath = isIndividual ? `/individual-courses/${courseId}/lessons` : `/courses/${courseId}/lessons`;
-    const backScreen = isIndividual ? 'individual-course-detail' : 'course-detail';
+    const backScreen = isIndividual ? 'individual-course-detail' : (['LECTURER', 'ADMIN'].includes(state.user.role) ? 'lect-lessons' : 'course-detail');
     const { lessons } = await api(lessonsPath);
     const lesson = lessons.find((l) => l.id === lessonId);
     if (!lesson) { view.innerHTML = '<p>Lesson not found.</p>'; return; }
@@ -1349,10 +1349,11 @@
       </div>
       <div class="card lesson-player">
         ${lesson.videoUrl ? `
-          <span class="pill pill-muted">Recorded lesson${lesson.author ? ` — ${esc(lesson.author.fullName)}` : ''}</span>
-          <div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>
-          <h3 style="margin:18px 0 8px; font-size:0.95rem;">Lesson notes</h3>
-          <p style="white-space:pre-wrap;">${esc(lesson.script)}</p>
+          <span class="pill pill-muted">Lecture${lesson.author ? ` — ${esc(lesson.author.fullName)}` : ''}</span>
+          ${isDocUrl(lesson.videoUrl)
+            ? `<div style="margin-top:14px; text-align:center; padding:24px;"><div style="font-size:3rem;">📄</div><div style="font-weight:600; margin:6px 0 14px;">${esc(lesson.title)}</div><div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;"><a class="btn btn-accent" href="${esc(lesson.videoUrl)}" target="_blank" rel="noopener">Open</a><a class="btn btn-ghost" href="${esc(lesson.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a></div></div>`
+            : `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div><div style="margin-top:10px;"><a class="btn btn-ghost btn-sm" href="${esc(lesson.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a></div>`}
+          ${lesson.script ? `<h3 style="margin:18px 0 8px; font-size:0.95rem;">Lecture notes</h3><p style="white-space:pre-wrap;">${esc(lesson.script)}</p>` : ''}
         ` : `
           <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Lecturer — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
           ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
@@ -3733,7 +3734,7 @@
               <div style="font-weight:600;">${esc(l.title)}</div><div class="meta">${esc(l.course.code)}${l.author ? ` · ${esc(l.author.fullName)}` : ''} · ${new Date(l.createdAt).toLocaleDateString()}</div>
             </div>
             <div style="display:flex; gap:8px; align-items:center;">
-              <span class="pill pill-muted" data-open-lesson="${l.id}" data-course="${l.courseId}" style="cursor:pointer;">▶ Watch</span>
+              ${isDocUrl(l.videoUrl) ? `<a class="pill pill-muted" href="${esc(l.videoUrl)}" target="_blank" rel="noopener">📄 Open</a>` : `<span class="pill pill-muted" data-open-lesson="${l.id}" data-course="${l.courseId}" style="cursor:pointer;">▶ Watch</span>`}
               <a class="pill pill-muted" href="${esc(l.videoUrl)}" download target="_blank" rel="noopener" title="Download">⬇ Download</a>
             </div>
           </div>`;
@@ -5406,6 +5407,10 @@
     });
   }
 
+  // A lecture's file is a video, or a document (PDF, Word, PowerPoint...).
+  const isDocUrl = (u) => !!u && !/\.(mp4|webm|mov|m4v|ogv|ogg|mkv|avi)(\?|#|$)/i.test(u);
+  const lectureKind = (l) => (l.videoUrl ? (isDocUrl(l.videoUrl) ? 'Document' : 'Video') : 'Notes only');
+
   async function renderLecturerLessons() {
     const { course } = await api(`/courses/${state.view.courseId}`);
     const { lessons } = await api(`/courses/${course.id}/lessons`);
@@ -5429,22 +5434,28 @@
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
-        <h3 style="margin-bottom:12px; font-size:1rem;">Add a recorded lesson (subscribers only)</h3>
+        <h3 style="margin-bottom:4px; font-size:1rem;">Add a lecture</h3>
+        <p class="meta" style="margin-bottom:12px;">Only the students enrolled in ${esc(course.code)} can see it.</p>
         <form id="lesson-form">
           <div class="field"><label>Title</label><input type="text" id="lsn-title" required></div>
           <div class="field"><label>Order</label><input type="number" id="lsn-order" value="${lessons.length + 1}" required></div>
-          <div class="field"><label>Narration script (read aloud in the lesson player)</label><textarea id="lsn-script" required></textarea></div>
-          <div class="field"><label>Recorded video (optional — upload from your device)</label><input type="file" id="lsn-video" accept="video/*"></div>
-          <button class="btn btn-primary" type="submit" id="lsn-submit-btn">Publish lesson</button>
+          <div class="field"><label>Lecture file (a video, or a document such as PDF, Word or PowerPoint)</label><input type="file" id="lsn-video" accept="video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt"></div>
+          <div class="field"><label>Notes (optional when you attach a file)</label><textarea id="lsn-script"></textarea></div>
+          <button class="btn btn-primary" type="submit" id="lsn-submit-btn">Publish lecture</button>
         </form>
       </div>
-      <div class="card">
+      <h3 style="margin-bottom:10px; font-size:1rem;">Lectures added to ${esc(course.code)}</h3>
+      <div class="card" id="lecture-list">
         ${lessons.map((l) => `
-          <div class="list-row">
-            <div><div style="font-weight:600;">${esc(l.title)}</div><div class="meta">Lesson ${l.order}${l.videoUrl ? ' · has video' : ''}</div></div>
-            <button class="btn btn-ghost btn-sm" data-delete="${l.id}">Delete</button>
+          <div class="list-row" style="flex-wrap:wrap; gap:10px;">
+            <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(l.title)}</div><div class="meta">Lecture ${l.order} · ${lectureKind(l)} · ${new Date(l.createdAt).toLocaleDateString()}</div></div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              ${l.videoUrl && isDocUrl(l.videoUrl) ? `<a class="btn btn-accent btn-sm" href="${esc(l.videoUrl)}" target="_blank" rel="noopener">📄 Open</a>` : `<button class="btn btn-accent btn-sm" data-watch="${l.id}">${l.videoUrl ? '▶ Watch' : '📝 Read'}</button>`}
+              ${l.videoUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(l.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a>` : ''}
+              <button class="btn btn-ghost btn-sm" data-delete="${l.id}">Delete</button>
+            </div>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No lessons yet.</p>'}
+        `).join('') || '<p class="muted" style="padding:16px;">No lectures yet.</p>'}
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
@@ -5471,21 +5482,22 @@
 
       const submitBtn = document.getElementById('lsn-submit-btn');
       submitBtn.disabled = true;
-      submitBtn.textContent = videoFile ? 'Uploading video…' : 'Publishing…';
+      submitBtn.textContent = videoFile ? 'Uploading…' : 'Publishing…';
       try {
         const { storage } = await api(`/courses/${course.id}/lessons`, { method: 'POST', body: fd });
-        toast('Lesson published');
-        if (storage === 'local-disk') toast('Note: cloud storage isn\'t configured yet, so this video may not survive the next deploy.');
+        toast('Lecture published');
+        if (storage === 'local-disk') toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
         render();
       } catch (err) {
         toast(err.message);
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Publish lesson';
+        submitBtn.textContent = 'Publish lecture';
       }
     });
+    view.querySelectorAll('[data-watch]').forEach((btn) => btn.addEventListener('click', () => navigate('lesson-player', { courseId: course.id, lessonId: btn.dataset.watch })));
     view.querySelectorAll('[data-delete]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm('Delete this lesson?')) return;
+        if (!confirm('Delete this lecture?')) return;
         await api(`/lessons/${btn.dataset.delete}`, { method: 'DELETE' });
         render();
       });

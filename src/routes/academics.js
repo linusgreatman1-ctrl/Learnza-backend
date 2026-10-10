@@ -296,11 +296,28 @@ router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (re
   res.json({ course });
 });
 
+// Who may see or add the lectures of a course: the lecturer assigned to it (and the school admin) and the students
+// enrolled in it -- nobody else, not even other students or lecturers of the same school.
+async function courseLectureAccess(user, courseId) {
+  if (user.role === 'ADMIN') return 'teach';
+  if (user.role === 'LECTURER') {
+    const mine = (await prisma.courseLecturer.findFirst({ where: { courseId, lecturerId: user.id } }))
+      || (await prisma.lesson.findFirst({ where: { courseId, authorId: user.id }, select: { id: true } }));
+    return mine ? 'teach' : null;
+  }
+  if (user.role === 'STUDENT') {
+    const enrolled = await prisma.enrollment.findFirst({ where: { courseId, studentId: user.id }, select: { id: true } });
+    return enrolled ? 'view' : null;
+  }
+  return null;
+}
+
 // Lessons (AI-teacher narrated or lecturer recorded)
 // AI Lecturer narration and lecturer-recorded video are paid features -- students can
 // always see what lessons exist, but the actual content (script/videoUrl) is stripped
 // unless they have an active subscription. Lecturers/admins always see everything.
 router.get('/courses/:id/lessons', requireAuth, loadCourse(), async (req, res) => {
+  if (!(await courseLectureAccess(req.user, req.course.id))) return res.status(403).json({ error: 'You are not in this class.' });
   const lessons = await prisma.lesson.findMany({
     where: { courseId: req.course.id },
     include: { author: { select: { fullName: true } } },
@@ -326,8 +343,11 @@ router.get('/courses/:id/lessons', requireAuth, loadCourse(), async (req, res) =
 // and no frontend form ever sent it, so every lecturer-uploaded lesson was silently
 // mislabeled as "AI Lecturer" content.)
 router.post('/courses/:id/lessons', requireAuth, requireRole('LECTURER', 'ADMIN'), loadCourse(), upload.single('video'), async (req, res) => {
-  const { title, script, order } = req.body;
-  if (!title || !script) return res.status(400).json({ error: 'Title and script are required' });
+  if ((await courseLectureAccess(req.user, req.course.id)) !== 'teach') return res.status(403).json({ error: 'You are not assigned to this course.' });
+  const { title, order } = req.body;
+  const script = String(req.body.script || '').trim();
+  // A lecture is a video or a document (PDF, Word, PowerPoint...), with or without notes; at least one of the two.
+  if (!title || (!script && !req.file)) return res.status(400).json({ error: 'Add a title, and a file or some notes.' });
 
   let videoUrl = null;
   let storage = null;
