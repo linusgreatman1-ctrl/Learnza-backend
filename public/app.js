@@ -611,7 +611,7 @@
   const HOME_SCREENS = ['my-dashboard', 'lect-dashboard', 'admin-dashboard', 'staff-dashboard'];
   function addBackArrow() {
     const v = document.getElementById('view');
-    if (!v || !state.user || !state.view || !state.view.screen || HOME_SCREENS.includes(state.view.screen) || state.view.screen === 'live-class') return;
+    if (!v || !state.user || !state.view || !state.view.screen || HOME_SCREENS.includes(state.view.screen) || state.view.screen === 'live-class' || v.querySelector('#exit-exam-btn')) return;
     let head = v.querySelector(':scope > .page-head');
     if (!head) {
       if (!v.children.length) return;
@@ -964,28 +964,31 @@
   }
   const safeFileName = (n) => String(n || 'lecture').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'lecture';
 
+  
+
+  // The same lectures that are listed inside each course ("Pre-recorded lectures"), gathered in one place and set out the same
+  // way: one block per course, each row opens the lecture.
   async function renderMyAiLectures() {
     const { lessons } = await api('/ai-teacher/prerecorded');
+    const groups = new Map();
+    lessons.forEach((l) => { const k = l.individualCourseId || l.courseId; if (!groups.has(k)) groups.set(k, { title: l.courseTitle, courseId: k, isIndividual: !!l.individualCourseId, items: [] }); groups.get(k).items.push(l); });
     view.innerHTML = `
       <div class="page-head"><h1>AI Pre-recorded Lectures</h1></div>
-      <p class="muted" style="margin-bottom:16px;">The lectures the AI Lecturer recorded for each of your courses. This is where you carry on learning when your live AI minutes or coins run out. Watch one again whenever you like, or download its notes. Classes you took live with the AI Lecturer are under <b>AI Live Recorded Lectures</b>.</p>
-      <div class="card">${lessons.map((l) => `
-        <div class="list-row" style="gap:10px; flex-wrap:wrap;">
-          <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-            <div class="meta">${esc(l.courseTitle)} · AI Lecturer · narrated lecture ${l.order}</div></div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn btn-accent btn-sm" data-ai-watch="${l.id}">▶ Watch again</button>
-            ${l.locked ? '' : `<button class="btn btn-ghost btn-sm" data-ai-notes="${l.id}">⬇ Download notes</button>`}
+      <p class="muted" style="margin-bottom:16px;">The pre-recorded lectures the system's AI Lecturer made for each of your courses: the same ones listed inside the course. This is where you carry on learning when your live AI minutes or coins run out. Classes you took live are under <b>AI Live Recorded Lectures</b>.</p>
+      ${[...groups.values()].map((g) => `
+        <div style="margin-bottom:22px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
+            <div class="muted" style="font-weight:700;">${esc(g.title)}</div>
+            <button class="btn btn-ghost btn-sm" data-open-course="${g.courseId}" data-individual="${g.isIndividual}">Open course</button>
           </div>
-        </div>`).join('') || '<p class="muted" style="padding:16px;">No pre-recorded lectures in your courses yet. They appear here, and inside each course, as the system records them.</p>'}</div>`;
-    view.querySelectorAll('[data-ai-watch]').forEach((b) => b.addEventListener('click', () => {
-      const l = lessons.find((x) => x.id === b.dataset.aiWatch);
-      navigate('lesson-player', { courseId: l.individualCourseId || l.courseId, lessonId: l.id, isIndividual: !!l.individualCourseId });
-    }));
-    view.querySelectorAll('[data-ai-notes]').forEach((b) => b.addEventListener('click', () => {
-      const l = lessons.find((x) => x.id === b.dataset.aiNotes);
-      downloadTextFile(safeFileName(l.courseTitle + '-' + l.title) + '.txt', `${l.title}\n${l.courseTitle}\n\n${l.script || ''}\n`);
-    }));
+          <div class="card">${g.items.map((l) => `
+            <div class="list-row" data-open-lesson="${l.id}" data-course="${g.courseId}" data-individual="${g.isIndividual}" style="cursor:pointer;">
+              <div><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div><div class="meta">AI Lecturer · narrated lecture</div></div>
+              <span class="pill pill-accent">Lecture ${l.order}</span>
+            </div>`).join('')}</div>
+        </div>`).join('') || '<div class="card"><p class="muted" style="padding:16px;">No pre-recorded lectures in your courses yet. They appear here, and inside each course, as the system records them.</p></div>'}`;
+    view.querySelectorAll('[data-open-lesson]').forEach((el) => el.addEventListener('click', () => navigate('lesson-player', { courseId: el.dataset.course, lessonId: el.dataset.openLesson, isIndividual: el.dataset.individual === 'true' })));
+    view.querySelectorAll('[data-open-course]').forEach((b) => b.addEventListener('click', () => navigate(b.dataset.individual === 'true' ? 'individual-course-detail' : 'course-detail', { courseId: b.dataset.openCourse })));
   }
 
   async function renderMyAiLive() {
@@ -2778,11 +2781,6 @@
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     const profileCard = document.getElementById('dash-profile-card');
     if (profileCard) { wireSelfAvatarUpload('avatar-student-dash'); }
-    if (myAiLectures) {
-      wireLectureRows(document.getElementById('dash-ai-lectures'), myAiLectures);
-      const allBtn = document.getElementById('all-ai-lectures-btn');
-      if (allBtn) allBtn.addEventListener('click', () => navigate('my-ai-lectures'));
-    }
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
@@ -3954,7 +3952,7 @@
         <h1>${esc(assessment.title)}</h1>
         <div style="display:flex; align-items:center; gap:12px;">
           <span class="pill pill-accent tabular" id="exam-timer">--:--</span>
-          <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
+          <button class="btn btn-ghost btn-sm exit-exam-btn" id="exit-exam-btn">✕ Exit</button>
         </div>
       </div>
       <p class="muted" style="margin-bottom:10px;">${fmtMins(durationMin)} · ${questions.some((q) => q.questionType === 'THEORY') ? 'write full answers; compare them with the model answer afterwards' : 'auto-graded on submit'}</p>
@@ -3969,7 +3967,27 @@
       </div>
       <div id="quiz-nav" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:18px;"></div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate(state.view.backTo || 'cbt-mock', { courseId: state.view.backCourseId }));
+    // Leaving the questions asks first (the way PassNow does): the answers typed so far are not kept.
+    const isExam = ['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(assessment.type);
+    document.getElementById('exit-exam-btn').addEventListener('click', () => {
+      if (document.getElementById('exit-overlay')) return;
+      const box = document.createElement('div');
+      box.id = 'exit-overlay';
+      box.className = 'exit-overlay';
+      box.innerHTML = `<div class="exit-box" role="dialog" aria-modal="true">
+        <h3>Exit now?</h3>
+        <p>Your progress on this ${isExam ? 'exam' : 'test'} will be lost.</p>
+        <div class="exit-actions"><button type="button" class="btn btn-ghost" id="exit-stay">Stay</button><button type="button" class="btn btn-danger" id="exit-go">Exit</button></div>
+      </div>`;
+      document.body.appendChild(box);
+      box.addEventListener('click', (e) => { if (e.target === box) box.remove(); });
+      box.querySelector('#exit-stay').addEventListener('click', () => box.remove());
+      box.querySelector('#exit-go').addEventListener('click', () => {
+        box.remove();
+        if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
+        navigate(state.view.backTo || 'cbt-mock', { courseId: state.view.backCourseId });
+      });
+    });
 
     function renderNav() {
       document.getElementById('quiz-nav').innerHTML = questions.map((q, i) => `

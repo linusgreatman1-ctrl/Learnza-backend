@@ -10,7 +10,7 @@ const router = express.Router();
 
 // A lecturer's test/exam gets 1 minute per question -- not the lecturer-set durationMin field, which
 // is kept on the model but not used for the time limit. The papers the system writes for students
-// (mock exams, past questions) carry their own times: Section A 15 minutes, Section B 1h30
+// (mock exams, past questions) carry their own times: Section A 15 minutes, Section B 40 minutes
 // (utils/paper.js).
 const { timingFor, withTiming, TIMING_INCLUDE } = require('../utils/paper');
 

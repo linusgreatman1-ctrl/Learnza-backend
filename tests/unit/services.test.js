@@ -110,13 +110,13 @@ test('the real pages load their own scripts in dependency order (extras before a
   }
 });
 
-test('paper timing: 20 objective in 15 minutes, 5 theory in 1h30, in proportion otherwise', () => {
+test('paper timing: 20 objective in 15 minutes, 5 theory in 40 minutes, in proportion otherwise', () => {
   const { minutesFor, profileFor, totalMarks, PROFILES } = require('../../src/utils/paper');
   const obj = (n) => Array.from({ length: n }, () => ({ questionType: 'OBJECTIVE' }));
   const th = (n) => Array.from({ length: n }, () => ({ questionType: 'THEORY' }));
   assert.equal(minutesFor(obj(20)), 15);
-  assert.equal(minutesFor(th(5)), 90);
-  assert.equal(minutesFor([...obj(20), ...th(5)]), 105);
+  assert.equal(minutesFor(th(5)), 40);
+  assert.equal(minutesFor([...obj(20), ...th(5)]), 55);
   assert.equal(minutesFor(obj(10)), 8);
   assert.equal(minutesFor([]), 1);
   // the examination's share of the course mark: universities 70, polytechnics / monotechnics / colleges of education 60

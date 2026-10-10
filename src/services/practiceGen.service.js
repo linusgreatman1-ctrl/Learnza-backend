@@ -12,7 +12,7 @@ const { OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, YEAR_PAPER, paperYears, profileFo
 //
 // A mock or past-question PAPER is set the way the student's own kind of institution sets one
 // (utils/paper.js): Section A is 20 objective questions in 15 minutes, Section B is 5 theory
-// questions in 1 hour 30, and the two parts are taken separately. Each part is an ordinary
+// questions in 40 minutes, and the two parts are taken separately. Each part is an ordinary
 // Assessment (flagged generated) so the existing screens, timers and marking work unchanged; the
 // two share a paperId. The practice bank lives in PlatformQuestion and is drawn 20 at a time.
 // Past-question papers are WRITTEN IN THE STYLE of past papers; they are not scans of real ones,
@@ -189,7 +189,7 @@ async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, ge
   // Both sections or neither, so a failure never leaves half a paper. Section A is stamped a moment
   // earlier so lists, which go by creation time, always show it first.
   const now = createdAtMs || Date.now();
-  const minutesA = Math.max(1, Math.ceil(objective.length * 0.75));
+  const minutesA = 15;   // Section A (objective) is always 15 minutes
   await prisma.$transaction([
     prisma.assessment.create({
       data: {
@@ -199,7 +199,7 @@ async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, ge
     }),
     prisma.assessment.create({
       data: {
-        ...base, createdAt: new Date(now + 2), title: `${name} · Section B (Theory)`, section: 'THEORY', durationMin: 90, totalMarks: theory.length * profile.theoryMarks,
+        ...base, createdAt: new Date(now + 2), title: `${name} · Section B (Theory)`, section: 'THEORY', durationMin: 40, totalMarks: theory.length * profile.theoryMarks,
         questions: { create: theory.map((q, i) => ({ questionType: 'THEORY', text: q.text, modelAnswer: q.modelAnswer, order: i })) },
       },
     }),

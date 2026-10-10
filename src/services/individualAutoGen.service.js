@@ -116,7 +116,7 @@ async function generateOne(course, studentId, type) {
         })),
       });
     } else if (type === 'SEMESTER_EXAM') {
-      // A real paper: Section A (20 objective, 15 minutes) and Section B (5 theory, 1h30), set the way
+      // A real paper: Section A (20 objective, 15 minutes) and Section B (5 theory, 40 minutes), set the way
       // the learner's kind of institution sets its examinations.
       const owner = await prisma.user.findUnique({ where: { id: studentId }, select: { institutionType: true } });
       await require('./practiceGen.service').createPaper(

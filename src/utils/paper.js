@@ -3,7 +3,7 @@
 // The papers the SYSTEM writes for students (CBT mock exams, past-question practice, the semester
 // exam of a self-study course, practice questions) are set like this:
 //   Section A  20 objective questions   15 minutes   (0.75 minute each)
-//   Section B   5 theory questions      1 hour 30    (18 minutes each)
+//   Section B   5 theory questions      40 minutes   (8 minutes each)
 // Tests, quizzes, assignments and semester exams that a LECTURER sets are the lecturer's own: any
 // number of questions, timed at 1 minute per question as before.
 //
@@ -20,7 +20,7 @@
 // examination's share of the course mark.
 
 // The yearly CBT mock and past-question papers (2016 to the current year) are fuller papers: 30 objective questions
-// (23 minutes at 0.75 minute each) and 5 theory questions (1 hour 30), set in the style of that kind of institution.
+// (15 minutes) and 5 theory questions (40 minutes), set in the style of that kind of institution.
 const YEAR_PAPER = { OBJECTIVE: 30, THEORY: 5, FIRST_YEAR: 2016 };
 function paperYears(now = new Date()) {
   const out = [];
@@ -31,7 +31,7 @@ function paperYears(now = new Date()) {
 const OBJECTIVE_PER_PAPER = 20;
 const THEORY_PER_PAPER = 5;
 const OBJECTIVE_MINUTES_EACH = 15 / OBJECTIVE_PER_PAPER;   // 0.75
-const THEORY_MINUTES_EACH = 90 / THEORY_PER_PAPER;         // 18
+const THEORY_MINUTES_EACH = 40 / THEORY_PER_PAPER;         // 8
 
 // Minutes allowed for an assessment: the paper's own time if the system wrote it as a paper section,
 // otherwise 1 minute per question (what lecturers' tests have always had).
