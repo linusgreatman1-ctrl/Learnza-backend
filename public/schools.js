@@ -448,11 +448,8 @@
   // transcript/clearance -- there's no school admin to administer those).
   const NAV = {
     STUDENT: [
-      ['my-dashboard', 'My Dashboard'],
+      ['my-dashboard', 'Home'],
       ['courses', 'My Courses'],
-      ['my-assignments', 'Assignments'],
-      ['my-attendance', 'Attendance'],
-      ['my-lectures', 'Lectures'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['class-recordings', 'Class Recordings'],
@@ -462,7 +459,6 @@
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
       ['student-results', 'Results'],
-      ['my-activity', 'Recent Activity'],
       ['research', 'AI Research Assistant'],
       ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
@@ -470,15 +466,15 @@
       ['academic-record', 'Academic Record'],
       ['fees', 'School Fees'],
       ['elections', 'Elections'],
+      ['student-dashboard', 'My Dashboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
       ['wallet', 'AI Minutes & Coins'],
       ['settings', 'Settings'],
     ],
     STUDENT_INDIVIDUAL: [
-      ['my-dashboard', 'My Dashboard'],
+      ['my-dashboard', 'Home'],
       ['individual-courses', 'My Courses'],
-      ['my-assessments', 'Assignments & Tests'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -490,13 +486,14 @@
       ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
+      ['student-dashboard', 'My Dashboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
       ['wallet', 'AI Minutes & Coins'],
       ['settings', 'Settings'],
     ],
     LECTURER: [
-      ['lect-dashboard', 'My Dashboard'],
+      ['lect-dashboard', 'Home'],
       ['lect-courses', 'My Courses'],
       ['class-recordings', 'Class Recordings'],
       ['lect-students', 'My Students'],
@@ -517,13 +514,13 @@
       ['preview-student-dashboard', '🎓 Preview Student Dashboard'],
     ],
     STAFF: [
-      ['staff-dashboard', 'My Dashboard'],
+      ['staff-dashboard', 'Home'],
       ['library', 'e-Library'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
     ],
     ADMIN: [
-      ['admin-dashboard', 'My Dashboard'],
+      ['admin-dashboard', 'Home'],
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
       ['admin-tests', 'Tests'],
@@ -675,8 +672,8 @@
   new MutationObserver(addBackArrow).observe(document.getElementById('view'), { childList: true });
 
   const BOTTOM_NAV = {
-    STUDENT: [['my-dashboard', '🏠', 'Home'], ['courses', '📚', 'Courses'], ['tests-hub', '📝', 'Tests'], ['digital-id', '🪪', 'My ID'], ['__more', '☰', 'More']],
-    STUDENT_INDIVIDUAL: [['my-dashboard', '🏠', 'Home'], ['individual-courses', '📚', 'Courses'], ['my-ai-lectures', '🎓', 'AI Lectures'], ['tests-hub', '📝', 'Tests'], ['__more', '☰', 'More']],
+    STUDENT: [['my-dashboard', '🏠', 'Home'], ['courses', '📚', 'Courses'], ['tests-hub', '📝', 'Tests'], ['student-dashboard', '📊', 'Dash'], ['digital-id', '🪪', 'ID'], ['__more', '☰', 'More']],
+    STUDENT_INDIVIDUAL: [['my-dashboard', '🏠', 'Home'], ['individual-courses', '📚', 'Courses'], ['my-ai-lectures', '🎓', 'AI Lectures'], ['tests-hub', '📝', 'Tests'], ['student-dashboard', '📊', 'Dash'], ['__more', '☰', 'More']],
     LECTURER: [['lect-dashboard', '🏠', 'Home'], ['lect-courses', '📚', 'Courses'], ['lect-students', '👥', 'Students'], ['lect-tests', '📝', 'Tests'], ['__more', '☰', 'More']],
     STAFF: [['staff-dashboard', '🏠', 'Home'], ['library', '📖', 'Library'], ['digital-id', '🪪', 'My ID'], ['settings', '⚙️', 'Settings']],
     ADMIN: [['admin-dashboard', '🏠', 'Home'], ['admin-directory', '👥', 'Directory'], ['admin-academics', '📚', 'Courses'], ['admin-results', '📊', 'Results'], ['__more', '☰', 'More']],
@@ -720,20 +717,22 @@
   function notifRows(list) {
     return pnRows((list || []).slice(0, 3).map((n) => ({ icon: '🔔', title: n.title, sub: n.body, side: new Date(n.createdAt).toLocaleDateString() })));
   }
-  // What sits under the tiles on a student's home: the semester banner, their courses, what is due, what is new.
-  async function studentHomeExtras({ isIndividual, assignments, notifications }) {
+  // What a student's home shows around the tiles: the Daily Challenge banner, then the streak, the courses to
+  // continue, a glance at today, what is due and what is new.
+  async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount }) {
     let courses = [];
     try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; }
-    const sem = !isIndividual && (state.semesters || []).find((x) => x.isCurrent);
-    const banner = isIndividual
-      ? homeBanner('🎓', 'AI Lectures', 'Pick a course and start an AI lecture', 'my-ai-lectures')
-      : homeBanner('📅', sem ? esc(semesterLabel(sem.name)) : 'This semester', 'Open your courses and keep up with every class', 'courses');
-    const strip = courses.length
-      ? sjStrip(courses.map((c) => ({ title: c.title, sub: c.code || '', screen: isIndividual ? 'individual-course-detail' : 'course-detail', params: { courseId: c.id } })))
-      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lessons.' : 'Open My Courses to enrol.' }]);
+    const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 8 min each' : 'Practise questions from your courses every day';
+    const banner = homeBanner('⚡', 'Daily Challenge', titles, 'daily-challenge');
+    const days = daily && daily.days ? daily.days : [];
+    const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
+    const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
+      ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
+      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lessons.' : 'Open My Courses to enrol.' }]));
+    const glance = `<div class="sec"><div class="sh"><div class="st">📅 Today at a Glance</div></div><div class="plan-card"><div class="plan-n"><b>${courses.length}</b><span>courses</span></div><div class="plan-n"><b style="color:#e8590c;">${pendingCount}</b><span>to do</span></div><div class="plan-n"><b>${isIndividual ? takenCount : (attendancePct == null ? '—' : attendancePct + '%')}</b><span>${isIndividual ? 'taken' : 'attendance'}</span></div></div></div>`;
     const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
     const upcoming = isIndividual ? '' : homeSection('⏰ Coming Up', 'my-assignments', pnRows(due.map((a) => ({ icon: '📋', title: a.title, sub: a.course ? a.course.code : '', side: 'Due ' + new Date(a.dueAt).toLocaleDateString() })).concat(due.length ? [] : [{ icon: '✅', title: 'Nothing due right now' }])));
-    return `${banner}${homeSection('📚 My Courses', isIndividual ? 'individual-courses' : 'courses', strip)}${upcoming}${homeSection('🔔 Latest', null, notifRows(notifications))}`;
+    return { banner, rest: `${streak}${cont}${glance}${upcoming}${homeSection('🔔 Latest', null, notifRows(notifications))}` };
   }
 
   function markActiveNav(screen) {
@@ -980,6 +979,8 @@
         case 'groups': return renderGroups();
         case 'group-chat': return renderGroupChat();
         case 'my-dashboard': return renderMyDashboard();
+        case 'student-dashboard': return renderStudentHub();
+        case 'daily-challenge': return LZX.dailyChallenge(view, { api, esc, toast, navigate });
         case 'my-assignments': return renderMyDashboard('assignments');
         case 'my-attendance': return renderMyDashboard('attendance');
         case 'my-lectures': return renderMyDashboard('lessons');
@@ -3557,6 +3558,35 @@
     document.getElementById('return-dash-btn').addEventListener('click', () => navigate(defaultScreenFor(u.role)));
   }
 
+  // ---- My Dashboard (a student's hub, laid out like PassNow's): the numbers, then every activity in one place ----
+  function dhTile(nav, icon, label, pal) {
+    return `<div class="dh-tile p${pal}" data-jump-nav="${nav}"><div class="dh-i">${icon}</div><div class="dh-l">${label}</div></div>`;
+  }
+  async function renderStudentHub() {
+    const isIndividual = state.user.isIndividual;
+    const { assignments, attendance, recentResults, individualAssessments } = await api('/students/me/dashboard');
+    const attendancePct = attendance && attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
+    const avg = recentResults.length ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length) : null;
+    const pending = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
+    const numbers = isIndividual
+      ? [[pending, 'To do', '#FFD600'], [avg == null ? '—' : avg + '%', 'Average', '#00C853'], [recentResults.length, 'Taken', '#fff']]
+      : [[pending, 'Assignments', '#FFD600'], [attendancePct == null ? '—' : attendancePct + '%', 'Attendance', '#00C853'], [avg == null ? '—' : avg + '%', 'Average', '#fff']];
+    view.innerHTML = `
+      <div class="page-head"><h1>My Dashboard</h1></div>
+      <div class="dh-band">${numbers.map(([v, l, c]) => `<div><div class="dh-n" style="color:${c}">${v}</div><div class="dh-nl">${l}</div></div>`).join('')}</div>
+      <div class="dh-title">📋 My Activities</div>
+      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Lectures', 1)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('practice', '🧠', 'Practice', 0)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('past-questions-hub', '📜', 'Past Questions', 2)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('practice', '🧠', 'Practice', 2)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('past-questions-hub', '📜', 'Past Questions', 4)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
+      <div class="dh-row" data-jump-nav="my-activity"><span>🔔</span><span class="dh-rt">Notifications</span><span class="dh-go">›</span></div>
+      <div class="dh-title">🏆 Leaderboard Positions</div>
+      <div class="dh-grid two">${dhTile('leaderboard', '🌍', 'Leaderboard', 4)}${dhTile('groups', '👨‍👩‍👧', 'Study Groups', 2)}</div>
+      <div class="dh-title">📊 Progress</div>
+      <div class="dh-grid two">${dhTile('progress', '📈', 'My Progress', 0)}${isIndividual ? dhTile('billing', '💳', 'Subscription', 1) : dhTile('student-results', '📊', 'Results', 1)}${isIndividual ? '' : dhTile('academic-record', '🎓', 'Academic Record', 3)}${isIndividual ? '' : dhTile('fees', '💰', 'School Fees', 5)}</div>
+      <div class="dh-title">👤 More</div>
+      <div class="dh-grid two">${dhTile('digital-id', '🪪', 'Digital ID & Profile', 2)}${dhTile('settings', '⚙️', 'Settings', 4)}</div>`
+      .replace('__X__', '');
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
+  }
+
   async function renderMyDashboard(only) {
     const isIndividual = state.user.isIndividual;
     const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }] = await Promise.all([
@@ -3702,24 +3732,28 @@
         ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}`,
     };
     const pendingCount = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
-    const homeStats = isIndividual
-      ? [[pendingCount, 'Pending', 'my-assessments', '#FF6B35'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Avg Score', 'my-activity', '#FFD600'], [recentResults.length, 'Taken', 'my-activity', '#00C853']]
-      : [[pendingCount, 'Assignments', 'my-assignments', '#FF6B35'], [attendancePct == null ? '—' : attendancePct + '%', 'Attendance', 'my-attendance', '#00C853'], [avgScorePct == null ? '—' : avgScorePct + '%', 'Avg Score', 'my-activity', '#FFD600']];
-    const homeTiles = isIndividual ? `${homeTile('individual-courses', '📚', 'My Courses', 'Your own courses')}${homeTile('my-ai-lectures', '🎓', 'My AI Lectures', 'Watch again')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}` : `${homeTile('courses', '📚', 'My Courses', 'Your classes')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('my-assignments', '📋', 'Assignments', 'Due and handed in')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}`;
+    const homeTiles = isIndividual ? `${homeTile('individual-courses', '📚', 'My Courses', 'Your own courses')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}` : `${homeTile('courses', '📚', 'My Courses', 'Your classes')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}`;
     const showHome = !(only && sectionHtml[only]);
-    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications }) : '';
+    const daily = showHome ? await api('/questions/daily').catch(() => null) : null;
+    const takenCount = recentResults.length;
+    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount }) : { banner: '', rest: '' };
+    const goalPct = daily && daily.goal ? Math.round((daily.done / daily.goal) * 100) : 0;
 
     view.innerHTML = !showHome
       ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
       : `
       <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
         <div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-student-dash')}</div>
+        ${daily && daily.goal ? `<div class="hero-goal"><div class="hg-top"><span>Today's Goal</span><b>${daily.done} / ${daily.goal} courses</b></div><div class="pn-progress"><div style="width:${goalPct}%"></div></div></div>` : ''}
         <div class="hero-stats">
-          ${homeStats.map(([value, label, nav, colour]) => `<div class="hs" data-jump-nav="${nav}"><div class="hs-n" style="color:${colour}">${value}</div><div class="hs-l">${esc(label)}</div></div>`).join('')}
+          <div class="hs" data-jump-nav="student-dashboard"><div class="hs-n" style="color:#FF6B35">🔥 ${daily ? daily.streak : 0}</div><div class="hs-l">Streak</div></div>
+          <div class="hs" data-jump-nav="progress"><div class="hs-n" style="color:#00C853">${daily ? daily.points : 0}</div><div class="hs-l">Points</div></div>
+          <div class="hs" data-jump-nav="my-activity"><div class="hs-n" style="color:#FFD600">${avgScorePct == null ? '—' : avgScorePct + '%'}</div><div class="hs-l">Avg Score</div></div>
         </div>
       </div>
+      ${homeExtra.banner}
       <div class="grid-cards tiles">${homeTiles}</div>
-      ${homeExtra}`;
+      ${homeExtra.rest}`;
 
     // Item-level interactions live in one wiring pass, scoped to a container, so it can
     // be re-run on just the newly-revealed rows after a "View more" expand instead of
@@ -6827,17 +6861,17 @@
       <div class="card hero pn-hero">
         <div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-admin-dash')}</div>
       </div>
-      <div class="grid-cards tiles center">${homeTile('admin-directory', '👥', 'Staff & Student Directory', 'Staff and students')}${homeTile('admin-academics', '📚', 'Departments & Courses', 'Programmes')}${homeTile('admin-results', '📊', 'Results', 'Publish and review')}${homeTile('admin-announce', '📣', 'Announce', 'Notify everyone')}${homeTile('admin-fees', '💰', 'Fee Payment', 'Fees and receipts')}${homeTile('admin-bulk-message', '✉️', 'Bulk SMS / Email', 'Message groups')}</div>
-      <div class="card joincode" style="padding:14px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.5rem; letter-spacing:2px; font-weight:800;">${esc(school.joinCode || '—')}</div></div>
-        <button class="btn btn-ghost btn-sm" id="copy-join-code">Copy</button>
-      </div>
       <div class="grid-cards stats">
         <div class="card course-card" data-jump-nav="admin-directory"><div class="code">${students.length}</div><div class="meta">Students</div></div>
         <div class="card course-card" data-jump-nav="admin-directory"><div class="code">${lecturers.length}</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-jump-nav="admin-directory"><div class="code">${staff.length}</div><div class="meta">Non-academic staff</div></div>
         <div class="card course-card" data-jump-nav="admin-academics"><div class="code">${courses.length}</div><div class="meta">Courses</div></div>
         <div class="card course-card" data-jump-nav="admin-management"><div class="code">${admins.length}</div><div class="meta">School admins</div></div>
+      </div>
+      <div class="grid-cards tiles center">${homeTile('admin-directory', '👥', 'Staff & Student Directory', 'Staff and students')}${homeTile('admin-academics', '📚', 'Departments & Courses', 'Programmes')}${homeTile('admin-results', '📊', 'Results', 'Publish and review')}${homeTile('admin-announce', '📣', 'Announce', 'Notify everyone')}${homeTile('admin-fees', '💰', 'Fee Payment', 'Fees and receipts')}${homeTile('admin-bulk-message', '✉️', 'Bulk SMS / Email', 'Message groups')}</div>
+      <div class="card joincode" style="padding:14px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.5rem; letter-spacing:2px; font-weight:800;">${esc(school.joinCode || '—')}</div></div>
+        <button class="btn btn-ghost btn-sm" id="copy-join-code">Copy</button>
       </div>
       ${homeSection('👨‍🏫 Lecturers', 'admin-directory', pnRows(lecturers.slice(0, 5).map((l) => ({ icon: '👨‍🏫', title: l.fullName, sub: [l.staffId, l.departmentName || (l.department && l.department.name)].filter(Boolean).join(' · ') }))))}
       ${homeSection('🧑‍🎓 Students', 'admin-directory', pnRows(students.slice(0, 5).map((x) => ({ icon: '🧑‍🎓', title: x.fullName, sub: [x.matricNumber, x.departmentName || (x.department && x.department.name)].filter(Boolean).join(' · ') }))))}

@@ -534,6 +534,119 @@
     }
   }
 
+  // ---------------------------------------------------------------- Daily Challenge
+  // A short timed set from the question bank, one course at a time, every day. Answers are not shown until the set is
+  // submitted; every right answer earns points and keeps the streak going.
+  async function dailyChallenge(view, { api, esc, toast, navigate }) {
+    const QN = 10;
+    let d;
+    try { d = await api('/questions/daily'); } catch (err) {
+      view.innerHTML = '<div class="page-head"><h1>Daily Challenge</h1></div><div class="card" style="padding:18px;">' + esc(err.message) + '</div>';
+      return;
+    }
+    const minutesFor = (n) => Math.max(1, Math.ceil(n * 0.75));
+    const row = (c, i) => `<div class="pn-row" data-dc="${i}" style="cursor:pointer;"><div class="pn-ico">${c.done ? '✅' : '⚡'}</div><div class="pn-main"><div class="pn-t">${esc(c.title)}</div><div class="pn-s">${Math.min(QN, c.count)} questions · ${minutesFor(Math.min(QN, c.count))} min</div></div><div class="pn-d" style="font-weight:800;color:var(--ui-accent,#c1861f);">${c.done ? 'Done' : 'Start ›'}</div></div>`;
+
+    function home() {
+      const todo = d.sources.filter((c) => !c.done);
+      view.innerHTML = `
+        <div class="page-head"><h1>⚡ Daily Challenge</h1></div>
+        <div class="pn-banner" style="cursor:default;"><div class="pn-banner-ico">⚡</div><div class="pn-banner-txt"><div class="pn-banner-t">Practise a little every day</div><div class="pn-banner-s">${QN} questions from each of your courses · +10 points for every right answer</div></div></div>
+        <div class="sec"><div class="sh"><div class="st">Today</div><div class="sa" style="cursor:default;">${d.done} / ${d.goal} done</div></div>
+          <div class="card pn-list">${d.sources.map(row).join('') || '<div class="pn-empty">There are no practice questions for your courses yet. Check back soon.</div>'}</div>
+          ${d.sources.length && d.sources[0].kind === 'subject' ? '<div class="meta" style="margin-top:8px;">No questions have been written for your own courses yet, so these are general subjects.</div>' : ''}
+        </div>
+        ${todo.length ? `<button class="btn btn-primary" id="dc-go" style="width:100%;margin-bottom:18px;">Start with ${esc(todo[0].title)} →</button>` : (d.sources.length ? '<div class="card" style="padding:16px;text-align:center;margin-bottom:18px;">🎉 You have done every course today. Come back tomorrow to keep your streak.</div>' : '')}
+        <div class="sec"><div class="sh"><div class="st">Recent results</div></div>
+          <div class="card pn-list">${d.history.map((h) => `<div class="pn-row"><div class="pn-ico">📝</div><div class="pn-main"><div class="pn-t">${esc(h.title)}</div><div class="pn-s">${new Date(h.at).toLocaleString()}</div></div><div class="pn-d" style="font-weight:800;">${h.score}/${h.total}</div></div>`).join('') || '<div class="pn-empty">No challenges yet this week.</div>'}</div>
+        </div>`;
+      view.querySelectorAll('[data-dc]').forEach((r) => r.addEventListener('click', () => start(d.sources[Number(r.dataset.dc)])));
+      const go = view.querySelector('#dc-go');
+      if (go) go.addEventListener('click', () => start(todo[0]));
+    }
+
+    async function start(c) {
+      if (!c) return;
+      const key = c.kind === 'school' ? 'courseId' : c.kind === 'self' ? 'individualCourseId' : 'subject';
+      let data;
+      try { data = await api('/questions/practice?' + key + '=' + encodeURIComponent(c.id) + '&count=' + QN); } catch (err) { return toast(err.message); }
+      run(c, data.questions);
+    }
+
+    function run(c, questions) {
+      let i = 0;
+      const chosen = [];
+      const deadline = Date.now() + minutesFor(questions.length) * 60000;
+      let ticker = null;
+      const stop = () => { if (ticker) { clearInterval(ticker); ticker = null; } };
+      const last = questions.length - 1;
+      function paint() {
+        const q = questions[i];
+        view.innerHTML = `
+          <div class="page-head"><h1>${esc(c.title)}</h1><span class="pill pill-accent tabular" id="dc-clock">--:--</span></div>
+          <div class="pn-progress"><div style="width:${((i + 1) / questions.length) * 100}%"></div></div>
+          <div class="meta" style="margin:8px 0;">Question ${i + 1} of ${questions.length}</div>
+          <div class="card" style="padding:18px;margin-bottom:14px;"><div style="font:700 16px Sora,sans-serif;white-space:pre-wrap;line-height:1.5;">${esc(q.text)}</div></div>
+          ${q.options.map((o, k) => `<div class="dc-opt${chosen[i] === k ? ' sel' : ''}" data-k="${k}"><div class="dc-l">${'ABCDEF'[k]}</div><div>${esc(o)}</div></div>`).join('')}
+          <div style="display:flex;gap:10px;margin-top:6px;"><button class="btn btn-ghost" id="dc-prev" ${i ? '' : 'style="visibility:hidden;"'}>← Back</button><button class="btn btn-primary" id="dc-next" style="flex:1;">${i < last ? 'Next Question →' : 'Submit →'}</button></div>`;
+        view.querySelectorAll('.dc-opt').forEach((o) => o.addEventListener('click', () => {
+          chosen[i] = Number(o.dataset.k);
+          view.querySelectorAll('.dc-opt').forEach((x) => x.classList.toggle('sel', x === o));
+        }));
+        view.querySelector('#dc-prev').addEventListener('click', () => { i -= 1; paint(); });
+        view.querySelector('#dc-next').addEventListener('click', () => { if (i < last) { i += 1; paint(); } else submit(false); });
+        tick();
+      }
+      function tick() {
+        const clock = view.querySelector('#dc-clock');
+        if (!clock) { stop(); return; }
+        const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+        clock.textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+        if (left < 60) clock.style.background = '#ffe5e5';
+        if (!left) { stop(); toast('Time is up — submitting your answers.'); submit(true); }
+      }
+      async function submit(auto) {
+        const unanswered = questions.filter((_, k) => chosen[k] == null).length;
+        if (!auto && unanswered && !confirm(unanswered + ' question' + (unanswered === 1 ? ' is' : 's are') + ' unanswered. Submit anyway?')) return;
+        stop();
+        try {
+          const r = await api('/questions/check', { method: 'POST', body: { mode: 'daily', label: c.title, answers: questions.map((q, k) => ({ id: q.id, choice: chosen[k] == null ? null : chosen[k] })) } });
+          results(r);
+        } catch (err) { toast(err.message); }
+      }
+      function results(r) {
+        c.done = true;
+        d.done = d.sources.filter((x) => x.done).length;
+        const next = d.sources.find((x) => !x.done);
+        const pct = r.total ? Math.round((r.score / r.total) * 100) : 0;
+        view.innerHTML = `
+          <div class="page-head"><h1>Your result</h1></div>
+          <div class="card" style="margin-bottom:14px;text-align:center;padding:22px;">
+            <div style="font:800 40px Sora,sans-serif;">${r.score} / ${r.total}</div>
+            <div class="meta" style="margin-top:4px;">${pct}% in ${esc(c.title)} ${pct >= 70 ? '🌟' : ''}${r.points ? ' · +' + r.points + ' points earned!' : ''}</div>
+            <div style="display:flex;gap:10px;margin-top:16px;justify-content:center;flex-wrap:wrap;">
+              ${next ? `<button class="btn btn-accent" id="dc-next-course">${esc(next.title)} →</button>` : ''}
+              <button class="btn btn-primary" id="dc-home">Back Home</button>
+            </div>
+          </div>
+          ${r.review.map((q, n) => `
+            <div class="card" style="margin-bottom:12px;border-left:4px solid ${q.correct ? '#1f8a5b' : '#c0392b'};padding:16px;">
+              <div style="font-weight:700;white-space:pre-wrap;">${n + 1}. ${esc(q.text)}</div>
+              ${q.options.map((o, k) => `<div style="margin-top:4px;${k === q.correctIndex ? 'font-weight:700;color:#1f8a5b;' : k === q.choice ? 'color:#c0392b;' : 'opacity:.75;'}">${'ABCDEF'[k]}. ${esc(o)}${k === q.correctIndex ? ' ✓' : k === q.choice ? ' ✗ (your answer)' : ''}</div>`).join('')}
+              ${q.choice == null ? '<div class="meta" style="margin-top:6px;">You skipped this one.</div>' : ''}
+              ${q.explanation ? `<div class="meta" style="margin-top:8px;">💡 ${esc(q.explanation)}</div>` : ''}
+            </div>`).join('')}`;
+        const nb = view.querySelector('#dc-next-course');
+        if (nb) nb.addEventListener('click', () => start(next));
+        view.querySelector('#dc-home').addEventListener('click', () => navigate('my-dashboard'));
+      }
+      paint();
+      ticker = setInterval(tick, 1000);
+    }
+
+    home();
+  }
+
   // ---------------------------------------------------------------- Digital ID
   // One card for every kind of account — student, independent learner, lecturer, non-academic
   // staff, school admin — same layout as PassNow's: role badge, photo (tap to add or change),
@@ -1407,5 +1520,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
+  window.LZX = { support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
 })();

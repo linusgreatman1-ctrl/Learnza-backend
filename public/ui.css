@@ -379,7 +379,8 @@ html { font-size: 14.5px; }
 
 /* a back arrow on every screen */
 .page-head { align-items: center; justify-content: flex-start; }
-.page-head > :not(.bk-arrow):last-child:not(:first-child) { margin-left: auto; }
+.page-head > :not(.bk-arrow):not(h1):not(div:has(> h1)):last-child:not(:first-child) { margin-left: auto; }
+.page-head > .bk-arrow + :not(:last-child) { margin-right: auto; }
 .bk-arrow { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; border: 1.5px solid var(--ui-card-line); background: var(--paper-raised); color: var(--ink); font-size: 18px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; margin-right: 12px; cursor: pointer; box-shadow: var(--ui-shadow); }
 .bk-arrow:hover { border-color: var(--ui-accent-2); }
 .page-head.has-bk #back-btn { display: none; }
@@ -420,3 +421,73 @@ html { font-size: 14.5px; }
   .mobile-topbar .brand::before { content: 'L'; width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f3d58c, #e3ac4c); color: #2a1c05; font: 800 16px Sora, sans-serif; }
   .mobile-topbar .notif-bell { background: rgba(255, 255, 255, .1); border: 1.5px solid rgba(255, 255, 255, .16); color: #fff; box-shadow: none; }
 }
+
+/* ======== v4: PassNow's home in full — a flush welcome band, today's goal, the streak, courses to continue, the My Dashboard hub, the Daily Challenge ======== */
+
+/* the content sits 18px inside the column; the welcome band spans the whole column and touches the top */
+@media (min-width: 1024px) {
+  main.content { padding-left: max(74px, calc((100% - 964px) / 2)); padding-right: max(74px, calc((100% - 964px) / 2)); }
+}
+.card.hero.pn-hero { margin-left: -18px; margin-right: -18px; border-radius: 0; box-shadow: none; }
+#view > .card.hero.pn-hero:first-child { margin-top: 0; }
+@media (min-width: 1024px) { .pn-hero .hero-top { padding-right: 54px; } .card.hero { margin-right: -18px; } }
+@media (max-width: 1023px) { .card.hero.pn-hero { margin-right: -18px; } }
+
+.hero-goal { background: rgba(255, 255, 255, .07); border-radius: 14px; padding: 14px; margin-top: 16px; }
+.hero-goal + .hero-stats { margin-top: 16px; }
+.hg-top { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, .55); }
+.hg-top b { color: #00C853; font-weight: 800; }
+.pn-progress { background: var(--ui-card-line); border-radius: 100px; overflow: hidden; height: 8px; }
+.hero-goal .pn-progress { background: rgba(255, 255, 255, .85); }
+.pn-progress > div { height: 100%; border-radius: 100px; background: linear-gradient(90deg, #00C853, #69F0AE); transition: width .5s; }
+
+/* the streak */
+.streak-row { display: flex; justify-content: space-between; gap: 4px; }
+.sd { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 34px; }
+.sc { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--ui-card-line); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.sc.done { background: linear-gradient(135deg, #00C853, #00A844); border-color: transparent; color: #fff; }
+.sc.now { background: linear-gradient(135deg, #FF6B35, #E55A25); border-color: transparent; color: #fff; }
+.sl { font-size: 9px; font-weight: 800; color: var(--ink-soft); text-transform: uppercase; }
+
+/* courses to continue */
+.cl-row { display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer; border-radius: 16px; transition: transform .15s; }
+.cl-row:active { transform: scale(.98); }
+.cl-ico { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+.cl-main { flex: 1; min-width: 0; }
+.cl-t { font: 700 15px Sora, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-s { font-size: 12px; color: var(--ink-soft); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-go { font-size: 22px; color: var(--ink-soft); }
+
+/* today at a glance (PassNow's plan card) */
+.plan-card { display: flex; background: #E8F9EE; border-radius: 16px; padding: 16px 8px; }
+.plan-n { flex: 1; text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.plan-n b { font: 800 22px Sora, sans-serif; color: #00A844; }
+.plan-n span { font-size: 11px; color: #6b7a72; }
+
+/* My Dashboard: the hub */
+.dh-band { display: flex; justify-content: space-around; text-align: center; background: linear-gradient(135deg, #1A1A2E, #0F3460); border-radius: 18px; padding: 18px; margin-bottom: 18px; }
+.dh-n { font: 800 22px Sora, sans-serif; line-height: 1.2; }
+.dh-nl { color: rgba(255, 255, 255, .5); font-size: 11px; margin-top: 2px; }
+.dh-title { font: 700 15px Sora, sans-serif; margin: 6px 0 10px; }
+.dh-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+.dh-grid.two { grid-template-columns: repeat(2, 1fr); }
+.dh-tile { border: 1.5px solid; border-radius: 12px; padding: 12px 6px; text-align: center; cursor: pointer; transition: transform .15s; }
+.dh-tile:active { transform: scale(.96); }
+.dh-i { font-size: 22px; margin-bottom: 4px; }
+.dh-l { font-weight: 800; font-size: 11px; line-height: 1.25; }
+.dh-tile.p0 { background: linear-gradient(135deg, #E8F9EE, #C8F0D7); border-color: #00C853; color: #00712E; }
+.dh-tile.p1 { background: linear-gradient(135deg, #FFFDE7, #FFF3C4); border-color: #F9A825; color: #8A5C00; }
+.dh-tile.p2 { background: linear-gradient(135deg, #E3EDFF, #C7DBFF); border-color: #2979FF; color: #1E40AF; }
+.dh-tile.p3 { background: linear-gradient(135deg, #F3E8FF, #E5D4FF); border-color: #8B5CF6; color: #5B21B6; }
+.dh-tile.p4 { background: linear-gradient(135deg, #FFE5F0, #FFC9E0); border-color: #FF3B8C; color: #A3115C; }
+.dh-tile.p5 { background: linear-gradient(135deg, #FFF0EB, #FFD9CC); border-color: #FF6B35; color: #9A3412; }
+.dh-row { display: flex; align-items: center; gap: 10px; padding: 13px 14px; background: var(--paper-raised); border: 1.5px solid var(--ui-card-line); border-radius: 14px; margin-bottom: 20px; cursor: pointer; }
+.dh-rt { flex: 1; font-weight: 700; font-size: 14px; }
+.dh-go { color: var(--ink-soft); font-size: 18px; }
+
+/* the Daily Challenge questions */
+.dc-opt { display: flex; align-items: center; gap: 12px; border: 2px solid var(--ui-card-line); border-radius: 13px; padding: 14px 16px; cursor: pointer; margin-bottom: 10px; font-weight: 700; font-size: 15px; background: var(--paper-raised); user-select: none; transition: border-color .15s, background .15s; }
+.dc-opt.sel { border-color: #142033; background: color-mix(in srgb, var(--accent-soft) 60%, var(--paper-raised)); }
+.dc-l { width: 32px; height: 32px; border-radius: 8px; background: var(--ui-card-line); display: flex; align-items: center; justify-content: center; font: 700 14px Sora, sans-serif; flex-shrink: 0; }
+.dc-opt.sel .dc-l { background: #142033; color: #fff; }
+@media (max-width: 1023px) { .dh-grid { gap: 8px; } }

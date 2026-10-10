@@ -86,7 +86,58 @@ router.post('/check', async (req, res) => {
   if (req.user.role === 'STUDENT' && review.length) {
     try { points = (await gamification.recordAssessmentCompletion(req.user.id, score, review.length)).pointsEarned || 0; } catch { /* practice still counts without points */ }
   }
+  if (req.user.role === 'STUDENT' && review.length && req.body.mode === 'daily') {
+    try {
+      await prisma.activityLog.create({ data: { userId: req.user.id, action: 'DAILY_CHALLENGE', detail: JSON.stringify({ title: String(req.body.label || 'Daily Challenge').slice(0, 120), score, total: review.length }) } });
+    } catch { /* the result still shows */ }
+  }
   res.json({ score, total: review.length, review, points });
+});
+
+// The Daily Challenge: a short timed set from the question bank, one course at a time, every day. This says what is
+// on offer today (the student's own courses that have questions, or the general subjects when none do), what has
+// been done today, the streak, the points and the last few results.
+router.get('/daily', async (req, res) => {
+  if (req.user.role !== 'STUDENT') return res.status(403).json({ error: 'The Daily Challenge is for students.' });
+  const mine = [];
+  if (req.user.schoolId) {
+    const rows = await prisma.enrollment.findMany({ where: { studentId: req.user.id }, select: { course: { select: { id: true, code: true, title: true, department: { select: { schoolId: true } } } } } });
+    rows.filter((r) => r.course.department.schoolId === req.user.schoolId).forEach((r) => mine.push({ kind: 'school', id: r.course.id, title: `${r.course.code} — ${r.course.title}` }));
+  }
+  (await prisma.individualCourse.findMany({ where: { studentId: req.user.id }, select: { id: true, title: true } })).forEach((c) => mine.push({ kind: 'self', id: c.id, title: c.title }));
+  const counts = await Promise.all(mine.map((c) => prisma.platformQuestion.count({ where: { active: true, generated: true, ...(c.kind === 'school' ? { courseId: c.id } : { individualCourseId: c.id }) } })));
+  let sources = mine.map((c, i) => ({ ...c, count: counts[i] })).filter((c) => c.count > 0);
+  if (!sources.length) {
+    const rows = await prisma.platformQuestion.groupBy({ by: ['subject'], where: { active: true, generated: false }, _count: { _all: true }, orderBy: { subject: 'asc' } });
+    sources = rows.slice(0, 6).map((r) => ({ kind: 'subject', id: r.subject, title: r.subject, count: r._count._all }));
+  }
+  const dayStart = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const today = dayStart(new Date());
+  const weekAgo = new Date(today.getTime() - 6 * 86400000);
+  const logs = await prisma.activityLog.findMany({ where: { userId: req.user.id, action: 'DAILY_CHALLENGE', createdAt: { gte: weekAgo } }, orderBy: { createdAt: 'desc' }, take: 200 });
+  const parsed = logs.map((l) => { let d = {}; try { d = JSON.parse(l.detail || '{}'); } catch { d = {}; } return { title: d.title || 'Daily Challenge', score: d.score || 0, total: d.total || 0, at: l.createdAt }; });
+  const doneToday = new Set(parsed.filter((l) => l.at >= today).map((l) => l.title));
+  sources = sources.map((c) => ({ ...c, done: doneToday.has(c.title) }));
+  const stats = await prisma.userStats.findUnique({ where: { userId: req.user.id } });
+  const streakDays = new Set();
+  parsed.forEach((l) => streakDays.add(dayStart(l.at).getTime()));
+  if (stats && stats.lastActivityDate && stats.currentStreak > 0) {
+    for (let i = 0; i < stats.currentStreak && i < 7; i++) streakDays.add(dayStart(new Date(stats.lastActivityDate).getTime() - i * 86400000).getTime());
+  }
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 86400000);
+    days.push({ label: 'SMTWTFS'[d.getDay()], name: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][d.getDay()], done: streakDays.has(d.getTime()), today: i === 0 });
+  }
+  res.json({
+    sources,
+    goal: Math.min(5, sources.length),
+    done: sources.filter((c) => c.done).length,
+    streak: stats ? stats.currentStreak : 0,
+    points: stats ? stats.points : 0,
+    days,
+    history: parsed.slice(0, 15),
+  });
 });
 
 module.exports = router;
