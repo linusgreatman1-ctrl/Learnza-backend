@@ -2509,7 +2509,7 @@
     view.innerHTML = !showHome
       ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
       : `
-      <div class="hero-wrap" id="dash-profile-card" style="cursor:pointer;">
+      <div class="hero-wrap" id="dash-profile-card">
         <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-student-dash')}</div></div>
         <div class="hero-extra">
         ${daily && daily.goal ? `<div class="hero-goal"><div class="hg-top"><span>Today's Goal</span><b>${daily.done} / ${daily.goal} courses</b></div><div class="pn-progress"><div style="width:${goalPct}%"></div></div></div>` : ''}
@@ -2557,7 +2557,7 @@
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     const profileCard = document.getElementById('dash-profile-card');
-    if (profileCard) { profileCard.addEventListener('click', (e) => { if (!e.target.closest('[data-jump-nav]')) navigate('digital-id'); }); wireSelfAvatarUpload('avatar-student-dash'); }
+    if (profileCard) { wireSelfAvatarUpload('avatar-student-dash'); }
     if (myAiLectures) {
       wireLectureRows(document.getElementById('dash-ai-lectures'), myAiLectures);
       const allBtn = document.getElementById('all-ai-lectures-btn');

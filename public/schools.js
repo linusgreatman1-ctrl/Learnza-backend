@@ -3117,7 +3117,7 @@
   async function renderStaffDashboard() {
     const u = state.user;
     view.innerHTML = `
-            <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
+            <div class="card hero pn-hero" id="dash-profile-card">
         <div class="hero-top">${greetingBlock(u.position)}${selfAvatarHtml('avatar-staff-dash')}</div>
       </div>
       <div class="grid-cards tiles center">
@@ -3125,7 +3125,6 @@
         <button class="card course-card" id="staff-go-lib" style="text-align:left; cursor:pointer;"><div class="code">📚</div><div class="meta">e-Library</div></button>
       </div>`;
     wireSelfAvatarUpload('avatar-staff-dash');
-    document.getElementById('dash-profile-card').addEventListener('click', () => navigate('digital-id'));
     document.getElementById('staff-go-id').addEventListener('click', () => navigate('digital-id'));
     document.getElementById('staff-go-lib').addEventListener('click', () => navigate('library'));
   }
@@ -3807,7 +3806,7 @@
     view.innerHTML = !showHome
       ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
       : `
-      <div class="hero-wrap" id="dash-profile-card" style="cursor:pointer;">
+      <div class="hero-wrap" id="dash-profile-card">
         <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-student-dash')}</div></div>
         <div class="hero-extra">
         ${daily && daily.goal ? `<div class="hero-goal"><div class="hg-top"><span>Today's Goal</span><b>${daily.done} / ${daily.goal} courses</b></div><div class="pn-progress"><div style="width:${goalPct}%"></div></div></div>` : ''}
@@ -3855,7 +3854,7 @@
     const profileBtn = document.getElementById('dash-profile-btn');
     if (profileBtn) profileBtn.addEventListener('click', () => navigate('digital-id'));
     const profileCard = document.getElementById('dash-profile-card');
-    if (profileCard) { profileCard.addEventListener('click', (e) => { if (!e.target.closest('[data-jump-nav]')) navigate('digital-id'); }); wireSelfAvatarUpload('avatar-student-dash'); }
+    if (profileCard) { wireSelfAvatarUpload('avatar-student-dash'); }
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
     view.querySelectorAll('[data-jump]').forEach((tile) => {
       tile.addEventListener('click', () => {
@@ -5597,7 +5596,7 @@
     const u = state.user;
     const notifRes = await api('/notifications').catch(() => ({ notifications: [] }));
     view.innerHTML = `
-      <div class="hero-wrap" id="dash-profile-card" style="cursor:pointer;">
+      <div class="hero-wrap" id="dash-profile-card">
         <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}${selfAvatarHtml('avatar-lect-dash')}</div></div>
         <div class="hero-extra"><div class="hero-stats">
           <div class="hs" data-jump-nav="lect-courses"><div class="hs-n" style="color:#00C853">${courses.length}</div><div class="hs-l">Courses</div></div>
@@ -5608,8 +5607,6 @@
       ${homeSection('📚 My Courses', 'lect-courses', courses.length ? sjStrip(courses.map((c, i) => ({ title: c.title, sub: `${counts[i].count} student${counts[i].count === 1 ? '' : 's'}`, screen: 'lect-lessons', params: { courseId: c.id } }))) : pnRows([{ icon: '📚', title: 'No courses assigned yet' }]))}
       ${homeSection('🔔 Latest', null, notifRows(notifRes.notifications))}
     `;
-    const lectCard = document.getElementById('dash-profile-card');
-    lectCard.addEventListener('click', (e) => { if (!e.target.closest('[data-jump-nav]')) navigate('digital-id'); });
     wireSelfAvatarUpload('avatar-lect-dash');
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => {
       if (el.dataset.jumpNav === 'lect-lessons-entry') return openLessonCoursePicker(courses);
