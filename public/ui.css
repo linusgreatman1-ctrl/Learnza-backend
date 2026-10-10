@@ -579,3 +579,7 @@ html { font-size: 14.5px; }
   .card.hero.pn-hero [id^="avatar-"], .card.hero.pn-hero .id-avatar, .card.hero.pn-hero img { width: 104px !important; height: 104px !important; flex: 0 0 104px; border-radius: 28px !important; font-size: 38px !important; }
   .pn-hero .greet-name { font-size: 21px; }
 }
+
+/* a lecture video fits the screen: never taller than the window, whatever shape it was recorded in */
+.lecture-video { display: block; width: 100%; height: auto; max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); object-fit: contain; background: #000; border-radius: 12px; margin: 0 auto; }
+@media (max-width: 1023px) { .lecture-video { max-height: calc(100vh - 230px); max-height: calc(100dvh - 230px); } }

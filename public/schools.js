@@ -1352,7 +1352,7 @@
           <span class="pill pill-muted">Lecture${lesson.author ? ` — ${esc(lesson.author.fullName)}` : ''}</span>
           ${isDocUrl(lesson.videoUrl)
             ? `<div style="margin-top:14px; text-align:center; padding:24px;"><div style="font-size:3rem;">📄</div><div style="font-weight:600; margin:6px 0 14px;">${esc(lesson.title)}</div><div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;"><a class="btn btn-accent" href="${esc(lesson.videoUrl)}" target="_blank" rel="noopener">Open</a><a class="btn btn-ghost" href="${esc(lesson.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a></div></div>`
-            : `<div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div><div style="margin-top:10px;"><a class="btn btn-ghost btn-sm" href="${esc(lesson.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a></div>`}
+            : `<div style="margin-top:14px;"><video class="lecture-video" src="${esc(lesson.videoUrl)}" controls playsinline preload="metadata"></video></div><div style="margin-top:10px;"><a class="btn btn-ghost btn-sm" href="${esc(lesson.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a></div>`}
           ${lesson.script ? `<h3 style="margin:18px 0 8px; font-size:0.95rem;">Lecture notes</h3><p style="white-space:pre-wrap;">${esc(lesson.script)}</p>` : ''}
         ` : `
           <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Lecturer — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
@@ -2119,7 +2119,7 @@
       const box = btn.closest('[data-rec]').querySelector('.rec-player');
       if (!box.hidden) { box.hidden = true; box.innerHTML = ''; btn.textContent = '▶ Watch'; return; }
       box.hidden = false;
-      box.innerHTML = `<video controls autoplay playsinline preload="metadata" src="${esc(byId[btn.dataset.watch].recordingUrl)}" style="width:100%; max-height:70vh; margin-top:14px; border-radius:12px; background:#000;"></video>`;
+      box.innerHTML = `<video class="lecture-video" controls autoplay playsinline preload="metadata" src="${esc(byId[btn.dataset.watch].recordingUrl)}" style="width:100%; max-height:70vh; margin-top:14px; border-radius:12px; background:#000;"></video>`;
       btn.textContent = '✕ Close';
     }));
     view.querySelectorAll('[data-del-rec]').forEach((btn) => btn.addEventListener('click', async () => {
