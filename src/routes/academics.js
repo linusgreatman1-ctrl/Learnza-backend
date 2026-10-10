@@ -378,7 +378,7 @@ router.delete('/lessons/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), asy
   const lesson = hasSchool(req.user)
     ? await prisma.lesson.findFirst({ where: { id: req.params.id, course: { department: { schoolId: req.user.schoolId } } } })
     : null;
-  if (!lesson || (req.user.role !== 'ADMIN' && lesson.authorId !== req.user.id)) return res.status(404).json({ error: 'Lesson not found' });
+  if (!lesson || (req.user.role !== 'ADMIN' && lesson.authorId !== req.user.id)) return res.status(404).json({ error: 'Lecture not found' });
   await prisma.lesson.delete({ where: { id: lesson.id } });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'DELETE_LESSON', req.params.id);
   res.json({ ok: true });

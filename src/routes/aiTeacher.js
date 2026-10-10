@@ -5,6 +5,8 @@ const { requireActiveSubscription, isEnforced, requireAiCredits, recordAiUsage, 
 const aiTeacher = require('../services/aiTeacher.service');
 const simli = require('../services/simli.service');
 const { loadCourse } = require('../scope');
+const quizGen = require('../services/quizGen.service');
+const { getSubscriptionStatus } = require('../subscription');
 const { aiGuard } = require('../aiGuard');
 
 const router = express.Router();
@@ -58,6 +60,57 @@ router.post('/individual-courses/:id/ai-teacher/sessions', requireAuth, requireR
   const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
   if (!course) return res.status(404).json({ error: 'Course not found' });
   await startSession(req, res, { individualCourseId: course.id, courseTitle: course.title });
+});
+
+// The narrated lectures the AI Lecturer prepared for a student's courses (a school course's, or a self-study course's).
+// A school course that has none yet gets them written in the background the first time one of its students asks.
+const preparingCourses = new Set();
+const triedCourses = new Map();
+async function prepareLecturesFor(course, authorId) {
+  if (!authorId || preparingCourses.has(course.id) || !aiTeacher.isConfigured()) return;
+  const last = triedCourses.get(course.id);
+  if (last && Date.now() - last < 15 * 60 * 1000) return;
+  triedCourses.set(course.id, Date.now());
+  preparingCourses.add(course.id);
+  try {
+    if (await prisma.lesson.count({ where: { courseId: course.id, isAiTeacher: true } })) return;
+    const draft = await quizGen.generateLessons({ courseTitle: `${course.code} — ${course.title}` });
+    const items = (draft && draft.lessons) || [];
+    if (!items.length) return;
+    await prisma.lesson.createMany({ data: items.map((l, i) => ({ courseId: course.id, authorId, title: l.title || `${course.title} — Lecture ${i + 1}`, script: l.script || '', order: i + 1, isAiTeacher: true })) });
+  } catch (err) {
+    console.error('Preparing AI lectures for', course.code, 'failed:', err.message);
+  } finally {
+    preparingCourses.delete(course.id);
+  }
+}
+
+router.get('/ai-teacher/prerecorded', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const out = [];
+  const preparing = [];
+  const school = [];
+  if (req.user.schoolId) {
+    const rows = await prisma.enrollment.findMany({ where: { studentId: req.user.id }, select: { course: { select: { id: true, code: true, title: true, department: { select: { schoolId: true } } } } } });
+    rows.filter((r) => r.course.department.schoolId === req.user.schoolId).forEach((r) => school.push(r.course));
+  }
+  const own = await prisma.individualCourse.findMany({ where: { studentId: req.user.id }, select: { id: true, title: true } });
+  const [schoolLessons, ownLessons] = await Promise.all([
+    school.length ? prisma.lesson.findMany({ where: { courseId: { in: school.map((c) => c.id) }, isAiTeacher: true }, orderBy: [{ courseId: 'asc' }, { order: 'asc' }] }) : [],
+    own.length ? prisma.lesson.findMany({ where: { individualCourseId: { in: own.map((c) => c.id) } }, orderBy: [{ individualCourseId: 'asc' }, { order: 'asc' }] }) : [],
+  ]);
+  const withLesson = new Set(schoolLessons.map((l) => l.courseId));
+  const author = school.length ? (await prisma.user.findFirst({ where: { schoolId: req.user.schoolId, role: 'ADMIN' }, orderBy: { createdAt: 'asc' }, select: { id: true } })) : null;
+  for (const c of school) {
+    if (withLesson.has(c.id)) continue;
+    preparing.push(`${c.code} — ${c.title}`);
+    prepareLecturesFor(c, author && author.id);
+  }
+  const titleOf = new Map([...school.map((c) => [c.id, `${c.code} — ${c.title}`]), ...own.map((c) => [c.id, c.title])]);
+  const sub = isEnforced() ? await getSubscriptionStatus(req.user.id) : { active: true };
+  for (const l of [...schoolLessons, ...ownLessons]) {
+    out.push({ id: l.id, title: l.title, order: l.order, createdAt: l.createdAt, courseId: l.courseId, individualCourseId: l.individualCourseId, courseTitle: titleOf.get(l.courseId || l.individualCourseId) || '', locked: !sub.active, script: sub.active ? l.script : null });
+  }
+  res.json({ lessons: out, preparing: aiTeacher.isConfigured() ? preparing : [] });
 });
 
 // Every AI Lecturer class this student has had, with its notes, so it can be looked at again or downloaded.

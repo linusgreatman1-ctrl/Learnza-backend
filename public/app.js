@@ -472,7 +472,8 @@
     STUDENT_INDIVIDUAL: [
       ['my-dashboard', 'Home'],
       ['individual-courses', 'My Courses'],
-      ['my-ai-lectures', 'My AI Lectures'],
+      ['my-ai-lectures', 'AI Pre-recorded Lectures'],
+      ['my-ai-live', 'AI Live Recorded Lectures'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -666,7 +667,7 @@
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
     const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
       ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
-      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lessons.' : 'Open My Courses to enrol.' }]));
+      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lectures.' : 'Open My Courses to enrol.' }]));
     const pm = planModel(daily, courses, results);
     const glance = `<div class="sec"><div class="sh"><div class="st">📋 Study Plan — Today</div></div><div class="plan-wrap"><div class="plan-card"><div class="plan-n"><b>${pm.daysLeft}</b><span>days to exam</span></div><div class="plan-n"><b>${pm.hours} hrs</b><span>study/day</span></div><div class="plan-n"><b style="color:#E02020;">${pm.weak.length}</b><span>weak areas</span></div></div><div class="plan-goal">🎯 Goal: <b>${isIndividual ? 'My exams' : 'Semester exam'}</b></div><button class="btn btn-primary" data-jump-nav="study-plan" style="width:100%;">See Full Plan →</button></div></div>`;
     const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
@@ -864,6 +865,8 @@
       switch (state.view.screen) {
         case 'individual-courses': return renderIndividualCourses();
         case 'my-ai-lectures': return renderMyAiLectures();
+        case 'my-ai-live': return renderMyAiLive();
+        case 'ai-live-replay': return renderAiLiveReplay();
         case 'individual-course-detail': return renderIndividualCourseDetail();
         case 'lesson-player': return renderLessonPlayer();
         case 'library': return renderLibrary(false);
@@ -910,7 +913,7 @@
       <div class="card" style="padding:32px; max-width:480px; margin:40px auto; text-align:center;">
         <span class="pill pill-accent">Learnza subscription</span>
         <h2 style="margin:14px 0 8px;">This needs an active subscription</h2>
-        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock AI Lecturer lessons, recorded lectures and live classes.')}</p>
+        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock AI Lecturer lectures, recorded lectures and live classes.')}</p>
         <button class="btn btn-accent" id="go-upgrade-btn">See plans — ₦10,000/month</button>
       </div>
     `;
@@ -951,7 +954,9 @@
     });
   }
 
-  // ---- My AI Lectures: every AI Lecturer lesson and class, to watch again or to download ----------------
+  // ---- AI Pre-recorded Lectures and AI Live Recorded Lectures: two different things ----
+  // Pre-recorded: the narrated lectures the AI Lecturer prepared for a course, ready to watch again.
+  // Live recorded: the classes the student took live with the AI Lecturer, kept to replay and download.
   function downloadTextFile(filename, text) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -960,57 +965,99 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
   const safeFileName = (n) => String(n || 'lecture').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'lecture';
-  async function loadMyAiLectures() {
-    const { courses } = await api('/individual-courses');
-    const sets = await Promise.all(courses.map(async (c) => {
-      const { lessons } = await api(`/individual-courses/${c.id}/lessons`).catch(() => ({ lessons: [] }));
-      return lessons.map((l) => ({ ...l, course: c }));
-    }));
-    const { sessions } = await api('/ai-teacher/my-sessions').catch(() => ({ sessions: [] }));
-    return { lessons: sets.flat(), sessions };
-  }
-  function lectureRowHtml(l) {
-    return `<div class="list-row" style="gap:10px; flex-wrap:wrap;">
-      <div style="min-width:0;"><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-        <div class="meta">${esc(l.course.title)} · ${l.videoUrl ? 'Recorded lecture' : 'AI Lecturer · narrated lesson'}</div></div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        <button class="btn btn-accent btn-sm" data-watch-lecture="${l.id}" data-lecture-course="${l.course.id}">▶ Watch again</button>
-        ${l.locked ? '' : l.videoUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(l.videoUrl)}" download>⬇ Download</a>` : `<button class="btn btn-ghost btn-sm" data-dl-lecture="${l.id}">⬇ Download notes</button>`}
-      </div></div>`;
-  }
-  function sessionRowHtml(x) {
-    return `<div class="list-row" style="gap:10px; flex-wrap:wrap;">
-      <div style="min-width:0;"><div style="font-weight:600;">${esc(x.title)}</div>
-        <div class="meta">${esc(x.course)} · AI Lecturer class · ${new Date(x.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · ${x.status === 'COMPLETED' ? 'finished' : 'in progress'}</div></div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        ${x.status === 'COMPLETED' ? '' : `<button class="btn btn-accent btn-sm" data-open-session="${x.id}">▶ Continue class</button>`}
-        <button class="btn btn-ghost btn-sm" data-dl-session="${x.id}">⬇ Download class notes</button>
-      </div></div>`;
-  }
-  function wireLectureRows(root, data) {
-    root.querySelectorAll('[data-watch-lecture]').forEach((b) => b.addEventListener('click', () => navigate('lesson-player', { courseId: b.dataset.lectureCourse, lessonId: b.dataset.watchLecture, isIndividual: true })));
-    root.querySelectorAll('[data-dl-lecture]').forEach((b) => b.addEventListener('click', () => {
-      const l = data.lessons.find((x) => x.id === b.dataset.dlLecture);
-      if (l) downloadTextFile(safeFileName(l.course.title + '-' + l.title) + '.txt', `${l.title}\n${l.course.title}\n\n${l.script || ''}\n`);
-    }));
-    root.querySelectorAll('[data-open-session]').forEach((b) => b.addEventListener('click', () => navigate('ai-teacher-session', { sessionId: b.dataset.openSession, isIndividual: true })));
-    root.querySelectorAll('[data-dl-session]').forEach((b) => b.addEventListener('click', () => {
-      const x = data.sessions.find((y) => y.id === b.dataset.dlSession);
-      if (!x) return;
-      const body = x.sections.map((sec, i) => `${i + 1}. ${sec.title}\n${sec.boardText ? sec.boardText + '\n' : ''}\n${sec.speechText || ''}\n`).join('\n');
-      downloadTextFile(safeFileName(x.course + '-' + x.title) + '-class-notes.txt', `${x.title}\n${x.course}\nAI Lecturer class · ${new Date(x.createdAt).toLocaleDateString()}\n\n${body}`);
-    }));
-  }
+
   async function renderMyAiLectures() {
-    const data = await loadMyAiLectures();
+    const { lessons, preparing } = await api('/ai-teacher/prerecorded');
     view.innerHTML = `
-      <div class="page-head"><h1>My AI Lectures</h1></div>
-      <p class="muted" style="margin-bottom:18px;">Every lesson the AI Lecturer has given you in your courses. Watch one again whenever you like, or download it.</p>
-      <h3 style="margin-bottom:10px; font-size:1rem;">Recorded lessons</h3>
-      <div class="card" style="margin-bottom:24px;">${data.lessons.map(lectureRowHtml).join('') || '<p class="muted" style="padding:16px;">No lessons yet. Create a course under <strong>My Courses</strong> and the AI Lecturer prepares your first lessons.</p>'}</div>
-      <h3 style="margin-bottom:10px; font-size:1rem;">My AI Lecturer classes</h3>
-      <div class="card">${data.sessions.map(sessionRowHtml).join('') || '<p class="muted" style="padding:16px;">You have not taken an AI Lecturer class yet. Open a course and tap <strong>Start AI Lectures</strong>.</p>'}</div>`;
-    wireLectureRows(view, data);
+      <div class="page-head"><h1>AI Pre-recorded Lectures</h1></div>
+      <p class="muted" style="margin-bottom:16px;">Lectures your AI Lecturer prepared and recorded for your courses. Watch one again whenever you like, or download its notes. A class you took live with the AI Lecturer is under <b>AI Live Recorded Lectures</b>.</p>
+      ${preparing.length ? `<div class="card" style="padding:14px 16px; margin-bottom:14px;">⏳ Preparing lectures for ${preparing.map(esc).join(', ')}… come back in a few minutes.</div>` : ''}
+      <div class="card">${lessons.map((l) => `
+        <div class="list-row" style="gap:10px; flex-wrap:wrap;">
+          <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
+            <div class="meta">${esc(l.courseTitle)} · AI Lecturer · narrated lecture ${l.order}</div></div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-accent btn-sm" data-ai-watch="${l.id}">▶ Watch again</button>
+            ${l.locked ? '' : `<button class="btn btn-ghost btn-sm" data-ai-notes="${l.id}">⬇ Download notes</button>`}
+          </div>
+        </div>`).join('') || '<p class="muted" style="padding:16px;">No pre-recorded lectures yet. They appear here as the AI Lecturer prepares them for your courses.</p>'}</div>`;
+    view.querySelectorAll('[data-ai-watch]').forEach((b) => b.addEventListener('click', () => {
+      const l = lessons.find((x) => x.id === b.dataset.aiWatch);
+      navigate('lesson-player', { courseId: l.individualCourseId || l.courseId, lessonId: l.id, isIndividual: !!l.individualCourseId });
+    }));
+    view.querySelectorAll('[data-ai-notes]').forEach((b) => b.addEventListener('click', () => {
+      const l = lessons.find((x) => x.id === b.dataset.aiNotes);
+      downloadTextFile(safeFileName(l.courseTitle + '-' + l.title) + '.txt', `${l.title}\n${l.courseTitle}\n\n${l.script || ''}\n`);
+    }));
+  }
+
+  async function renderMyAiLive() {
+    const { sessions } = await api('/ai-teacher/my-sessions');
+    view.innerHTML = `
+      <div class="page-head"><h1>AI Live Recorded Lectures</h1></div>
+      <p class="muted" style="margin-bottom:16px;">The classes you took live with the AI Lecturer, kept for you. Watch a class again, pick it up where you stopped, or download its notes. Lectures the AI Lecturer prepared in advance are under <b>AI Pre-recorded Lectures</b>.</p>
+      <div class="card">${sessions.map((x) => `
+        <div class="list-row" style="gap:10px; flex-wrap:wrap;">
+          <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(x.title)}</div>
+            <div class="meta">${esc(x.course)} · ${new Date(x.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · ${x.status === 'COMPLETED' ? 'finished' : 'in progress'}</div></div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-accent btn-sm" data-live-replay="${x.id}">▶ Watch again</button>
+            ${x.status === 'COMPLETED' ? '' : `<button class="btn btn-ghost btn-sm" data-live-continue="${x.id}">Continue class</button>`}
+            <button class="btn btn-ghost btn-sm" data-live-notes="${x.id}">⬇ Download notes</button>
+          </div>
+        </div>`).join('') || '<p class="muted" style="padding:16px;">You have not taken a live class with the AI Lecturer yet. Open a course and tap <b>Start AI Lectures</b>.</p>'}</div>`;
+    const find = (id) => sessions.find((y) => y.id === id);
+    view.querySelectorAll('[data-live-replay]').forEach((b) => b.addEventListener('click', () => navigate('ai-live-replay', { sessionId: b.dataset.liveReplay })));
+    view.querySelectorAll('[data-live-continue]').forEach((b) => b.addEventListener('click', () => navigate('ai-teacher-session', { sessionId: b.dataset.liveContinue, isIndividual: !!find(b.dataset.liveContinue).isIndividual })));
+    view.querySelectorAll('[data-live-notes]').forEach((b) => b.addEventListener('click', () => {
+      const x = find(b.dataset.liveNotes);
+      const body = x.sections.map((sec, i) => `${i + 1}. ${sec.title}\n${sec.boardText ? sec.boardText + '\n' : ''}\n${sec.speechText || ''}\n`).join('\n');
+      downloadTextFile(safeFileName(x.course + '-' + x.title) + '-notes.txt', `${x.title}\n${x.course}\nAI Lecturer live class · ${new Date(x.createdAt).toLocaleDateString()}\n\n${body}`);
+    }));
+  }
+
+  // Watch a finished live class again: every section as it was written on the board and spoken, with a Read aloud button.
+  async function renderAiLiveReplay() {
+    const { sessions } = await api('/ai-teacher/my-sessions');
+    const x = sessions.find((y) => y.id === state.view.sessionId);
+    if (!x) { view.innerHTML = '<div class="page-head"><h1>AI Live Recorded Lectures</h1></div><p class="muted">That class was not found.</p>'; return; }
+    view.innerHTML = `
+      <div class="page-head"><div><div class="muted">${esc(x.course)}</div><h1>${esc(x.title)}</h1></div></div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+        <button class="btn btn-accent" id="replay-speak">🔊 Read aloud</button>
+        <button class="btn btn-ghost" id="replay-stop" hidden>⏹ Stop</button>
+        <button class="btn btn-ghost" id="replay-notes">⬇ Download notes</button>
+      </div>
+      ${x.sections.map((sec, i) => `
+        <div class="card" style="padding:18px; margin-bottom:12px;" id="replay-sec-${i}">
+          <div class="meta">Part ${i + 1} of ${x.sections.length}</div>
+          <h3 style="margin:4px 0 8px; font-size:1rem;">${esc(sec.title)}</h3>
+          ${sec.boardText ? `<div class="script-text" style="max-height:none; white-space:pre-wrap; margin-bottom:10px;">${esc(sec.boardText)}</div>` : ''}
+          <p style="white-space:pre-wrap;">${esc(sec.speechText || '')}</p>
+        </div>`).join('') || '<p class="muted">This class has no saved parts.</p>'}`;
+    const speakBtn = view.querySelector('#replay-speak'), stopBtn = view.querySelector('#replay-stop');
+    let playing = false;
+    const stop = () => { playing = false; window.speechSynthesis && window.speechSynthesis.cancel(); speakBtn.hidden = false; stopBtn.hidden = true; };
+    speakBtn.addEventListener('click', () => {
+      if (!window.speechSynthesis) return toast('Reading aloud is not available on this device.');
+      playing = true; speakBtn.hidden = true; stopBtn.hidden = false;
+      let i = 0;
+      const next = () => {
+        if (!playing || i >= x.sections.length) { stop(); return; }
+        const sec = x.sections[i++];
+        const el = document.getElementById('replay-sec-' + (i - 1));
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const u = new SpeechSynthesisUtterance(`${sec.title}. ${sec.speechText || ''}`);
+        u.onend = next; u.onerror = stop;
+        window.speechSynthesis.speak(u);
+      };
+      next();
+    });
+    stopBtn.addEventListener('click', stop);
+    view.querySelector('#replay-notes').addEventListener('click', () => {
+      const body = x.sections.map((sec, i) => `${i + 1}. ${sec.title}\n${sec.boardText ? sec.boardText + '\n' : ''}\n${sec.speechText || ''}\n`).join('\n');
+      downloadTextFile(safeFileName(x.course + '-' + x.title) + '-notes.txt', `${x.title}\n${x.course}\nAI Lecturer live class · ${new Date(x.createdAt).toLocaleDateString()}\n\n${body}`);
+    });
   }
 
   async function renderIndividualCourseDetail() {
@@ -1032,18 +1079,18 @@
         <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lectures</button>
       </div>
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lessons</h3>
-      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated AI Lecturer lessons for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lectures</h3>
+      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated AI Lecturer lectures for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
       <div class="card" style="margin-bottom:22px;">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
             <div>
               <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-              <div class="meta">AI Lecturer · narrated lesson</div>
+              <div class="meta">AI Lecturer · narrated lecture</div>
             </div>
-            <span class="pill pill-accent">Lesson ${l.order}</span>
+            <span class="pill pill-accent">Lecture ${l.order}</span>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">Nothing yet — check back shortly, the app generates your first lessons automatically.</p>'}
+        `).join('') || '<p class="muted" style="padding:16px;">Nothing yet — check back shortly, the app generates your first lectures automatically.</p>'}
       </div>
 
       <button class="btn btn-ghost btn-sm" id="delete-course-btn" style="color:var(--danger);">Delete this course</button>
@@ -1073,8 +1120,8 @@
     view.innerHTML = `
       <div class="card" style="padding:48px 24px; text-align:center;">
         <div class="ai-avatar-ring" style="margin:0 auto 18px; animation: avatar-pulse 1.4s ease-in-out infinite;">✨</div>
-        <h3 style="margin-bottom:8px;">Preparing your lesson on "${esc(topic)}"…</h3>
-        <p class="muted">The AI Lecturer is drafting a full, comprehensive lesson — this takes a little while.</p>
+        <h3 style="margin-bottom:8px;">Preparing your lecture on "${esc(topic)}"…</h3>
+        <p class="muted">The AI Lecturer is drafting a full, comprehensive lecture — this takes a little while.</p>
       </div>
     `;
     try {
@@ -1093,14 +1140,14 @@
     const backScreen = isIndividual ? 'individual-course-detail' : 'course-detail';
     const { lessons } = await api(lessonsPath);
     const lesson = lessons.find((l) => l.id === lessonId);
-    if (!lesson) { view.innerHTML = '<p>Lesson not found.</p>'; return; }
+    if (!lesson) { view.innerHTML = '<p>Lecture not found.</p>'; return; }
 
     if (lesson.locked) {
       view.innerHTML = `
         <div class="page-head"><h1>${esc(lesson.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to course</button></div>
         <div class="card" style="padding:32px; text-align:center;">
           <span class="pill pill-accent">Subscription feature</span>
-          <h2 style="margin:14px 0 8px;">This lesson needs an active subscription</h2>
+          <h2 style="margin:14px 0 8px;">This lecture needs an active subscription</h2>
           <p class="muted" style="margin-bottom:20px;">AI Lecturer narration and recorded lectures are part of Learnza's paid plan — ₦10,000/month or ₦105,000/year.</p>
           <button class="btn btn-accent" id="go-upgrade-btn">See plans</button>
         </div>
@@ -1122,12 +1169,12 @@
       </div>
       <div class="card lesson-player">
         ${lesson.videoUrl ? `
-          <span class="pill pill-muted">Recorded lesson${lesson.author ? ` — ${esc(lesson.author.fullName)}` : ''}</span>
+          <span class="pill pill-muted">Recorded lecture${lesson.author ? ` — ${esc(lesson.author.fullName)}` : ''}</span>
           <div style="margin-top:14px;"><video src="${esc(lesson.videoUrl)}" controls style="width:100%; border-radius:10px;"></video></div>
-          <h3 style="margin:18px 0 8px; font-size:0.95rem;">Lesson notes</h3>
+          <h3 style="margin:18px 0 8px; font-size:0.95rem;">Lecture notes</h3>
           <p style="white-space:pre-wrap;">${esc(lesson.script)}</p>
         ` : `
-          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Lecturer — ${subscriptionEnforced ? 'subscriber lesson' : 'free during testing'}</span>
+          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Lecturer — ${subscriptionEnforced ? 'subscriber lecture' : 'free during testing'}</span>
           ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
           <div class="ai-avatar-box" style="margin-top:14px;">
             <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
@@ -1569,7 +1616,7 @@
       const toggle = document.getElementById('got-question-toggle');
       toggle.style.opacity = '';
       toggle.style.cursor = '';
-      document.getElementById('gq-sub').textContent = 'Learnza answers visually without leaving the lesson';
+      document.getElementById('gq-sub').textContent = 'Learnza answers visually without leaving the lecture';
     }
 
     // Shared by the typed "Ask" button and the voice-question flow. `pausedSnapshot`
@@ -1724,8 +1771,8 @@
           if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') renderUpgradePrompt(err.message);
         });
         if (sectionIdx >= plan.sections.length - 1) {
-          boardStatus.textContent = 'Lesson complete';
-          toast('Lesson complete — nice work!');
+          boardStatus.textContent = 'Lecture complete';
+          toast('Lecture complete — nice work!');
           askVoiceBtn.disabled = true;
           return;
         }
@@ -2343,7 +2390,7 @@
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="dh-band">${numbers.map(([v, l, c]) => `<div><div class="dh-n" style="color:${c}">${v}</div><div class="dh-nl">${l}</div></div>`).join('')}</div>
       <div class="dh-title">📋 My Activities</div>
-      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Lectures', 1)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('past-questions-hub', '📜', 'Past Questions', 2)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('past-questions-hub', '📜', 'Past Questions', 4)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
+      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('past-questions-hub', '📜', 'Past Questions', 2)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('past-questions-hub', '📜', 'Past Questions', 4)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
       <div class="dh-row" data-jump-nav="my-activity"><span>🔔</span><span class="dh-rt">Notifications</span><span class="dh-go">›</span></div>
       <div class="dh-title">🏆 Leaderboard Positions</div>
       <div class="dh-grid two">${dhTile('leaderboard', '🌍', 'Leaderboard', 4)}${dhTile('groups', '👨‍👩‍👧', 'Study Groups', 2)}</div>
@@ -3238,7 +3285,7 @@
   async function renderResearchAssistant() {
     view.innerHTML = `
       <div class="page-head"><h1>AI Research Assistant</h1></div>
-      <p class="muted" style="margin-bottom:18px;">Ask it to explain a concept, help structure a project or lesson, or suggest what to search for. It can't browse the web, so it won't invent fake citations — always verify sources with your ${state.user.role === 'STUDENT' ? 'lecturer or library' : 'own research'}.</p>
+      <p class="muted" style="margin-bottom:18px;">Ask it to explain a concept, help structure a project or lecture, or suggest what to search for. It can't browse the web, so it won't invent fake citations — always verify sources with your ${state.user.role === 'STUDENT' ? 'lecturer or library' : 'own research'}.</p>
       <div class="card" style="padding:20px;">
         <div class="field">
           <label>Your topic or question</label>
@@ -3296,7 +3343,7 @@
       ` : `
         <div class="card" style="padding:20px; margin-bottom:20px;">
           <span class="pill pill-muted">No active plan</span>
-          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Lecturer lessons, recorded lectures and live classes — each plan includes a bank of live AI Lecturer minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
+          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Lecturer lectures, recorded lectures and live classes — each plan includes a bank of live AI Lecturer minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
         </div>
       `}
       ${noProvider ? `<div class="hint-box" style="background:var(--danger-soft); color:var(--danger);">Payments aren't configured on this server yet — checkout will be available once a payment provider is connected.</div>` : ''}

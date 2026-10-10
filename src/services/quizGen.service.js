@@ -51,19 +51,19 @@ async function generateSemesterExam({ courseTitle, topic }) {
   return ai.askForJson(SEMESTER_EXAM_SYSTEM_PROMPT, userPrompt);
 }
 
-const LESSONS_SYSTEM_PROMPT = `You are creating a short series of pre-recorded, narrated lessons for a self-directed learner studying a course entirely on their own -- there is no live teacher, so each lesson's script is read aloud to them by text-to-speech exactly as written. Reply with JSON only, matching exactly:
+const LESSONS_SYSTEM_PROMPT = `You are creating a short series of pre-recorded, narrated lectures for a learner studying a course -- each lecture's script is read aloud to them by text-to-speech exactly as written. Reply with JSON only, matching exactly:
 {
   "lessons": [
     { "title": string, "script": string }
   ]
 }
 Rules:
-- Exactly 3 lessons, each covering a different, well-scoped sub-topic that together build a solid introduction to the course.
+- Exactly 3 lectures, each covering a different, well-scoped sub-topic that together build a solid introduction to the course.
 - "script" is the full spoken narration -- 150 to 250 words, warm and clear, plain prose only (no headings, no bullet points, no markdown -- it is read aloud, not displayed).
 Return JSON only, no prose before or after.`;
 
 async function generateLessons({ courseTitle }) {
-  const userPrompt = `Course of study: ${courseTitle}\nGenerate the first set of introductory pre-recorded lessons for this course.`;
+  const userPrompt = `Course of study: ${courseTitle}\nGenerate the first set of introductory pre-recorded lectures for this course.`;
   return ai.askForJson(LESSONS_SYSTEM_PROMPT, userPrompt);
 }
 
