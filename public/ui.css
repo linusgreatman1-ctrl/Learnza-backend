@@ -567,3 +567,6 @@ html { font-size: 14.5px; }
 .sp-weak-t { font-weight: 700; font-size: 13px; color: #1A1A2E; }
 .sp-weak-s { font-size: 11px; color: #9094A4; margin: 2px 0 6px; }
 @media (max-width: 560px) { .sp-form { grid-template-columns: 1fr; } }
+@media (max-width: 1023px) {
+  .mobile-topbar .menu-toggle { width: 40px; height: 40px; border-radius: 12px; background: rgba(255, 255, 255, .1); border: 1.5px solid rgba(255, 255, 255, .16); color: #fff; font-size: 1.1rem; align-items: center; justify-content: center; }
+}
