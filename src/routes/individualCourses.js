@@ -57,7 +57,7 @@ router.delete('/individual-courses/:id', requireAuth, requireRole('STUDENT'), as
 router.get('/individual-courses/:id/assessments', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
   if (!course) return res.status(404).json({ error: 'Course not found' });
-  await autoGen.ensureAutoContentForCourse(course, req.user.id).catch(() => {});
+  autoGen.ensureAutoContentForCourse(course, req.user.id).catch(() => {}); // in the background: opening a page never waits for the AI
   const assessments = await prisma.assessment.findMany({
     where: { individualCourseId: course.id },
     include: TIMING_INCLUDE,
@@ -75,7 +75,7 @@ router.get('/individual-courses/:id/assessments', requireAuth, requireRole('STUD
 router.get('/individual-courses/:id/lessons', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const course = await prisma.individualCourse.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
   if (!course) return res.status(404).json({ error: 'Course not found' });
-  await autoGen.ensureAutoContentForCourse(course, req.user.id).catch(() => {});
+  autoGen.ensureAutoContentForCourse(course, req.user.id).catch(() => {}); // in the background: opening a page never waits for the AI
   const lessons = await prisma.lesson.findMany({
     where: { individualCourseId: course.id },
     orderBy: { order: 'asc' },

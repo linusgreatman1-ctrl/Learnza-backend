@@ -15,13 +15,19 @@ const router = express.Router();
 // learners instead get `individualAssessments` -- the app's own auto-generated
 // assignments/tests/exams (see individualAutoGen.service.js), ensured fresh right here
 // so opening the dashboard is enough to catch up on anything due.
+const ensureAsked = new Map();
 router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  if (req.user.isIndividual) {
-    await autoGen.ensureAutoContent(req.user.id).catch(() => {});
-  }
+  // Whatever is due (today's assignment, the weekly test...) is written in the background: the dashboard never waits
+  // for the AI, so it opens at once and the new work shows on the next visit.
+  if (req.user.isIndividual) autoGen.ensureAutoContent(req.user.id).catch(() => {});
   // Mock exams, past-question practice and practice questions for every course on this
-  // dashboard are written in the background the first time (and topped up over time).
-  practice.ensureForStudent(req.user).catch(() => {});
+  // dashboard are written in the background the first time (and topped up over time). Asking more than once a
+  // minute adds nothing, so it is asked at most that often per student.
+  const lastAsked = ensureAsked.get(req.user.id);
+  if (!lastAsked || Date.now() - lastAsked > 60000) {
+    ensureAsked.set(req.user.id, Date.now());
+    practice.ensureForStudent(req.user).catch(() => {});
+  }
   const enrollments = await prisma.enrollment.findMany({
     where: { studentId: req.user.id },
     select: { courseId: true },

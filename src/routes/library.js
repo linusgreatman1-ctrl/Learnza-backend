@@ -18,15 +18,16 @@ router.get('/library', requireAuth, async (req, res) => {
   if (departmentId) narrow.push({ course: { departmentId: String(departmentId) } });
   const items = await prisma.libraryResource.findMany({
     where: { AND: [visible, ...narrow] },
-    include: { course: { select: { id: true, code: true, title: true, departmentId: true } } },
+    include: { course: { select: { id: true, code: true, title: true, departmentId: true } }, uploader: { select: { fullName: true } } },
     orderBy: [{ type: 'asc' }, { title: 'asc' }],
   });
   res.json({ items });
 });
 
 router.post('/library', requireAuth, requireRole('LECTURER', 'ADMIN'), upload.single('file'), async (req, res) => {
-  const { title, author, publisher, type, courseId } = req.body;
-  if (!title || !author || !type) return res.status(400).json({ error: 'Title, author and type are required' });
+  const { title, publisher, type, courseId } = req.body;
+  const author = String(req.body.author || '').trim() || req.user.fullName;
+  if (!title || !type) return res.status(400).json({ error: 'A title and a type are required' });
   if (!req.file) return res.status(400).json({ error: 'Attach a file from your device.' });
   if (!hasSchool(req.user)) return res.status(403).json({ error: 'Only school staff can add to a school library.' });
   if (courseId && !(await courseInSchool(courseId, req.user.schoolId))) return res.status(404).json({ error: 'Course not found' });
@@ -43,6 +44,14 @@ router.post('/library', requireAuth, requireRole('LECTURER', 'ADMIN'), upload.si
   });
   if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'UPLOAD_LIBRARY_RESOURCE', title);
   res.json({ item, storage });
+});
+
+// A lecturer removes what he added; the school admin can remove anything their school added.
+router.delete('/library/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
+  const item = hasSchool(req.user) ? await prisma.libraryResource.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } }) : null;
+  if (!item || (req.user.role !== 'ADMIN' && item.uploaderId !== req.user.id)) return res.status(404).json({ error: 'File not found' });
+  await prisma.libraryResource.delete({ where: { id: item.id } });
+  res.json({ ok: true });
 });
 
 module.exports = router;

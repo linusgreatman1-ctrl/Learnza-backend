@@ -472,8 +472,6 @@
     STUDENT_INDIVIDUAL: [
       ['my-dashboard', 'Home'],
       ['individual-courses', 'My Courses'],
-      ['my-ai-lectures', 'AI Pre-recorded Lectures'],
-      ['my-ai-live', 'AI Live Recorded Lectures'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -481,6 +479,8 @@
       ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
+      ['my-ai-lectures', 'AI Pre-recorded Lectures'],
+      ['my-ai-live', 'AI Live Recorded Lectures'],
       ['research', 'AI Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
@@ -658,9 +658,9 @@
   }
   // What a student's home shows around the tiles: the Daily Challenge banner, then the streak, the courses to
   // continue, a glance at today, what is due and what is new.
-  async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results }) {
-    let courses = [];
-    try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; }
+  async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results, courses: given }) {
+    let courses = given || [];
+    if (!given) { try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; } }
     const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 8 min each' : 'Practise questions from your courses every day';
     const banner = homeBanner('⚡', 'Daily Challenge', titles, 'daily-challenge');
     const days = daily && daily.days ? daily.days : [];
@@ -967,11 +967,10 @@
   const safeFileName = (n) => String(n || 'lecture').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'lecture';
 
   async function renderMyAiLectures() {
-    const { lessons, preparing } = await api('/ai-teacher/prerecorded');
+    const { lessons } = await api('/ai-teacher/prerecorded');
     view.innerHTML = `
       <div class="page-head"><h1>AI Pre-recorded Lectures</h1></div>
-      <p class="muted" style="margin-bottom:16px;">Lectures your AI Lecturer prepared and recorded for your courses. Watch one again whenever you like, or download its notes. A class you took live with the AI Lecturer is under <b>AI Live Recorded Lectures</b>.</p>
-      ${preparing.length ? `<div class="card" style="padding:14px 16px; margin-bottom:14px;">⏳ Preparing lectures for ${preparing.map(esc).join(', ')}… come back in a few minutes.</div>` : ''}
+      <p class="muted" style="margin-bottom:16px;">The lectures the AI Lecturer recorded for each of your courses. This is where you carry on learning when your live AI minutes or coins run out. Watch one again whenever you like, or download its notes. Classes you took live with the AI Lecturer are under <b>AI Live Recorded Lectures</b>.</p>
       <div class="card">${lessons.map((l) => `
         <div class="list-row" style="gap:10px; flex-wrap:wrap;">
           <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
@@ -980,7 +979,7 @@
             <button class="btn btn-accent btn-sm" data-ai-watch="${l.id}">▶ Watch again</button>
             ${l.locked ? '' : `<button class="btn btn-ghost btn-sm" data-ai-notes="${l.id}">⬇ Download notes</button>`}
           </div>
-        </div>`).join('') || '<p class="muted" style="padding:16px;">No pre-recorded lectures yet. They appear here as the AI Lecturer prepares them for your courses.</p>'}</div>`;
+        </div>`).join('') || '<p class="muted" style="padding:16px;">No pre-recorded lectures in your courses yet. They appear here, and inside each course, as the system records them.</p>'}</div>`;
     view.querySelectorAll('[data-ai-watch]').forEach((b) => b.addEventListener('click', () => {
       const l = lessons.find((x) => x.id === b.dataset.aiWatch);
       navigate('lesson-player', { courseId: l.individualCourseId || l.courseId, lessonId: l.id, isIndividual: !!l.individualCourseId });
@@ -995,7 +994,7 @@
     const { sessions } = await api('/ai-teacher/my-sessions');
     view.innerHTML = `
       <div class="page-head"><h1>AI Live Recorded Lectures</h1></div>
-      <p class="muted" style="margin-bottom:16px;">The classes you took live with the AI Lecturer, kept for you. Watch a class again, pick it up where you stopped, or download its notes. Lectures the AI Lecturer prepared in advance are under <b>AI Pre-recorded Lectures</b>.</p>
+      <p class="muted" style="margin-bottom:16px;">The live classes the AI Lecturer taught you, recorded as they happened. Watch a class again, pick it up where you stopped, or download its notes. Lectures the system recorded in advance are under <b>AI Pre-recorded Lectures</b>.</p>
       <div class="card">${sessions.map((x) => `
         <div class="list-row" style="gap:10px; flex-wrap:wrap;">
           <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(x.title)}</div>
@@ -2404,11 +2403,13 @@
 
   async function renderMyDashboard(only) {
     const isIndividual = state.user.isIndividual;
-    const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }] = await Promise.all([
+    // Everything the page needs is asked for at once: one wait instead of five in a row.
+    const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }, dailyRes, courseRes] = await Promise.all([
       api('/students/me/dashboard'),
       api('/notifications'),
+      only || false ? null : api('/questions/daily').catch(() => null),
+      only ? null : api(isIndividual ? '/individual-courses' : '/students/me/courses').catch(() => ({ courses: [] })),
     ]);
-    const myAiLectures = null;
     const attendancePct = attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
     const avgScorePct = recentResults.length
       ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length)
@@ -2548,9 +2549,9 @@
     const pendingCount = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
     const homeTiles = isIndividual ? `${homeTile('individual-courses', '📚', 'My Courses', 'Your own courses')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}` : `${homeTile('courses', '📚', 'My Courses', 'Your classes')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}`;
     const showHome = !(only && sectionHtml[only]);
-    const daily = showHome ? await api('/questions/daily').catch(() => null) : null;
+    const daily = showHome ? dailyRes : null;
     const takenCount = recentResults.length;
-    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results: recentResults }) : { banner: '', rest: '' };
+    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results: recentResults, courses: courseRes && courseRes.courses }) : { banner: '', rest: '' };
     const goalPct = daily && daily.goal ? Math.round((daily.done / daily.goal) * 100) : 0;
 
     view.innerHTML = !showHome
@@ -3432,99 +3433,103 @@
   // Individual (non-school) learners have no department/course hierarchy to browse by
   // -- they see a flat list of resources Learnza itself stocks directly (uploaded with
   // no course attached), per "we will upload textbooks ourselves, not through school".
-  async function renderIndividualLibrary() {
-    const { items } = await api('/library?global=true');
-    view.innerHTML = `
-      <div class="page-head"><h1>e-Library</h1></div>
-      <p class="muted" style="margin-bottom:20px;">Textbooks and resources available to every Learnza learner.</p>
-      <div class="card">
-        ${items.map(libraryItemCardHtml).join('') || '<p class="muted" style="padding:16px;">No textbooks available yet — check back soon.</p>'}
-      </div>
-    `;
-    view.querySelectorAll('[data-open-pdf]').forEach((btn) => {
-      btn.addEventListener('click', () => navigate('pdf-viewer', { url: btn.dataset.openPdf, title: btn.dataset.pdfTitle, backTo: 'library' }));
-    });
-  }
-
-  async function renderLibrary() {
-    return renderIndividualLibrary();
-    const [{ departments }, { items: allItems }, lecturerCourses] = await Promise.all([
-      api(`/departments?schoolId=${state.user.schoolId}`),
-      api(`/library?schoolId=${state.user.schoolId}`),
-      isLecturer ? ensureLectCourses().then((r) => r.courses) : Promise.resolve([]),
-    ]);
-    const deptCourses = {};
-    await Promise.all(departments.map(async (d) => { deptCourses[d.id] = (await api(`/departments/${d.id}/courses`)).courses; }));
-    const itemsByCourse = {};
-    for (const it of allItems) (itemsByCourse[it.courseId] = itemsByCourse[it.courseId] || []).push(it);
+  // ---- e-Library, laid out the way PassNow's is: a card to add a file (lecturers), search and filters, one list of
+  // files with Open / Download (and Delete on your own), and a viewer that opens PDFs and pictures in place ----
+  const LIB_TYPES = ['Textbook', 'Past Question', 'Handout', 'Notes', 'Journal'];
+  const libIcon = (u) => { const e = String(u || '').split('?')[0].split('.').pop().toLowerCase(); return e === 'pdf' ? '📕' : /png|jpe?g|webp|gif/.test(e) ? '🖼️' : /docx?/.test(e) ? '📘' : /pptx?/.test(e) ? '📙' : /xlsx?/.test(e) ? '📗' : '📄'; };
+  const libInline = (u) => /\.(pdf|png|jpe?g|webp|gif)(\?|#|$)/i.test(String(u || ''));
+  async function renderIndividualLibrary() { return renderLibrary(false); }
+  async function renderLibrary(isLecturer) {
+    const lecturer = !!isLecturer;
+    const [{ items }, lc] = await Promise.all([api('/library'), lecturer ? ensureLectCourses() : Promise.resolve(null)]);
+    const myCourses = lc ? lc.courses : [];
+    const filter = { q: '', type: '', course: '' };
+    const courseLabel = (it) => (it.course ? `${it.course.code} — ${it.course.title}` : '');
+    const old = document.getElementById('lib-viewer'); if (old) old.remove();
+    const viewer = document.createElement('div');
+    viewer.id = 'lib-viewer';
+    viewer.innerHTML = '<div class="lib-bar"><button class="lib-btn" id="lib-close">← Close</button><b id="lib-vt"></b><a class="lib-btn g" id="lib-vd" download target="_blank" rel="noopener">⬇ Download</a></div><div id="lib-vbody"></div>';
+    document.body.appendChild(viewer);
+    const closeViewer = () => { viewer.classList.remove('on'); viewer.querySelector('#lib-vbody').innerHTML = ''; };
+    viewer.querySelector('#lib-close').addEventListener('click', closeViewer);
 
     view.innerHTML = `
-      <div class="page-head"><h1>e-Library</h1></div>
-      <p class="muted" style="margin-bottom:20px;">Textbooks for every department and course, browsable by subject — not just what you're enrolled in.</p>
-      ${isLecturer ? `
-        <div class="card" style="padding:20px; margin-bottom:22px;">
-          <h3 style="margin-bottom:12px; font-size:1rem;">Add a textbook</h3>
-          <form id="upload-form">
-            <div class="field"><label>Course</label>
-              <select id="lib-course">${lecturerCourses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select>
-            </div>
-            <div class="field"><label>Title</label><input type="text" id="lib-title" required placeholder="e.g. Introduction to Organic Chemistry"></div>
-            <div class="field"><label>Author(s)</label><input type="text" id="lib-author" required placeholder="e.g. J. O. Adeyemi, T. K. Bello"></div>
-            <div class="field"><label>Publisher <span class="muted">(optional)</span></label><input type="text" id="lib-publisher" placeholder="e.g. Spectrum Books"></div>
-            <div class="field"><label>Type</label>
-              <select id="lib-type"><option>Textbook</option><option>Journal</option><option>Past Question</option><option>Handout</option></select>
-            </div>
-            <div class="field"><label>File (from your device)</label><input type="file" id="lib-file" required></div>
-            <button class="btn btn-primary" type="submit" id="lib-submit-btn">Upload</button>
-          </form>
-        </div>` : ''}
-      ${departments.map((d) => `
-        <div style="margin-bottom:26px;">
-          <div class="muted" style="font-weight:700; margin-bottom:10px;">${esc(d.name)}</div>
-          ${(deptCourses[d.id] || []).map((c) => `
-            <div style="margin-bottom:14px;">
-              <div style="font-size:0.85rem; font-weight:600; margin-bottom:6px;">${esc(c.code)} — ${esc(c.title)}</div>
-              <div class="card">
-                ${(itemsByCourse[c.id] || []).map(libraryItemCardHtml).join('') || '<p class="muted" style="padding:14px 16px;">No textbooks yet.</p>'}
-              </div>
-            </div>
-          `).join('') || '<p class="muted">No courses yet.</p>'}
+      <div class="page-head"><h1>📖 e-Library</h1></div>
+      ${lecturer ? `<div class="card" style="padding:18px; margin-bottom:14px;">
+        <div class="lib-add-h">➕ Add a file for your students</div>
+        <form id="upload-form">
+          <div class="field"><label>Title</label><input type="text" id="lib-title" required placeholder="e.g. Introduction to Organic Chemistry"></div>
+          <div class="lib-two">
+            <div class="field"><label>Type</label><select id="lib-type">${LIB_TYPES.map((t) => `<option>${t}</option>`).join('')}</select></div>
+            <div class="field"><label>For course</label><select id="lib-course"><option value="">Every course</option>${myCourses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+          </div>
+          <div class="field"><label>Author (optional)</label><input type="text" id="lib-author" placeholder="Who wrote it"></div>
+          <div class="field"><label>File (PDF, Word, PowerPoint, Excel, text or a picture — up to 25 MB)</label><input type="file" id="lib-file" required accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp"></div>
+          <button class="btn btn-primary" type="submit" id="lib-submit-btn">⬆ Add to e-Library</button>
+        </form></div>` : ''}
+      <div class="card" style="padding:14px; margin-bottom:12px;">
+        <input class="lib-q" id="lib-q" placeholder="Search by title, author or course…">
+        <div class="lib-two" style="margin-top:10px;">
+          <select id="lib-ftype"><option value="">All types</option>${LIB_TYPES.map((t) => `<option>${t}</option>`).join('')}</select>
+          <select id="lib-fcourse"><option value="">All courses</option></select>
         </div>
-      `).join('') || '<p class="muted">No departments yet.</p>'}
-    `;
-    if (isLecturer) {
-      document.getElementById('upload-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fd = new FormData();
-        fd.append('courseId', document.getElementById('lib-course').value);
-        fd.append('title', document.getElementById('lib-title').value);
-        fd.append('author', document.getElementById('lib-author').value);
-        fd.append('publisher', document.getElementById('lib-publisher').value);
-        fd.append('type', document.getElementById('lib-type').value);
-        const file = document.getElementById('lib-file').files[0];
-        if (!file) return toast('Attach a file from your device.');
-        fd.append('file', file);
+      </div>
+      <div id="lib-list"></div>`;
 
-        const submitBtn = document.getElementById('lib-submit-btn');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Uploading…';
+    const fcourse = view.querySelector('#lib-fcourse');
+    const courseNames = [...new Set(items.map(courseLabel).filter(Boolean))].sort();
+    fcourse.innerHTML = '<option value="">All courses</option>' + courseNames.map((n) => `<option>${esc(n)}</option>`).join('');
+    const paint = () => {
+      const shown = items.filter((it) => (!filter.type || it.type === filter.type) && (!filter.course || courseLabel(it) === filter.course)
+        && (!filter.q || `${it.title} ${it.author || ''} ${courseLabel(it)}`.toLowerCase().includes(filter.q)));
+      const list = view.querySelector('#lib-list');
+      if (!shown.length) { list.innerHTML = `<div class="lib-empty">${items.length ? 'Nothing matches that search.' : 'No files yet. Lecturers add textbooks, handouts and past questions here, and they show up as soon as they are added.'}</div>`; return; }
+      list.innerHTML = shown.map((it) => {
+        const mine = lecturer && it.schoolId && it.uploaderId === state.user.id;
+        const meta = [it.type, courseLabel(it) || 'Every course', it.schoolId ? null : 'Learnza library'].filter(Boolean).map(esc).join(' · ');
+        return `<div class="lib-row"><div class="lib-ic">${libIcon(it.fileUrl)}</div><div class="lib-mid"><div class="lib-t">${esc(it.title)}</div><div class="lib-m">${meta}</div><div class="lib-m">${it.author ? 'by ' + esc(it.author) + ' · ' : ''}${it.uploader ? 'added by ' + esc(it.uploader.fullName) + ' · ' : ''}${new Date(it.createdAt).toLocaleDateString()}</div></div>
+          <div class="lib-side"><button class="lib-btn g" data-lib-open="${it.id}">${libInline(it.fileUrl) ? 'Open' : 'Download'}</button>${mine ? `<button class="lib-btn r" data-lib-del="${it.id}">Delete</button>` : ''}</div></div>`;
+      }).join('');
+      list.querySelectorAll('[data-lib-open]').forEach((b) => b.addEventListener('click', () => {
+        const it = items.find((x) => x.id === b.dataset.libOpen);
+        if (!libInline(it.fileUrl)) { window.open(it.fileUrl, '_blank', 'noopener'); return; }
+        viewer.querySelector('#lib-vt').textContent = it.title;
+        viewer.querySelector('#lib-vd').href = it.fileUrl;
+        viewer.querySelector('#lib-vbody').innerHTML = /\.pdf(\?|#|$)/i.test(it.fileUrl) ? `<iframe title="${esc(it.title)}" src="${esc(it.fileUrl)}"></iframe>` : `<img alt="${esc(it.title)}" src="${esc(it.fileUrl)}">`;
+        viewer.classList.add('on');
+      }));
+      list.querySelectorAll('[data-lib-del]').forEach((b) => b.addEventListener('click', async () => {
+        const it = items.find((x) => x.id === b.dataset.libDel);
+        if (!confirm(`Delete “${it.title}” from the e-Library?`)) return;
+        try { await api('/library/' + it.id, { method: 'DELETE' }); items.splice(items.indexOf(it), 1); paint(); toast('Deleted'); } catch (err) { toast(err.message); }
+      }));
+    };
+    view.querySelector('#lib-q').addEventListener('input', (e) => { filter.q = e.target.value.trim().toLowerCase(); paint(); });
+    view.querySelector('#lib-ftype').addEventListener('change', (e) => { filter.type = e.target.value; paint(); });
+    fcourse.addEventListener('change', (e) => { filter.course = e.target.value; paint(); });
+    paint();
+
+    if (lecturer) {
+      view.querySelector('#upload-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const file = view.querySelector('#lib-file').files[0];
+        if (!file) return toast('Choose a file first.');
+        const fd = new FormData();
+        fd.append('title', view.querySelector('#lib-title').value);
+        fd.append('type', view.querySelector('#lib-type').value);
+        if (view.querySelector('#lib-course').value) fd.append('courseId', view.querySelector('#lib-course').value);
+        fd.append('author', view.querySelector('#lib-author').value);
+        fd.append('file', file);
+        const btn = view.querySelector('#lib-submit-btn');
+        btn.disabled = true; btn.textContent = 'Uploading…';
         try {
           const { storage } = await api('/library', { method: 'POST', body: fd });
-          toast('Textbook added');
-          if (storage === 'local-disk') {
-            toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
-          }
+          toast('✅ Added to the e-Library');
+          if (storage === 'local-disk') toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
           render();
-        } catch (err) {
-          toast(err.message);
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Upload';
-        }
+        } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = '⬆ Add to e-Library'; }
       });
     }
-    view.querySelectorAll('[data-open-pdf]').forEach((btn) => {
-      btn.addEventListener('click', () => navigate('pdf-viewer', { url: btn.dataset.openPdf, title: btn.dataset.pdfTitle, backTo: isLecturer ? 'lect-library' : 'library' }));
-    });
   }
 
   async function renderGroups() {
