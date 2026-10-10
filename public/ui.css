@@ -491,3 +491,79 @@ html { font-size: 14.5px; }
 .dc-l { width: 32px; height: 32px; border-radius: 8px; background: var(--ui-card-line); display: flex; align-items: center; justify-content: center; font: 700 14px Sora, sans-serif; flex-shrink: 0; }
 .dc-opt.sel .dc-l { background: #142033; color: #fff; }
 @media (max-width: 1023px) { .dh-grid { gap: 8px; } }
+
+/* ======== v5: the menu is at the top again on phones and tablets; the welcome card and the numbers are two things; the study plan ======== */
+.bnav { display: none !important; }
+@media (max-width: 1023px) {
+  .mobile-topbar .menu-toggle { display: flex; }
+  main.content { padding-bottom: 28px; }
+}
+
+/* desktop: one band (the profile and the numbers together); phones and tablets: a profile card with a big photo, then the numbers as their own cards */
+.hero-wrap { position: relative; overflow: hidden; margin: 0 -18px 16px; background: linear-gradient(145deg, #142033, #1b3560); }
+.hero-wrap::before { content: ''; position: absolute; top: -50px; right: -50px; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, rgba(227, 172, 76, .3), transparent 68%); pointer-events: none; }
+.hero-wrap > * { position: relative; z-index: 1; }
+.hero-wrap > .card.hero.pn-hero { background: none; box-shadow: none; margin: 0; }
+.hero-wrap > .card.hero.pn-hero::before, .hero-wrap > .card.hero.pn-hero::after { display: none; }
+.hero-extra { padding: 0 18px 18px; }
+.hero-extra .hero-goal { margin-top: 0; }
+.hero-extra .hero-goal + .hero-stats { margin-top: 12px; }
+@media (min-width: 1024px) { .hero-wrap { margin-right: -18px; } .hero-wrap > .card.hero.pn-hero { padding-bottom: 14px !important; } }
+@media (max-width: 1023px) {
+  .hero-wrap { background: none; overflow: visible; margin: 0 0 16px; }
+  .hero-wrap::before { display: none; }
+  .hero-wrap > .card.hero.pn-hero, .card.hero.pn-hero {
+    background: linear-gradient(145deg, #142033, #1b3560); border-radius: 18px; margin: 0 0 12px; padding: 16px !important; position: relative; overflow: hidden;
+  }
+  .hero-wrap > .card.hero.pn-hero::before { display: block; width: 170px; height: 170px; top: -50px; right: -40px; }
+  .card.hero.pn-hero { margin: 0 0 16px; }
+  .pn-hero .hero-top { flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: 14px; padding-right: 0; }
+  .card.hero.pn-hero [id^="avatar-"], .card.hero.pn-hero .id-avatar, .card.hero.pn-hero img { width: 68px !important; height: 68px !important; flex: 0 0 68px; border-radius: 20px !important; font-size: 24px !important; }
+  .pn-hero .greet { flex: 1; }
+  .pn-hero .greet-name { font-size: 22px; }
+  .hero-extra { padding: 0; }
+  .hero-extra .hero-goal { background: var(--paper-raised); border: 1.5px solid var(--ui-card-line); }
+  .hero-extra .hg-top { color: var(--ink-soft); }
+  .hero-extra .hero-goal .pn-progress { background: var(--ui-card-line); }
+  .hero-extra .hs { background: var(--paper-raised); border: 1.5px solid var(--ui-card-line); box-shadow: var(--ui-shadow); }
+  .hero-extra .hs-l { color: var(--ink-soft); }
+}
+
+/* my details: the plain card it was before */
+.card:has(> .id-grid) { max-width: 680px !important; padding: 24px !important; border-radius: var(--radius); }
+.card > .id-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
+.card > .id-grid > div { background: none; border: none; border-radius: 0; padding: 0; }
+.card > .id-grid > div > .meta:first-child { font-size: .82rem; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-soft); }
+.card > .id-grid > div > .tabular { font-family: var(--font-body); font-weight: 600; font-size: 1rem; margin-top: 2px; }
+
+/* the study plan on the home */
+.plan-wrap { background: #E8F9EE; border-radius: 16px; padding: 14px; }
+.plan-wrap .plan-card { background: none; padding: 0 0 12px; border-radius: 0; }
+.plan-goal { font-size: 12px; color: #374151; text-align: center; margin-bottom: 12px; }
+
+/* the study plan screen */
+.sp-hero { background: linear-gradient(135deg, #1A1A2E, #0F3460); border-radius: 18px; padding: 18px; margin-bottom: 16px; }
+.sp-k { color: rgba(255, 255, 255, .45); font-size: 12px; font-weight: 600; }
+.sp-name { font: 800 20px Sora, sans-serif; color: #fff; }
+.sp-goal { font: 700 15px Sora, sans-serif; color: #00C853; }
+.sp-stats { background: rgba(255, 255, 255, .07); border-radius: 14px; padding: 12px; display: flex; justify-content: space-around; text-align: center; }
+.sp-stats b { display: block; font: 700 17px Sora, sans-serif; color: #fff; }
+.sp-stats span { color: rgba(255, 255, 255, .4); font-size: 11px; }
+.sp-sep { width: 1px; background: rgba(255, 255, 255, .1); }
+.sp-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sp-week { display: flex; flex-direction: column; gap: 9px; }
+.sp-day { background: var(--paper-raised); border: 1.5px solid var(--ui-card-line); border-radius: 15px; overflow: hidden; }
+.sp-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font: 700 14px Sora, sans-serif; }
+.sp-body { padding: 12px 14px; font-size: 13px; line-height: 1.7; color: var(--ink-soft); }
+.sp-day.past .sp-head { background: #E8F9EE; color: #14532d; }
+.sp-day.today { border: 2px solid #00C853; box-shadow: 0 0 0 4px rgba(0, 200, 83, .08); }
+.sp-day.today .sp-head { background: #00C853; color: #fff; }
+.sp-day.today .sp-body { display: flex; flex-direction: column; gap: 8px; }
+.sp-go { font-size: 13px; font-weight: 800; color: #00A844; cursor: pointer; }
+.sp-day.future { opacity: .75; }
+.sp-weakbox { background: #FFE5E5; border: 1.5px solid #FECACA; border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+.sp-weak-h { font: 700 15px Sora, sans-serif; color: #E02020; margin-bottom: 10px; }
+.sp-weak { background: #fff; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+.sp-weak-t { font-weight: 700; font-size: 13px; color: #1A1A2E; }
+.sp-weak-s { font-size: 11px; color: #9094A4; margin: 2px 0 6px; }
+@media (max-width: 560px) { .sp-form { grid-template-columns: 1fr; } }

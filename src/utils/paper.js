@@ -19,6 +19,15 @@
 // The profile fixes the paper's total mark (Section A + Section B) so that it matches the
 // examination's share of the course mark.
 
+// The yearly CBT mock and past-question papers (2016 to the current year) are fuller papers: 30 objective questions
+// (23 minutes at 0.75 minute each) and 5 theory questions (1 hour 30), set in the style of that kind of institution.
+const YEAR_PAPER = { OBJECTIVE: 30, THEORY: 5, FIRST_YEAR: 2016 };
+function paperYears(now = new Date()) {
+  const out = [];
+  for (let y = Math.min(now.getFullYear(), 2026); y >= YEAR_PAPER.FIRST_YEAR; y--) out.push(y);
+  return out;
+}
+
 const OBJECTIVE_PER_PAPER = 20;
 const THEORY_PER_PAPER = 5;
 const OBJECTIVE_MINUTES_EACH = 15 / OBJECTIVE_PER_PAPER;   // 0.75
@@ -44,22 +53,27 @@ const PROFILES = {
   UNIVERSITY: {
     label: 'University', body: 'NUC', examShare: 70, caShare: 30, theoryMarks: 10,
     guide: 'a university semester examination (NUC standards). Section B is five essay-type questions, each with parts (a), (b), (c) that build from definition to explanation to discussion, evaluation or application. Use command words such as "Define", "Explain", "Discuss", "Critically examine", "Distinguish between", "With the aid of examples, …", "Evaluate". Expect depth of argument, not one-line answers.',
+    objectiveGuide: "Objective questions as a Nigerian university department sets them: a clear stem and four options (A to D); mostly application and analysis (case stems such as 'A student observes ... which of the following explains this?'), definitions and principles, 'Which of the following is NOT ...', and short numerical items where the course calls for them. Use the terminology of the standard university textbooks for the course.",
   },
   POLYTECHNIC: {
     label: 'Polytechnic (ND/HND)', body: 'NBTE', examShare: 60, caShare: 40, theoryMarks: 8,
     guide: 'a polytechnic (ND/HND) semester examination set to NBTE curricula. Section B is five structured questions, each with parts (a), (b), (c) using NBTE-style command words: "State", "List", "Define", "Describe", "Explain", "Differentiate between", "Outline", "Calculate", "Sketch and label" (only if no diagram is needed to read it). Favour practical, workplace and industry application of the course content, and short, precise answers over long essays.',
+    objectiveGuide: 'Objective questions as an NBTE polytechnic department sets them: short, direct stems; practical and technical content (identify the correct procedure, tool, unit, standard or formula), workplace situations, and calculations with clean numbers. Use the terms of the NBTE course specification.',
   },
   MONOTECHNIC: {
     label: 'Monotechnic', body: 'NBTE', examShare: 60, caShare: 40, theoryMarks: 8,
     guide: 'a monotechnic semester examination (a single-discipline technical institution regulated by NBTE). Section B is five structured questions, each with parts (a), (b), (c) using NBTE-style command words ("State", "List", "Define", "Describe", "Explain", "Differentiate between", "Outline", "Calculate"). Stay close to the vocational competence the course builds: procedures, standards, safety, tools and real situations on the job.',
+    objectiveGuide: 'Objective questions as a monotechnic sets them: short, direct stems on the vocational competence the course builds (procedures, standards, safety, tools, materials, real job situations), with calculations where the trade needs them. Use the terms of the NBTE course specification.',
   },
   COLLEGE_OF_EDUCATION: {
     label: 'College of Education (NCE)', body: 'NCCE', examShare: 60, caShare: 40, theoryMarks: 8,
     guide: 'a College of Education (NCE) semester examination set to NCCE minimum standards. Section B is five structured questions, each with parts (a), (b), (c): "Define/State", "Explain", then an application to teaching, such as "How would you apply this in a classroom?" or "Give two classroom examples". Keep the language clear and examination-friendly, and link content to the teacher-in-training\'s work where it fits the course.',
+    objectiveGuide: 'Objective questions as a College of Education sets them under NCCE minimum standards: clear, direct stems on the NCE course content, balancing recall with application to teaching (learners, lesson planning, classroom management, curriculum), in simple examination-friendly English.',
   },
   OTHER: {
     label: 'Higher institution', body: null, examShare: 70, caShare: 30, theoryMarks: 10,
     guide: 'a Nigerian higher-institution semester examination. Section B is five structured questions, each with parts (a), (b), (c) running from recall to explanation to application.',
+    objectiveGuide: 'Objective questions as a Nigerian higher institution sets them: a clear stem and four plausible options, covering recall, understanding and application of the course.',
   },
 };
 
@@ -82,4 +96,5 @@ function withTiming(a) {
 // Questions are pulled for their type only (no text or answers) so a list stays light.
 const TIMING_INCLUDE = { _count: { select: { questions: true } }, questions: { select: { questionType: true } } };
 
-module.exports = { timingFor, withTiming, TIMING_INCLUDE, OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, minutesFor, PROFILES, profileFor, totalMarks };
+module.exports = {
+  YEAR_PAPER, paperYears, timingFor, withTiming, TIMING_INCLUDE, OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, minutesFor, PROFILES, profileFor, totalMarks };

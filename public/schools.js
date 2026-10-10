@@ -460,12 +460,12 @@
       ['semester-exam-hub', 'Semester Exam'],
       ['student-results', 'Results'],
       ['research', 'AI Research Assistant'],
-      ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['academic-record', 'Academic Record'],
       ['fees', 'School Fees'],
       ['elections', 'Elections'],
+      ['study-plan', 'Study Plan'],
       ['student-dashboard', 'My Dashboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
@@ -483,9 +483,9 @@
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
       ['research', 'AI Research Assistant'],
-      ['practice', 'Practice Questions'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
+      ['study-plan', 'Study Plan'],
       ['student-dashboard', 'My Dashboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
@@ -505,7 +505,6 @@
       ['lect-assignments-hub', 'Assignments'],
       ['lect-results-hub', 'Student Results'],
       ['research', 'AI Research Assistant'],
-      ['practice', 'Practice Questions'],
       ['staff-profile', 'My Staff Profile'],
       ['class-vote', 'Class Rep Voting'],
       ['elections', 'Elections'],
@@ -594,7 +593,7 @@
     const sideWho = document.getElementById('sidebar-who');
     if (sideWho) {
       const schoolLine = u.isIndividual ? (u.attendedSchoolName || 'Independent learner') : (state.school ? state.school.name : '');
-      sideWho.innerHTML = `<div class="nm">${esc(u.fullName)}</div>${schoolLine ? `<div class="sc">${esc(schoolLine)}</div>` : ''}`;
+      sideWho.innerHTML = `<div class="nm">${esc(u.fullName)}</div>`;
     }
 
     const semesterBox = document.getElementById('semester-box');
@@ -638,7 +637,6 @@
     nav.querySelectorAll('.nav-item').forEach((btn) => {
       btn.addEventListener('click', () => { navigate(btn.dataset.screen); closeMobileNav(); });
     });
-    buildBottomNav();
   }
 
   // ---- A back arrow on every screen, the bottom bar on phones and tablets, and the home-page building blocks ----
@@ -671,25 +669,6 @@
   }
   new MutationObserver(addBackArrow).observe(document.getElementById('view'), { childList: true });
 
-  const BOTTOM_NAV = {
-    STUDENT: [['my-dashboard', '🏠', 'Home'], ['courses', '📚', 'Courses'], ['tests-hub', '📝', 'Tests'], ['student-dashboard', '📊', 'Dash'], ['digital-id', '🪪', 'ID'], ['__more', '☰', 'More']],
-    STUDENT_INDIVIDUAL: [['my-dashboard', '🏠', 'Home'], ['individual-courses', '📚', 'Courses'], ['my-ai-lectures', '🎓', 'AI Lectures'], ['tests-hub', '📝', 'Tests'], ['student-dashboard', '📊', 'Dash'], ['__more', '☰', 'More']],
-    LECTURER: [['lect-dashboard', '🏠', 'Home'], ['lect-courses', '📚', 'Courses'], ['lect-students', '👥', 'Students'], ['lect-tests', '📝', 'Tests'], ['__more', '☰', 'More']],
-    STAFF: [['staff-dashboard', '🏠', 'Home'], ['library', '📖', 'Library'], ['digital-id', '🪪', 'My ID'], ['settings', '⚙️', 'Settings']],
-    ADMIN: [['admin-dashboard', '🏠', 'Home'], ['admin-directory', '👥', 'Directory'], ['admin-academics', '📚', 'Courses'], ['admin-results', '📊', 'Results'], ['__more', '☰', 'More']],
-  };
-  function buildBottomNav() {
-    const bar = document.getElementById('bnav');
-    if (!bar || !state.user) return;
-    const key = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
-    bar.innerHTML = (BOTTOM_NAV[key] || []).map(([screen, icon, label]) => `<button type="button" class="bn" data-bn="${screen}"><span class="bn-i">${icon}</span><span class="bn-l">${esc(label)}</span></button>`).join('');
-    bar.querySelectorAll('.bn').forEach((b) => b.addEventListener('click', () => {
-      if (b.dataset.bn === '__more') return document.getElementById('mobile-menu-toggle').click();
-      navigate(b.dataset.bn);
-    }));
-    markActiveNav(state.view && state.view.screen);
-  }
-
   const SJ_COLORS = ['#142033,#234672', '#00c853,#00913b', '#6a1b9a,#4a148c', '#ff6b35,#d9481a', '#0f766e,#065f46', '#e02020,#a31616', '#2979ff,#1a4fb8', '#e3ac4c,#b8791a'];
   const SJ_ICONS = ['📘', '📗', '📙', '📕', '📒', '📓', '📔', '📚'];
   function homeTile(nav, icon, label, sub) {
@@ -719,7 +698,7 @@
   }
   // What a student's home shows around the tiles: the Daily Challenge banner, then the streak, the courses to
   // continue, a glance at today, what is due and what is new.
-  async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount }) {
+  async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results }) {
     let courses = [];
     try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; }
     const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 8 min each' : 'Practise questions from your courses every day';
@@ -729,7 +708,8 @@
     const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
       ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
       : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lessons.' : 'Open My Courses to enrol.' }]));
-    const glance = `<div class="sec"><div class="sh"><div class="st">📅 Today at a Glance</div></div><div class="plan-card"><div class="plan-n"><b>${courses.length}</b><span>courses</span></div><div class="plan-n"><b style="color:#e8590c;">${pendingCount}</b><span>to do</span></div><div class="plan-n"><b>${isIndividual ? takenCount : (attendancePct == null ? '—' : attendancePct + '%')}</b><span>${isIndividual ? 'taken' : 'attendance'}</span></div></div></div>`;
+    const pm = planModel(daily, courses, results);
+    const glance = `<div class="sec"><div class="sh"><div class="st">📋 Study Plan — Today</div></div><div class="plan-wrap"><div class="plan-card"><div class="plan-n"><b>${pm.daysLeft}</b><span>days to exam</span></div><div class="plan-n"><b>${pm.hours} hrs</b><span>study/day</span></div><div class="plan-n"><b style="color:#E02020;">${pm.weak.length}</b><span>weak areas</span></div></div><div class="plan-goal">🎯 Goal: <b>${isIndividual ? 'My exams' : 'Semester exam'}</b></div><button class="btn btn-primary" data-jump-nav="study-plan" style="width:100%;">See Full Plan →</button></div></div>`;
     const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
     const upcoming = isIndividual ? '' : homeSection('⏰ Coming Up', 'my-assignments', pnRows(due.map((a) => ({ icon: '📋', title: a.title, sub: a.course ? a.course.code : '', side: 'Due ' + new Date(a.dueAt).toLocaleDateString() })).concat(due.length ? [] : [{ icon: '✅', title: 'Nothing due right now' }])));
     return { banner, rest: `${streak}${cont}${glance}${upcoming}${homeSection('🔔 Latest', null, notifRows(notifications))}` };
@@ -737,7 +717,6 @@
 
   function markActiveNav(screen) {
     document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.screen === screen));
-    document.querySelectorAll('#bnav .bn').forEach((b) => b.classList.toggle('on', b.dataset.bn === screen));
   }
 
   function closeMobileNav() {
@@ -980,6 +959,7 @@
         case 'group-chat': return renderGroupChat();
         case 'my-dashboard': return renderMyDashboard();
         case 'student-dashboard': return renderStudentHub();
+        case 'study-plan': return renderStudyPlan();
         case 'daily-challenge': return LZX.dailyChallenge(view, { api, esc, toast, navigate });
         case 'my-assignments': return renderMyDashboard('assignments');
         case 'my-attendance': return renderMyDashboard('attendance');
@@ -1004,7 +984,6 @@
         case 'support': return LZX.support(view, { api, esc, toast, tab: state.view.tab });
         case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
         case 'wallet': return LZX.wallet(view, { api, esc, toast });
-        case 'practice': return LZX.practice(view, { api, esc, toast });
         case 'elections': return LZX.elections(view, { api, esc, toast });
         case 'admin-elections': return LZX.electionsAdmin(view, { api, esc, toast });
         case 'class-vote': return LZX.electionsAdmin(view, { api, esc, toast, mode: 'class' });
@@ -3558,6 +3537,92 @@
     document.getElementById('return-dash-btn').addEventListener('click', () => navigate(defaultScreenFor(u.role)));
   }
 
+  // ---- Study Plan (as in PassNow): days to the exam, hours a day, a week laid out course by course, and the weak areas ----
+  function planModel(daily, courses, results) {
+    const plan = (daily && daily.plan) || {};
+    const exam = plan.examDate ? new Date(plan.examDate + 'T00:00:00') : null;
+    const examDate = exam || new Date(Date.now() + 56 * 86400000);
+    const daysLeft = Math.max(0, Math.ceil((examDate - new Date()) / 86400000));
+    const hours = plan.hours || 3;
+    const scores = {};
+    (results || []).forEach((r) => {
+      const a = r.assessment || {};
+      const key = a.course ? a.course.code : (a.individualCourse ? a.individualCourse.title : null);
+      if (!key) return;
+      (scores[key] = scores[key] || []).push((r.score / (r.total || 1)) * 100);
+    });
+    const rows = (courses || []).map((c) => {
+      const list = scores[c.code || c.title] || [];
+      return { course: c, avg: list.length ? Math.round(list.reduce((x, y) => x + y, 0) / list.length) : null };
+    });
+    const weak = rows.filter((r) => r.avg == null || r.avg < 60);
+    const n = rows.length;
+    const shift = n ? ((plan.seed || 0) % n + n) % n : 0;
+    const order = n ? rows.map((_, i) => rows[(i + shift) % n].course) : [];
+    return { plan, estimated: !exam, examDate, daysLeft, hours, rows, weak, order };
+  }
+
+  async function renderStudyPlan() {
+    const isIndividual = state.user.isIndividual;
+    const [daily, dash, cr] = await Promise.all([
+      api('/questions/daily').catch(() => null),
+      api('/students/me/dashboard').catch(() => ({ recentResults: [] })),
+      api(isIndividual ? '/individual-courses' : '/students/me/courses').catch(() => ({ courses: [] })),
+    ]);
+    const m = planModel(daily, cr.courses || [], dash.recentResults);
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayIdx = new Date().getDay();
+    const sunday = new Date(); sunday.setHours(0, 0, 0, 0); sunday.setDate(sunday.getDate() - todayIdx);
+    const doneOn = (d) => { const t = new Date(sunday.getTime() + d * 86400000).getTime(); return !!(daily && daily.days && daily.days.find((x) => x.date === t && x.done)); };
+    const nm = (c) => esc(c ? c.title : 'Mixed revision');
+    const courseScreen = isIndividual ? 'individual-course-detail' : 'course-detail';
+    const week = [0, 1, 2, 3, 4, 5, 6].map((d) => {
+      const c1 = m.order[d % (m.order.length || 1)], c2 = m.order[(d + 1) % (m.order.length || 1)];
+      if (d < todayIdx) return `<div class="sp-day past"><div class="sp-head"><span>${dayNames[d]}</span><span class="pill ${doneOn(d) ? 'pill-pass' : 'pill-muted'}">${doneOn(d) ? 'Done ✓' : 'Missed'}</span></div><div class="sp-body"><b>${nm(c1)}:</b> Daily Challenge · <b>${nm(c2)}:</b> read and revise</div></div>`;
+      if (d === todayIdx) return `<div class="sp-day today"><div class="sp-head"><span>${dayNames[d]} — Today</span><span class="pill pill-accent">⏰ Now</span></div><div class="sp-body">
+        <div class="sp-go" data-jump-nav="daily-challenge">➤ ${nm(c1)}: Daily Challenge → Start now</div>
+        ${c2 ? `<div class="sp-go" data-sj-screen="${courseScreen}" data-sj-params="${esc(JSON.stringify({ courseId: c2.id }))}">➤ ${nm(c2)}: read and revise → Open course</div>` : ''}
+        <div class="sp-go" data-jump-nav="cbt-mock">➤ CBT Mock Exam practice → Start now</div></div></div>`;
+      const names = m.order.slice(0, 3).map((c) => esc(c.title)).join(' · ') || 'Revision';
+      return `<div class="sp-day future"><div class="sp-head"><span>${dayNames[d]}</span></div><div class="sp-body">${names} revision${d === 6 ? ' · Full CBT Mock Exam (weekend)' : ''}</div></div>`;
+    }).join('');
+    const weakHtml = m.weak.length
+      ? m.weak.slice(0, 6).map((r) => `<div class="sp-weak"><div class="sp-weak-t">${esc(r.course.title)}</div><div class="sp-weak-s">${r.avg == null ? 'Not started — take a test' : r.avg + '% average'}</div><div class="pn-progress"><div style="width:${r.avg || 0}%;background:linear-gradient(90deg,#FF3B3B,#FF8A80);"></div></div></div>`).join('')
+      : '<div class="pn-empty">No weak areas. Keep going! 🎉</div>';
+    view.innerHTML = `
+      <div class="page-head"><h1>Study Plan</h1></div>
+      <div class="sp-hero">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;">
+          <div><div class="sp-k">Generated for</div><div class="sp-name">${esc(state.user.fullName)} 🎓</div></div>
+          <div style="text-align:right;"><div class="sp-k">Goal</div><div class="sp-goal">${isIndividual ? 'My exams' : 'Semester exam'} 🎯</div></div>
+        </div>
+        <div class="sp-stats">
+          <div><b>${m.daysLeft} days</b><span>to exam${m.estimated ? ' (estimate)' : ''}</span></div>
+          <div class="sp-sep"></div><div><b>${m.hours} hrs</b><span>study/day</span></div>
+          <div class="sp-sep"></div><div><b style="color:#00C853;">${m.rows.length} course${m.rows.length === 1 ? '' : 's'}</b><span>to cover</span></div>
+        </div>
+      </div>
+      <div class="card" style="padding:16px;margin-bottom:16px;">
+        <div class="sp-form">
+          <div class="field" style="margin:0;"><label>Exam date</label><input type="date" id="sp-date" value="${m.plan.examDate || m.examDate.toISOString().slice(0, 10)}"></div>
+          <div class="field" style="margin:0;"><label>Hours a day</label><select id="sp-hours">${[1, 1.5, 2, 3, 4, 5, 6].map((h) => `<option value="${h}" ${h === m.hours ? 'selected' : ''}>${h} hr${h === 1 ? '' : 's'}</option>`).join('')}</select></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;"><button class="btn btn-ghost" id="sp-regen" style="flex:1;">🔄 Regenerate</button><button class="btn btn-primary" id="sp-save" style="flex:1;">💾 Save Plan</button></div>
+      </div>
+      <div class="sec"><div class="sh"><div class="st">📅 This Week</div></div><div class="sp-week">${week}</div></div>
+      <div class="sp-weakbox"><div class="sp-weak-h">⚠️ Priority Weak Areas</div>${weakHtml}</div>`;
+    const save = async (seed) => {
+      try {
+        await api('/questions/plan', { method: 'POST', body: { examDate: view.querySelector('#sp-date').value, hours: Number(view.querySelector('#sp-hours').value), seed } });
+        toast('Study plan saved');
+        renderStudyPlan();
+      } catch (err) { toast(err.message); }
+    };
+    view.querySelector('#sp-save').addEventListener('click', () => save(m.plan.seed || 0));
+    view.querySelector('#sp-regen').addEventListener('click', () => save((m.plan.seed || 0) + 1));
+    view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
+  }
+
   // ---- My Dashboard (a student's hub, laid out like PassNow's): the numbers, then every activity in one place ----
   function dhTile(nav, icon, label, pal) {
     return `<div class="dh-tile p${pal}" data-jump-nav="${nav}"><div class="dh-i">${icon}</div><div class="dh-l">${label}</div></div>`;
@@ -3575,7 +3640,7 @@
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="dh-band">${numbers.map(([v, l, c]) => `<div><div class="dh-n" style="color:${c}">${v}</div><div class="dh-nl">${l}</div></div>`).join('')}</div>
       <div class="dh-title">📋 My Activities</div>
-      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Lectures', 1)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('practice', '🧠', 'Practice', 0)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('past-questions-hub', '📜', 'Past Questions', 2)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('practice', '🧠', 'Practice', 2)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('past-questions-hub', '📜', 'Past Questions', 4)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
+      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Lectures', 1)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('past-questions-hub', '📜', 'Past Questions', 2)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('past-questions-hub', '📜', 'Past Questions', 4)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
       <div class="dh-row" data-jump-nav="my-activity"><span>🔔</span><span class="dh-rt">Notifications</span><span class="dh-go">›</span></div>
       <div class="dh-title">🏆 Leaderboard Positions</div>
       <div class="dh-grid two">${dhTile('leaderboard', '🌍', 'Leaderboard', 4)}${dhTile('groups', '👨‍👩‍👧', 'Study Groups', 2)}</div>
@@ -3736,19 +3801,21 @@
     const showHome = !(only && sectionHtml[only]);
     const daily = showHome ? await api('/questions/daily').catch(() => null) : null;
     const takenCount = recentResults.length;
-    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount }) : { banner: '', rest: '' };
+    const homeExtra = showHome ? await studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results: recentResults }) : { banner: '', rest: '' };
     const goalPct = daily && daily.goal ? Math.round((daily.done / daily.goal) * 100) : 0;
 
     view.innerHTML = !showHome
       ? `<div class="page-head"><h1>${SECTION_TITLES[only]}</h1></div>${sectionHtml[only]()}`
       : `
-      <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
-        <div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-student-dash')}</div>
+      <div class="hero-wrap" id="dash-profile-card" style="cursor:pointer;">
+        <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock()}${selfAvatarHtml('avatar-student-dash')}</div></div>
+        <div class="hero-extra">
         ${daily && daily.goal ? `<div class="hero-goal"><div class="hg-top"><span>Today's Goal</span><b>${daily.done} / ${daily.goal} courses</b></div><div class="pn-progress"><div style="width:${goalPct}%"></div></div></div>` : ''}
         <div class="hero-stats">
           <div class="hs" data-jump-nav="student-dashboard"><div class="hs-n" style="color:#FF6B35">🔥 ${daily ? daily.streak : 0}</div><div class="hs-l">Streak</div></div>
           <div class="hs" data-jump-nav="progress"><div class="hs-n" style="color:#00C853">${daily ? daily.points : 0}</div><div class="hs-l">Points</div></div>
           <div class="hs" data-jump-nav="my-activity"><div class="hs-n" style="color:#FFD600">${avgScorePct == null ? '—' : avgScorePct + '%'}</div><div class="hs-l">Avg Score</div></div>
+        </div>
         </div>
       </div>
       ${homeExtra.banner}
@@ -5530,12 +5597,12 @@
     const u = state.user;
     const notifRes = await api('/notifications').catch(() => ({ notifications: [] }));
     view.innerHTML = `
-      <div class="card hero pn-hero" id="dash-profile-card" style="cursor:pointer;">
-        <div class="hero-top">${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}${selfAvatarHtml('avatar-lect-dash')}</div>
-        <div class="hero-stats">
+      <div class="hero-wrap" id="dash-profile-card" style="cursor:pointer;">
+        <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}${selfAvatarHtml('avatar-lect-dash')}</div></div>
+        <div class="hero-extra"><div class="hero-stats">
           <div class="hs" data-jump-nav="lect-courses"><div class="hs-n" style="color:#00C853">${courses.length}</div><div class="hs-l">Courses</div></div>
           <div class="hs" data-jump-nav="lect-students"><div class="hs-n" style="color:#FFD600">${totalStudents}</div><div class="hs-l">Students</div></div>
-        </div>
+        </div></div>
       </div>
       <div class="grid-cards tiles center">${homeTile('lect-lessons-entry', '📹', 'Upload Lecture', 'Video + notes')}${homeTile('lect-tests', '📝', 'Create Test', 'Notifies students')}${homeTile('lect-students', '👥', 'My Students', 'Your learners')}${homeTile('lect-classwork-quiz', '📋', 'Classwork / Quiz', 'Set work')}${homeTile('lect-mark-work', '✅', 'Mark Work', 'Score and feedback')}${homeTile('lect-attendance-hub', '🗓️', 'Attendance', 'Daily records')}<button type="button" class="card course-card" id="dash-announce-btn"><div class="code">📣</div><div class="meta">Announce</div><div class="sub">To a class</div></button>${homeTile('class-recordings', '🎞️', 'Class Recordings', 'Replays')}</div>
       ${homeSection('📚 My Courses', 'lect-courses', courses.length ? sjStrip(courses.map((c, i) => ({ title: c.title, sub: `${counts[i].count} student${counts[i].count === 1 ? '' : 's'}`, screen: 'lect-lessons', params: { courseId: c.id } }))) : pnRows([{ icon: '📚', title: 'No courses assigned yet' }]))}

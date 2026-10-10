@@ -127,9 +127,13 @@ router.get('/daily', async (req, res) => {
   const days = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today.getTime() - i * 86400000);
-    days.push({ label: 'SMTWTFS'[d.getDay()], name: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][d.getDay()], done: streakDays.has(d.getTime()), today: i === 0 });
+    days.push({ label: 'SMTWTFS'[d.getDay()], name: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][d.getDay()], date: d.getTime(), done: streakDays.has(d.getTime()), today: i === 0 });
   }
+  const planRow = await prisma.activityLog.findFirst({ where: { userId: req.user.id, action: 'STUDY_PLAN' }, orderBy: { createdAt: 'desc' } });
+  let plan = null;
+  try { plan = planRow ? JSON.parse(planRow.detail) : null; } catch { plan = null; }
   res.json({
+    plan,
     sources,
     goal: Math.min(5, sources.length),
     done: sources.filter((c) => c.done).length,
@@ -138,6 +142,19 @@ router.get('/daily', async (req, res) => {
     days,
     history: parsed.slice(0, 15),
   });
+});
+
+// The student's study plan settings: the date of the exam they are preparing for, the hours a day they will study,
+// and the seed that shuffles which courses fall on which day (Regenerate changes it).
+router.post('/plan', async (req, res) => {
+  if (req.user.role !== 'STUDENT') return res.status(403).json({ error: 'The study plan is for students.' });
+  const examDate = String(req.body.examDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(examDate) || Number.isNaN(new Date(examDate).getTime())) return res.status(400).json({ error: 'Choose a valid exam date.' });
+  const hours = Math.min(12, Math.max(0.5, Number(req.body.hours) || 3));
+  const seed = Math.floor(Number(req.body.seed) || 0);
+  const plan = { examDate, hours, seed };
+  await prisma.activityLog.create({ data: { userId: req.user.id, action: 'STUDY_PLAN', detail: JSON.stringify(plan) } });
+  res.json({ plan });
 });
 
 module.exports = router;

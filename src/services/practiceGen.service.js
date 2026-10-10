@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const prisma = require('../db');
 const ai = require('./aiProvider.service');
-const { OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, profileFor } = require('../utils/paper');
+const { OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, YEAR_PAPER, paperYears, profileFor } = require('../utils/paper');
 
 // The system writes practice material for every course on a student's dashboard — school
 // courses and self-study courses alike — so nobody has to wait for a lecturer to set it:
@@ -23,10 +23,13 @@ const { OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, profileFor } = require('../utils/
 
 const DAY = 24 * 60 * 60 * 1000;
 const PLAN = {
-  MOCK: { initial: 2, topUpEvery: 7 * DAY, max: 8 },
-  PAST: { initial: 1, topUpEvery: 30 * DAY, max: 6 },
+  MOCK: { perYear: true },   // one CBT mock paper for every year from 2016
+  PAST: { perYear: true },   // one past-question paper for every year from 2016
   PRACTICE: { initial: 1, perSet: 40, topUpEvery: 30 * DAY, max: 4 },
 };
+const PRACTICE_CHUNK = 20;
+// Courses finished before this date were written under the earlier plan and are checked again for the yearly papers.
+const YEARLY_PLAN_FROM = new Date('2026-10-10T00:00:00Z');
 const RETRY_COOLDOWN_MS = 15 * 60 * 1000;
 
 const inFlight = new Set();          // `${kind}:${id}` currently being written
@@ -113,14 +116,14 @@ async function write(ctx, kind, setNumber) {
 
   if (kind === 'PRACTICE') {
     const questions = [];
-    for (let i = 0; i < PLAN.PRACTICE.perSet / OBJECTIVE_PER_PAPER; i++) {
+    for (let i = 0; i < PLAN.PRACTICE.perSet / PRACTICE_CHUNK; i++) {
       const prompt = [
         ...contextLines(ctx, profile),
         `Style: ${STYLE.PRACTICE}`,
-        `Number of questions: ${OBJECTIVE_PER_PAPER}`,
+        `Number of questions: ${PRACTICE_CHUNK}`,
         setNumber > 1 || i > 0 ? 'Other questions already exist for this course: use different questions and sub-topics from any earlier ones.' : null,
       ].filter(Boolean).join('\n');
-      questions.push(...cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, prompt), OBJECTIVE_PER_PAPER));
+      questions.push(...cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, prompt), PRACTICE_CHUNK));
     }
     if (questions.length < 10) throw new Error('AI returned too few usable questions');
     await prisma.platformQuestion.createMany({
@@ -133,23 +136,47 @@ async function write(ctx, kind, setNumber) {
     return;
   }
 
-  const name = kind === 'MOCK' ? `${label} — Mock Exam ${setNumber}` : `${label} — Past Questions Practice${setNumber > 1 ? ` ${setNumber}` : ''}`;
-  await createPaper(ctx, { style: STYLE[kind], name, assessmentType: kind === 'MOCK' ? 'Mock' : 'PAST_QUESTION', setNumber, generated: true });
+  // MOCK and PAST are written one year at a time: `setNumber` is the examination year.
+  const year = setNumber;
+  const name = kind === 'MOCK' ? `${label} — CBT Mock Exam ${year}` : `${label} — Past Questions ${year} Practice`;
+  await createPaper(ctx, {
+    style: STYLE[kind], name, assessmentType: kind === 'MOCK' ? 'Mock' : 'PAST_QUESTION', generated: true, year,
+    objectiveCount: YEAR_PAPER.OBJECTIVE,
+    // older years sit lower in the lists, which go by creation time
+    createdAtMs: Date.now() - (new Date().getFullYear() - year) * 3600000,
+  });
 }
 
 // Sets one paper -- Section A (objective) and Section B (theory) -- the way this kind of
 // institution sets its examinations. Used for mock and past-question papers and for the
 // semester exam of a self-study course.
-async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, generated = true }) {
+async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, generated = true, year = null, objectiveCount = OBJECTIVE_PER_PAPER, createdAtMs = null }) {
   const profile = profileFor(ctx.institutionType);
-  const earlier = setNumber > 1 ? `This is paper number ${setNumber}: use different questions and sub-topics from earlier papers.` : null;
-  const objective = cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, [
-    ...contextLines(ctx, profile), `Style: ${style}`, `Number of questions: ${OBJECTIVE_PER_PAPER}`, earlier,
-  ].filter(Boolean).join('\n')), OBJECTIVE_PER_PAPER);
-  if (objective.length < 10) throw new Error('AI returned too few usable objective questions');
+  const earlier = year
+    ? `This paper is for the ${year} examination year. Make its questions and sub-topics different from papers for other years, and spread them across the whole course.`
+    : (setNumber > 1 ? `This is paper number ${setNumber}: use different questions and sub-topics from earlier papers.` : null);
+  const common = [...contextLines(ctx, profile), `Style: ${style}`, year ? `Examination year: ${year}` : null];
+
+  // Section A. A long section is asked for in batches of at most 15 so the AI never has to return a huge answer;
+  // each later batch is shown the earlier questions so nothing repeats.
+  const objective = [];
+  while (objective.length < objectiveCount) {
+    const want = Math.min(15, objectiveCount - objective.length);
+    const prompt = [
+      ...common,
+      profile.objectiveGuide ? `Set as for ${profile.objectiveGuide}` : null,
+      `Number of questions: ${want}`,
+      earlier,
+      objective.length ? `These questions are already in the paper, so ask about other topics and do not repeat them:\n${objective.map((q) => '- ' + q.text.slice(0, 90)).join('\n')}` : null,
+    ].filter(Boolean).join('\n');
+    const got = cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, prompt), want);
+    if (!got.length) break;
+    objective.push(...got);
+    if (got.length < want) break;
+  }
+  if (objective.length < Math.min(10, objectiveCount)) throw new Error('AI returned too few usable objective questions');
   const theory = cleanTheory(await askWithRetry(SYSTEM_THEORY, [
-    ...contextLines(ctx, profile),
-    `Style: ${style}`,
+    ...common,
     `Set as for ${profile.guide}`,
     'Question type: THEORY',
     `Number of questions: ${THEORY_PER_PAPER}`,
@@ -162,11 +189,12 @@ async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, ge
   const base = { ...where(ctx), authorId: ctx.authorId, type: assessmentType, generated, paperId, sentAt: new Date(), semesterId: ctx.semesterId || null };
   // Both sections or neither, so a failure never leaves half a paper. Section A is stamped a moment
   // earlier so lists, which go by creation time, always show it first.
-  const now = Date.now();
+  const now = createdAtMs || Date.now();
+  const minutesA = Math.max(1, Math.ceil(objective.length * 0.75));
   await prisma.$transaction([
     prisma.assessment.create({
       data: {
-        ...base, createdAt: new Date(now), title: `${name} · Section A (Objective)`, section: 'OBJECTIVE', durationMin: 15, totalMarks: objective.length,
+        ...base, createdAt: new Date(now), title: `${name} · Section A (Objective)`, section: 'OBJECTIVE', durationMin: minutesA, totalMarks: objective.length,
         questions: { create: objective.map((q, i) => ({ questionType: 'OBJECTIVE', text: q.text, options: JSON.stringify(q.options), correctIndex: q.correctIndex, explanation: q.explanation, order: i })) },
       },
     }),
@@ -182,34 +210,31 @@ async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, ge
 // What exists for this course now (a paper counts once, by its Section A).
 async function inventory(ctx) {
   const w = where(ctx);
-  const mock = { ...w, generated: true, type: 'Mock', section: 'OBJECTIVE' };
-  const past = { ...w, generated: true, type: 'PAST_QUESTION', section: 'OBJECTIVE' };
-  const [mocks, pasts, practice, lastMock, lastPast, lastPractice] = await Promise.all([
-    prisma.assessment.count({ where: mock }),
-    prisma.assessment.count({ where: past }),
+  const sectionA = (type) => prisma.assessment.findMany({ where: { ...w, generated: true, type, section: 'OBJECTIVE' }, select: { title: true } });
+  const yearsIn = (rows, label) => new Set(rows.map((r) => { const m = r.title.match(new RegExp(label)); return m ? Number(m[1]) : null; }).filter(Boolean));
+  const [mockRows, pastRows, practice, lastPractice] = await Promise.all([
+    sectionA('Mock'),
+    sectionA('PAST_QUESTION'),
     prisma.platformQuestion.count({ where: { ...w, generated: true } }),
-    prisma.assessment.findFirst({ where: mock, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
-    prisma.assessment.findFirst({ where: past, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
     prisma.platformQuestion.findFirst({ where: { ...w, generated: true }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
   ]);
   return {
-    mocks, pasts, practiceSets: Math.ceil(practice / PLAN.PRACTICE.perSet),
-    lastMock: lastMock && lastMock.createdAt, lastPast: lastPast && lastPast.createdAt, lastPractice: lastPractice && lastPractice.createdAt,
+    mockYears: yearsIn(mockRows, 'CBT Mock Exam (20\\d\\d) ·'),
+    pastYears: yearsIn(pastRows, 'Past Questions (20\\d\\d) Practice ·'),
+    practiceSets: Math.ceil(practice / PLAN.PRACTICE.perSet),
+    lastPractice: lastPractice && lastPractice.createdAt,
   };
 }
 
-// The work still to do, in the order a student would want it (a mock to try first).
+// The work still to do: a paper for every year that is missing (the newest first, so the latest paper is
+// ready soonest), then the practice bank (which feeds the Daily Challenge).
 function todo(inv, { topUp }) {
   const jobs = [];
   const old = (d, every) => d && Date.now() - d.getTime() > every;
-  for (let n = inv.mocks + 1; n <= PLAN.MOCK.initial; n++) jobs.push(['MOCK', n]);
-  if (inv.pasts < PLAN.PAST.initial) jobs.push(['PAST', inv.pasts + 1]);
+  for (const y of paperYears()) if (!inv.mockYears.has(y)) jobs.push(['MOCK', y]);
+  for (const y of paperYears()) if (!inv.pastYears.has(y)) jobs.push(['PAST', y]);
   if (inv.practiceSets < PLAN.PRACTICE.initial) jobs.push(['PRACTICE', inv.practiceSets + 1]);
-  if (topUp && !jobs.length) {
-    if (inv.mocks < PLAN.MOCK.max && old(inv.lastMock, PLAN.MOCK.topUpEvery)) jobs.push(['MOCK', inv.mocks + 1]);
-    if (inv.pasts < PLAN.PAST.max && old(inv.lastPast, PLAN.PAST.topUpEvery)) jobs.push(['PAST', inv.pasts + 1]);
-    if (inv.practiceSets < PLAN.PRACTICE.max && old(inv.lastPractice, PLAN.PRACTICE.topUpEvery)) jobs.push(['PRACTICE', inv.practiceSets + 1]);
-  }
+  if (topUp && !jobs.length && inv.practiceSets < PLAN.PRACTICE.max && old(inv.lastPractice, PLAN.PRACTICE.topUpEvery)) jobs.push(['PRACTICE', inv.practiceSets + 1]);
   return jobs;
 }
 
@@ -220,7 +245,7 @@ async function kick(ctx) {
   const key = keyOf(ctx);
   if (inFlight.has(key)) return 'generating';
   // Finished recently: nothing to ask the database about (this runs on every dashboard load).
-  if (ctx.readyAt && Date.now() - ctx.readyAt.getTime() < 7 * DAY) return 'ready';
+  if (ctx.readyAt && ctx.readyAt >= YEARLY_PLAN_FROM && Date.now() - ctx.readyAt.getTime() < 7 * DAY) return 'ready';
   if (!ai.isConfigured()) return ctx.ready ? 'ready' : 'unavailable';
   const failed = lastFailure.get(key);
   if (failed && Date.now() - failed < RETRY_COOLDOWN_MS) return ctx.ready ? 'ready' : 'retry-later';
