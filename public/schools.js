@@ -454,7 +454,6 @@
       ['groups', 'Study Groups'],
       ['class-recordings', 'Class Recordings'],
       ['lab-hub', 'Digital Lab'],
-      ['past-questions-hub', 'Past Questions'],
       ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
@@ -480,7 +479,6 @@
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
-      ['past-questions-hub', 'Past Questions'],
       ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
@@ -505,7 +503,6 @@
       ['lect-attendance-hub', 'Class Attendance'],
       ['lect-tests', 'Tests'],
       ['lect-semester-exam', 'Semester Exam'],
-      ['lect-assessments', 'Assessments'],
       ['lect-assignments-hub', 'Assignments'],
       ['lect-results-hub', 'Student Results'],
       ['research', 'AI Research Assistant'],
@@ -865,6 +862,7 @@
   const view = document.getElementById('view');
 
   function navigate(screen, params = {}) {
+    aiRecStop();
     window.speechSynthesis && window.speechSynthesis.cancel();
     if (state.view.screen === 'live-class' && screen !== 'live-class') {
       // A live class cannot continue once the lecturer's screen is gone (the camera and the connections live on it), so
@@ -906,7 +904,7 @@
     if (['my-dashboard', 'lect-dashboard', 'admin-dashboard'].includes(screen) && state.user.schoolId) {
       LZX.electionBanner(view, { api, esc, go: navigate, role });
     }
-    if (role === 'STUDENT' && ['cbt-mock', 'past-questions-hub', 'practice'].includes(screen)) {
+    if (role === 'STUDENT' && ['cbt-mock'].includes(screen)) {
       LZX.practiceWatch(view, { api, esc, rerender: () => renderScreen() });
     }
   }
@@ -973,7 +971,7 @@
         case 'my-lectures': return renderMyDashboard('lessons');
         case 'my-assessments': return renderMyDashboard('assessments');
         case 'my-activity': return renderMyDashboard('activity');
-        case 'cbt-mock': return renderAssessments(false, { heading: 'CBT Mock Exam Practice', typeFilter: ['Mock'] });
+        case 'cbt-mock': return renderCbtMock();
         case 'tests-hub': return renderAssessments(false, { heading: 'Tests', typeFilter: ['CA', 'Test'] });
         case 'academic-record': return renderAcademicRecord();
         case 'student-results': return renderStudentResultsHub();
@@ -1004,8 +1002,6 @@
         case 'transcript': return renderTranscript();
         case 'attendance-history': return renderStudentAttendanceHistory();
         case 'assignment-detail': return renderAssignmentDetail();
-        case 'past-questions-hub': return renderPastQuestionsHub();
-        case 'practice-take': return renderPracticeTake();
         case 'semester-exam-hub': return renderSemesterExamHub();
 
         case 'lect-dashboard': return renderLecturerDashboard();
@@ -1013,7 +1009,6 @@
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
         case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM', 'PAST_QUESTION'], allowedTypes: ['CA', 'Test', 'Mock'] });
-        case 'lect-assessments': return renderAssessments(true, { heading: 'Assessments', typeFilter: ['PAST_QUESTION'], defaultType: 'PAST_QUESTION', allowedTypes: ['PAST_QUESTION'] });
         case 'lect-classwork-quiz': return renderAssessments(true, { heading: 'Classwork / Quiz', typeFilter: ['Classwork', 'Quiz'], defaultType: 'Classwork', allowedTypes: ['Classwork', 'Quiz'] });
         case 'lect-mark-work': return renderMarkWorkHub();
         case 'lect-semester-exam': return renderLecturerSemesterExam();
@@ -1144,7 +1139,7 @@
       <div class="card">${sessions.map((x) => `
         <div class="list-row" style="gap:10px; flex-wrap:wrap;">
           <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(x.title)}</div>
-            <div class="meta">${esc(x.course)} · ${new Date(x.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · ${x.status === 'COMPLETED' ? 'finished' : 'in progress'}</div></div>
+            <div class="meta">${esc(x.course)} · ${new Date(x.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })} · ${x.status === 'COMPLETED' ? 'finished' : 'in progress'}${x.recordings && x.recordings.length ? ' · 🎥 video recorded' : ''}</div></div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn btn-accent btn-sm" data-live-replay="${x.id}">▶ Watch again</button>
             ${x.status === 'COMPLETED' ? '' : `<button class="btn btn-ghost btn-sm" data-live-continue="${x.id}">Continue class</button>`}
@@ -1173,6 +1168,12 @@
         <button class="btn btn-ghost" id="replay-stop" hidden>⏹ Stop</button>
         <button class="btn btn-ghost" id="replay-notes">⬇ Download notes</button>
       </div>
+      ${(x.recordings || []).map((r, i) => `
+        <div class="card" style="padding:14px; margin-bottom:14px;">
+          <div class="meta" style="margin-bottom:8px;">🎥 Video of the class${x.recordings.length > 1 ? ' · part ' + (i + 1) : ''}</div>
+          <video class="lecture-video" controls playsinline preload="metadata" src="${esc(r.url)}"></video>
+          <div style="margin-top:10px;"><a class="btn btn-ghost btn-sm" href="${esc(r.url)}" download target="_blank" rel="noopener">⬇ Download video</a></div>
+        </div>`).join('')}
       ${x.sections.map((sec, i) => `
         <div class="card" style="padding:18px; margin-bottom:12px;" id="replay-sec-${i}">
           <div class="meta">Part ${i + 1} of ${x.sections.length}</div>
@@ -1676,6 +1677,8 @@
   // slice) so the SDK ingests it like a live feed rather than one giant blob dumped
   // instantly -- matches how PassNow's own working integration paces this.
   async function speakThroughAvatarOrTts(text, ringEl, onDone) {
+    aiLastCaption = { text, at: Date.now() };
+    if (aiRec) { aiRec.caption = text; aiRec.capStart = aiLastCaption.at; }
     if (speechCtrl) {
       if (speechCtrl.timer) clearInterval(speechCtrl.timer);
       if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
@@ -1789,7 +1792,170 @@
     return recognizer;
   }
 
+  // ---- A real video recording of every AI live class ----
+  // While the AI Lecturer teaches, a video is made of what the student sees and hears: the talking avatar (or the
+  // lecturer's initials when the avatar is not connected), the smart board, and a caption of what is being said, with
+  // the avatar's voice mixed in. It is sent to the server in pieces every ten seconds, so nothing is lost if the page
+  // is closed, and it appears under AI Live Recorded Lectures.
+  let aiRec = null;
+  const AI_REC_W = 1280, AI_REC_H = 720;
+
+  function aiRecWrap(g, text, x, y, maxW, lineH, maxLines) {
+    const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ');
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+      const t = line ? line + ' ' + w : w;
+      if (g.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+    }
+    if (line) lines.push(line);
+    lines.slice(0, maxLines).forEach((l, i) => g.fillText(l, x, y + i * lineH));
+    return Math.min(lines.length, maxLines);
+  }
+
+  function aiRecDraw(rec) {
+    const g = rec.g;
+    // the avatar's voice joins the recording as soon as it is connected
+    const au = document.getElementById('avatar-audio');
+    const src = au && au.srcObject;
+    if (rec.ac && src && rec.audioFrom !== src && src.getAudioTracks && src.getAudioTracks().length) {
+      try { rec.ac.createMediaStreamSource(src).connect(rec.dest); rec.audioFrom = src; } catch { /* the class is still heard live */ }
+    }
+    const bg = g.createLinearGradient(0, 0, AI_REC_W, AI_REC_H);
+    bg.addColorStop(0, '#0b1423'); bg.addColorStop(1, '#16294a');
+    g.fillStyle = bg; g.fillRect(0, 0, AI_REC_W, AI_REC_H);
+    g.fillStyle = '#e3ac4c'; g.font = '700 26px Sora, sans-serif'; g.textBaseline = 'alphabetic';
+    g.fillText('Learnza · AI Lecturer — live class', 40, 50);
+    g.fillStyle = 'rgba(255,255,255,.75)'; g.font = '500 20px sans-serif';
+    g.fillText(String(rec.title || '').slice(0, 70), 40, 80);
+    const meta = document.getElementById('section-meta');
+    const st = document.getElementById('section-title');
+    if (meta || st) { g.textAlign = 'right'; g.fillText(`${meta ? meta.textContent : ''}${st && st.textContent ? ' · ' + st.textContent.slice(0, 40) : ''}`, AI_REC_W - 40, 80); g.textAlign = 'left'; }
+
+    // the avatar
+    const ax = 40, ay = 110, aw = 470, ah = 470;
+    g.save();
+    g.beginPath(); if (g.roundRect) g.roundRect(ax, ay, aw, ah, 24); else g.rect(ax, ay, aw, ah); g.clip();
+    g.fillStyle = '#0f1b2e'; g.fillRect(ax, ay, aw, ah);
+    const v = document.getElementById('avatar-video');
+    if (v && !v.hidden && v.readyState >= 2 && v.videoWidth) {
+      const s = Math.max(aw / v.videoWidth, ah / v.videoHeight);
+      const dw = v.videoWidth * s, dh = v.videoHeight * s;
+      g.drawImage(v, ax + (aw - dw) / 2, ay + (ah - dh) / 2, dw, dh);
+    } else {
+      const pulse = document.getElementById('ai-avatar-ring') && document.getElementById('ai-avatar-ring').classList.contains('speaking') ? 8 * Math.sin(Date.now() / 160) : 0;
+      g.fillStyle = '#e3ac4c'; g.beginPath(); g.arc(ax + aw / 2, ay + ah / 2, 120 + pulse, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#142033'; g.font = '800 96px Sora, sans-serif'; g.textAlign = 'center';
+      g.fillText(String(rec.initials || 'AI'), ax + aw / 2, ay + ah / 2 + 32); g.textAlign = 'left';
+    }
+    g.restore();
+
+    // the board
+    const bx = 540, by = 110, bw = AI_REC_W - bx - 40, bh = 470;
+    g.fillStyle = '#ffffff'; g.beginPath(); if (g.roundRect) g.roundRect(bx, by, bw, bh, 24); else g.rect(bx, by, bw, bh); g.fill();
+    g.fillStyle = '#f6f7f9'; g.fillRect(bx, by, bw, 44);
+    g.fillStyle = '#4a5568'; g.font = '700 18px sans-serif'; g.fillText('SMART BOARD', bx + 20, by + 29);
+    const board = document.getElementById('smart-board');
+    g.fillStyle = '#22252B'; g.font = '500 26px sans-serif';
+    aiRecWrap(g, board ? board.innerText : '', bx + 24, by + 90, bw - 48, 36, 10);
+
+    // what is being said
+    const sentences = String(rec.caption || '').match(/[^.!?]+[.!?]*/g) || [];
+    if (sentences.length) {
+      const pos = ((Date.now() - (rec.capStart || Date.now())) / 1000) * 14;
+      let acc = 0, chosen = sentences[sentences.length - 1];
+      for (const s of sentences) { acc += s.length; if (pos <= acc) { chosen = s; break; } }
+      g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, AI_REC_H - 120, AI_REC_W, 120);
+      g.fillStyle = '#ffffff'; g.font = '600 28px sans-serif';
+      aiRecWrap(g, chosen.trim(), 40, AI_REC_H - 74, AI_REC_W - 80, 38, 2);
+    }
+  }
+
+  let aiRecToken = null;
+  let aiLastCaption = { text: '', at: 0 };
+  async function aiRecStart(session, title, initialsText) {
+    aiRecStop();
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return;
+    const token = {};
+    aiRecToken = token;
+    let canvas = null, ac = null;
+    try {
+      canvas = document.createElement('canvas');
+      canvas.width = AI_REC_W; canvas.height = AI_REC_H;
+      canvas.style.cssText = 'position:fixed; left:-9999px; top:0; width:320px; height:180px; pointer-events:none;';
+      document.body.appendChild(canvas); // a canvas that is part of the page keeps producing frames even when the tab is in the background
+      const stream = canvas.captureStream(15);
+      // The avatar's voice is mixed in through an audio track. A browser only lets that track run once the person has used
+      // the page, so if it is not running within a moment the class is recorded without it rather than not at all.
+      let dest = null;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        try {
+          ac = new AC();
+          await Promise.race([ac.resume(), new Promise((r) => setTimeout(r, 700))]);
+          if (ac.state === 'running') { dest = ac.createMediaStreamDestination(); dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t)); } else { ac.close().catch(() => {}); ac = null; }
+        } catch { ac = null; dest = null; }
+      }
+      if (aiRecToken !== token) { canvas.remove(); if (ac) ac.close().catch(() => {}); return; }
+      const mime = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+      if (!mime) { canvas.remove(); return; }
+      const rec = { session, title, initials: initialsText, canvas, g: canvas.getContext('2d'), ac, dest, audioFrom: null, rid: Date.now(), seq: 0, queue: [], sending: false, failed: 0, caption: aiLastCaption.text, capStart: aiLastCaption.at };
+      const attach = (tracks) => {
+        const r = new MediaRecorder(new MediaStream(tracks), { mimeType: mime, videoBitsPerSecond: 700000, audioBitsPerSecond: 64000 });
+        r.ondataavailable = (e) => { if (e.data && e.data.size) { rec.queue.push({ seq: rec.seq++, blob: e.data }); aiRecPump(rec); } };
+        r.start(10000);
+        return r;
+      };
+      rec.recorder = attach(stream.getTracks());
+      // if a browser never delivers anything while the audio track is in, record the picture alone rather than nothing
+      if (dest) {
+        rec.watchdog = setTimeout(() => {
+          if (aiRec !== rec || rec.seq > 0) return;
+          try { rec.recorder.ondataavailable = null; rec.recorder.stop(); } catch { /* already stopped */ }
+          rec.dest = null; rec.audioFrom = null; rec.rid = Date.now();
+          rec.recorder = attach(stream.getVideoTracks());
+        }, 14000);
+      }
+      rec.timer = setInterval(() => { try { aiRecDraw(rec); } catch { /* a frame is skipped */ } }, 66);
+      aiRec = rec;
+    } catch { aiRec = null; if (canvas) canvas.remove(); }
+  }
+
+  async function aiRecPump(rec) {
+    if (rec.sending) return;
+    rec.sending = true;
+    while (rec.queue.length) {
+      const item = rec.queue[0];
+      let ok = false;
+      for (let attempt = 0; attempt < 5 && !ok; attempt++) {
+        try {
+          const res = await fetch(`/api/ai-teacher/sessions/${rec.session.id}/recording/chunk?rid=${rec.rid}&seq=${item.seq}`, { method: 'POST', headers: { Authorization: 'Bearer ' + state.token, 'Content-Type': 'application/octet-stream' }, body: item.blob });
+          if (res.status === 401 && state.refreshToken) { await refreshSession().catch(() => {}); continue; }
+          ok = res.ok || res.status === 404;
+        } catch { /* try again */ }
+        if (!ok) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+      if (!ok) rec.failed++;
+      rec.queue.shift();
+    }
+    rec.sending = false;
+  }
+
+  // Ends the recording (when the class finishes, or the student leaves). The last piece is still sent in the background.
+  function aiRecStop() {
+    aiRecToken = null;
+    const rec = aiRec;
+    if (!rec) return;
+    aiRec = null;
+    clearInterval(rec.timer);
+    clearTimeout(rec.watchdog);
+    try { if (rec.recorder.state !== 'inactive') rec.recorder.stop(); } catch { /* already stopped */ }
+    setTimeout(() => { try { rec.canvas.remove(); } catch { /* already gone */ } }, 3000);
+    setTimeout(() => { try { if (rec.ac) rec.ac.close(); } catch { /* already closed */ } }, 3000);
+  }
+
   async function renderAiTeacherSession() {
+    aiRecStop();
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
     if (speechCtrl) {
       if (speechCtrl.timer) clearInterval(speechCtrl.timer);
@@ -1879,6 +2045,7 @@
 
     document.getElementById('back-btn').addEventListener('click', () => {
       stopped = true;
+      aiRecStop();
       if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
       else navigate('course-detail', { courseId: session.courseId });
     });
@@ -2042,6 +2209,7 @@
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
           .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
       }
+      aiRecStart(session, plan.title, initials(plan.title || 'AI'));
       while (!stopped) {
         const section = renderSection(sectionIdx);
         markTeachingStarted();
@@ -2067,6 +2235,7 @@
           boardStatus.textContent = 'Lecture complete';
           toast('Lecture complete — nice work!');
           askVoiceBtn.disabled = true;
+          setTimeout(aiRecStop, 2500);
           return;
         }
         sectionIdx++;
@@ -3752,7 +3921,7 @@
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="dh-band">${numbers.map(([v, l, c]) => `<div><div class="dh-n" style="color:${c}">${v}</div><div class="dh-nl">${l}</div></div>`).join('')}</div>
       <div class="dh-title">📋 My Activities</div>
-      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('past-questions-hub', '📜', 'Past Questions', 2)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('past-questions-hub', '📜', 'Past Questions', 4)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
+      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
       <div class="dh-row" data-jump-nav="my-activity"><span>🔔</span><span class="dh-rt">Notifications</span><span class="dh-go">›</span></div>
       <div class="dh-title">🏆 Leaderboard Positions</div>
       <div class="dh-grid two">${dhTile('leaderboard', '🌍', 'Leaderboard', 4)}${dhTile('groups', '👨‍👩‍👧', 'Study Groups', 2)}</div>
@@ -4059,187 +4228,14 @@
 
   // Every past-question set across every enrolled course, in one page -- the sidebar's
   // "Past Questions" entry (no more per-course-only access).
-  async function renderPastQuestionsHub() {
-    const { courses } = await api('/students/me/courses');
-    const { courses: individualCourses } = await api('/individual-courses');
-    const rows = await Promise.all([
-      ...courses.map(async (c) => {
-        const { assessments } = await api(`/courses/${c.id}/assessments`);
-        return { course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') };
-      }),
-      ...individualCourses.map(async (c) => {
-        const { assessments } = await api(`/individual-courses/${c.id}/assessments`);
-        return { course: c, sets: assessments.filter((a) => a.type === 'PAST_QUESTION') };
-      }),
-    ]);
-    view.innerHTML = `
-      <div class="page-head"><h1>Past Questions</h1></div>
-      <p class="muted" style="margin-bottom:16px;">Practice as many times as you like — these don't affect your CBT scores.</p>
-      ${rows.map(({ course, sets }) => `
-        <div style="margin-bottom:22px;">
-          <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
-          <div class="card">
-            ${sets.map((a) => `
-              <div class="list-row">
-                <div><div style="font-weight:600;">${esc(a.title)}</div><div class="meta">${paperSummary(a)}</div></div>
-                <button class="btn btn-primary btn-sm" data-practice="${a.id}" data-course-id="${course.id}" data-course-title="${esc(course.title)}" data-course-code="${esc(course.code)}">Practice</button>
-              </div>
-            `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
-          </div>
-        </div>
-      `).join('') || '<p class="muted">No courses yet.</p>'}
-    `;
-    view.querySelectorAll('[data-practice]').forEach((btn) => {
-      btn.addEventListener('click', () => navigate('practice-take', {
-        assessmentId: btn.dataset.practice,
-        courseId: btn.dataset.courseId,
-        courseTitle: btn.dataset.courseTitle,
-        courseCode: btn.dataset.courseCode,
-      }));
-    });
-  }
+  
 
   // One question at a time (matching PassNow's exam-taking pattern), like
   // renderTakeAssessment -- but practice mode stays batch-graded with unlimited
   // retries: answering pages through questions, then "Check my answers" switches the
   // same paginated view into a read-only correction mode (still one question at a
   // time) instead of dumping every corrected question down the page at once.
-  async function renderPracticeTake() {
-    const { assessmentId, assessmentTitle, courseId, courseTitle, courseCode } = state.view;
-    const { assessment } = await api(`/assessments/${assessmentId}`);
-    const questions = assessment.questions;
-    const answers = {};
-    let qIdx = 0;
-    let corrections = null; // set once graded; null while still answering
-    let score = null, total = null;
-    // The time the server gives this assessment (a system-written paper: 15 minutes for Section A,
-    // 1h30 for Section B; otherwise 1 minute per question) -- auto-submits (grading whatever's
-    // answered so far) when time runs out instead of running forever.
-    const durationMin = assessment.minutes || Math.max(1, questions.length);
-    const deadline = Date.now() + durationMin * 60000;
-
-    view.innerHTML = `
-      <div class="page-head">
-        <h1>${esc(assessmentTitle || assessment.title)}</h1>
-        <div style="display:flex; align-items:center; gap:12px;">
-          <span class="pill pill-accent tabular" id="pq-timer">--:--</span>
-          <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
-        </div>
-      </div>
-      <p class="muted" style="margin-bottom:10px;">Practice mode — ${fmtMins(durationMin)}, auto-submits when time's up</p>
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <span class="meta tabular" id="pq-counter" style="white-space:nowrap;"></span>
-        <div style="flex:1; height:6px; border-radius:999px; background:var(--line); overflow:hidden;"><div id="pq-progress" style="height:100%; background:var(--accent); width:0%;"></div></div>
-      </div>
-      <div id="pq-body"></div>
-      <div class="controls" style="margin-top:14px;">
-        <button class="btn btn-ghost" id="pq-prev-btn">← Previous</button>
-        <button class="btn btn-primary" id="pq-next-btn">Next →</button>
-        <button class="btn btn-ghost" id="pq-retry-btn" hidden>↻ Try again</button>
-      </div>
-      <div id="pq-nav" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:18px;"></div>
-      <p id="pq-score" class="meta" style="margin-top:12px;"></p>
-    `;
-    document.getElementById('back-btn').addEventListener('click', () => {
-      if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
-      navigate('past-questions-hub');
-    });
-
-    function renderNav() {
-      document.getElementById('pq-nav').innerHTML = questions.map((q, i) => {
-        let cls = answers[q.id] ? 'answered' : '';
-        if (corrections) {
-          const c = corrections.get(q.id);
-          cls = c && c.questionType !== 'THEORY' && c.correct ? 'answered' : '';
-        }
-        return `<button class="quiz-nav-dot ${cls} ${i === qIdx ? 'current' : ''}" data-jump-q="${i}">${i + 1}</button>`;
-      }).join('');
-      document.getElementById('pq-nav').querySelectorAll('[data-jump-q]').forEach((btn) => {
-        btn.addEventListener('click', () => { qIdx = Number(btn.dataset.jumpQ); renderQuestion(); });
-      });
-    }
-
-    function renderQuestion() {
-      const q = questions[qIdx];
-      const mine = answers[q.id];
-      document.getElementById('pq-counter').textContent = `Question ${qIdx + 1} of ${questions.length}`;
-      document.getElementById('pq-progress').style.width = `${Math.round(((qIdx + 1) / questions.length) * 100)}%`;
-      const c = corrections ? corrections.get(q.id) : null;
-      document.getElementById('pq-body').innerHTML = `
-        <div class="card quiz-q">
-          <div style="font-weight:600; margin-bottom:12px; white-space:pre-wrap;">${qIdx + 1}. ${esc(q.text)}</div>
-          ${q.questionType === 'THEORY'
-            ? c
-              ? `<div class="meta">Your answer</div><p style="margin-bottom:10px;">${esc(c.myAnswer || '(no answer)')}</p><div class="meta">Model answer</div><p>${esc(c.modelAnswer || '(none provided)')}</p>`
-              : `<textarea class="theory-answer" placeholder="Write your answer…" rows="12" style="width:100%;">${esc(mine ? mine.text : '')}</textarea>`
-            : q.options.map((opt, oi) => `
-                <div class="quiz-opt
-                  ${!c && mine && mine.choice === oi ? 'selected' : ''}
-                  ${c && oi === c.correctIndex ? 'correct' : ''}
-                  ${c && oi === c.chosen && !c.correct ? 'wrong' : ''}"
-                  data-opt="${oi}">
-                  <span class="opt-label">${OPTION_LABELS[oi] || oi + 1}</span>${esc(opt)}
-                </div>
-              `).join('')}
-          ${c && c.questionType !== 'THEORY' ? `<p class="meta" style="margin-top:10px;">${c.correct ? 'Correct' : 'Not quite — correct answer highlighted above.'}</p>${c.explanation ? `<p style="margin-top:6px;">${esc(c.explanation)}</p>` : ''}` : ''}
-        </div>
-      `;
-      if (!c) {
-        document.getElementById('pq-body').querySelectorAll('.quiz-opt').forEach((opt) => {
-          opt.addEventListener('click', () => {
-            answers[q.id] = { questionId: q.id, choice: Number(opt.dataset.opt) };
-            renderQuestion();
-            renderNav();
-          });
-        });
-        const theoryEl = document.getElementById('pq-body').querySelector('.theory-answer');
-        if (theoryEl) theoryEl.addEventListener('input', () => { answers[q.id] = { questionId: q.id, text: theoryEl.value }; });
-      }
-      document.getElementById('pq-prev-btn').disabled = qIdx === 0;
-      const nextBtn = document.getElementById('pq-next-btn');
-      nextBtn.hidden = !!corrections;
-      nextBtn.textContent = qIdx === questions.length - 1 ? 'Check my answers' : 'Next →';
-    }
-
-    async function submitPractice(auto) {
-      if (corrections) return; // already graded (e.g. timer fired right after a manual submit)
-      if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
-      try {
-        const result = await api(`/assessments/${assessmentId}/practice-submit`, { method: 'POST', body: { answers: Object.values(answers) } });
-        corrections = new Map(result.corrections.map((c) => [c.questionId, c]));
-        score = result.score; total = result.total;
-        document.getElementById('pq-score').textContent = `${auto ? "Time's up — auto-submitted. " : ''}Score: ${score} / ${total} (objective questions only)`;
-        document.getElementById('pq-retry-btn').hidden = false;
-        qIdx = 0;
-        renderQuestion();
-        renderNav();
-      } catch (err) { toast(err.message); }
-    }
-
-    document.getElementById('pq-prev-btn').addEventListener('click', () => { if (qIdx > 0) { qIdx--; renderQuestion(); } });
-    document.getElementById('pq-next-btn').addEventListener('click', () => {
-      if (qIdx < questions.length - 1) { qIdx++; renderQuestion(); return; }
-      submitPractice(false);
-    });
-    document.getElementById('pq-retry-btn').addEventListener('click', () => navigate('practice-take', { assessmentId, assessmentTitle, courseId, courseTitle, courseCode }));
-
-    const timerEl = document.getElementById('pq-timer');
-    function tick() {
-      const msLeft = deadline - Date.now();
-      if (msLeft <= 0) {
-        timerEl.textContent = '0:00';
-        submitPractice(true);
-        return;
-      }
-      const totalSec = Math.floor(msLeft / 1000);
-      timerEl.textContent = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
-    }
-    tick();
-    examTimerHandle = setInterval(tick, 1000);
-
-    renderQuestion();
-    renderNav();
-  }
+  
 
   // ================= DIGITAL LAB (curated + AI-generated, admin-approved) =================
 
@@ -4826,14 +4822,13 @@
   // no course attached), per "we will upload textbooks ourselves, not through school".
   // ---- e-Library, laid out the way PassNow's is: a card to add a file (lecturers), search and filters, one list of
   // files with Open / Download (and Delete on your own), and a viewer that opens PDFs and pictures in place ----
-  const LIB_TYPES = ['Textbook', 'Past Question', 'Handout', 'Notes', 'Journal'];
+  const LIB_TYPES = ['Textbook', 'Handout', 'Notes', 'Journal'];
   const libIcon = (u) => { const e = String(u || '').split('?')[0].split('.').pop().toLowerCase(); return e === 'pdf' ? '📕' : /png|jpe?g|webp|gif/.test(e) ? '🖼️' : /docx?/.test(e) ? '📘' : /pptx?/.test(e) ? '📙' : /xlsx?/.test(e) ? '📗' : '📄'; };
   const libInline = (u) => /\.(pdf|png|jpe?g|webp|gif)(\?|#|$)/i.test(String(u || ''));
   async function renderIndividualLibrary() { return renderLibrary(false); }
   async function renderLibrary(isLecturer) {
-    const lecturer = !!isLecturer;
-    const [{ items }, lc] = await Promise.all([api('/library'), lecturer ? ensureLectCourses() : Promise.resolve(null)]);
-    const myCourses = lc ? lc.courses : [];
+    const lecturer = false; // only the backend admin adds e-books; lecturers and students read them
+    const { items } = await api('/library');
     const filter = { q: '', type: '', course: '' };
     const courseLabel = (it) => (it.course ? `${it.course.code} — ${it.course.title}` : '');
     const old = document.getElementById('lib-viewer'); if (old) old.remove();
@@ -4846,18 +4841,6 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>📖 e-Library</h1></div>
-      ${lecturer ? `<div class="card" style="padding:18px; margin-bottom:14px;">
-        <div class="lib-add-h">➕ Add a file for your students</div>
-        <form id="upload-form">
-          <div class="field"><label>Title</label><input type="text" id="lib-title" required placeholder="e.g. Introduction to Organic Chemistry"></div>
-          <div class="lib-two">
-            <div class="field"><label>Type</label><select id="lib-type">${LIB_TYPES.map((t) => `<option>${t}</option>`).join('')}</select></div>
-            <div class="field"><label>For course</label><select id="lib-course"><option value="">Every course</option>${myCourses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
-          </div>
-          <div class="field"><label>Author (optional)</label><input type="text" id="lib-author" placeholder="Who wrote it"></div>
-          <div class="field"><label>File (PDF, Word, PowerPoint, Excel, text or a picture — up to 25 MB)</label><input type="file" id="lib-file" required accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.webp"></div>
-          <button class="btn btn-primary" type="submit" id="lib-submit-btn">⬆ Add to e-Library</button>
-        </form></div>` : ''}
       <div class="card" style="padding:14px; margin-bottom:12px;">
         <input class="lib-q" id="lib-q" placeholder="Search by title, author or course…">
         <div class="lib-two" style="margin-top:10px;">
@@ -4900,27 +4883,6 @@
     fcourse.addEventListener('change', (e) => { filter.course = e.target.value; paint(); });
     paint();
 
-    if (lecturer) {
-      view.querySelector('#upload-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const file = view.querySelector('#lib-file').files[0];
-        if (!file) return toast('Choose a file first.');
-        const fd = new FormData();
-        fd.append('title', view.querySelector('#lib-title').value);
-        fd.append('type', view.querySelector('#lib-type').value);
-        if (view.querySelector('#lib-course').value) fd.append('courseId', view.querySelector('#lib-course').value);
-        fd.append('author', view.querySelector('#lib-author').value);
-        fd.append('file', file);
-        const btn = view.querySelector('#lib-submit-btn');
-        btn.disabled = true; btn.textContent = 'Uploading…';
-        try {
-          const { storage } = await api('/library', { method: 'POST', body: fd });
-          toast('✅ Added to the e-Library');
-          if (storage === 'local-disk') toast('Note: cloud storage isn\'t configured yet, so this file may not survive the next deploy.');
-          render();
-        } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = '⬆ Add to e-Library'; }
-      });
-    }
   }
 
   async function renderGroups() {
@@ -5200,6 +5162,71 @@
     return parts.join(' · ');
   }
 
+  // ---- CBT / Mock Exam Practice (the way PassNow's mock exams work: pick what you are preparing for, then the year) ----
+  // Pick one of your courses, then the year of the paper (2026 back to 2016). Each year is a full paper: Section A is
+  // 30 objective questions, Section B is 5 theory questions. The system writes the papers for every course a student
+  // is in, so a course opened for the first time shows how many are ready while the rest are still being written.
+  async function renderCbtMock() {
+    const [{ courses }, ind] = await Promise.all([
+      state.user.isIndividual ? Promise.resolve({ courses: [] }) : api('/students/me/courses'),
+      api('/individual-courses').catch(() => ({ courses: [] })),
+    ]);
+    const all = [
+      ...courses.map((c) => ({ kind: 'school', id: c.id, title: c.code ? `${c.code} — ${c.title}` : c.title })),
+      ...(ind.courses || []).map((c) => ({ kind: 'self', id: c.id, title: c.title })),
+    ];
+    if (!all.length) {
+      view.innerHTML = '<div class="page-head"><h1>CBT Mock Exam Practice</h1></div><div class="card" style="padding:18px;">You have no courses yet. Open <b>My Courses</b> to join one, and its mock exams appear here.</div>';
+      return;
+    }
+    const YEARS = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016];
+    let current = all.find((c) => c.id === state.view.mockCourse) || all[0];
+    let timer = null;
+    view.innerHTML = `
+      <div class="page-head"><h1>CBT Mock Exam Practice</h1></div>
+      <p class="muted" style="margin-bottom:12px;">Choose a course, then the year of the paper. Every paper has <b>Section A</b> (30 objective questions) and <b>Section B</b> (5 theory questions), set the way your kind of institution sets its examinations.</p>
+      <div class="mk-chips" id="mk-chips">${all.map((c) => `<button type="button" class="mk-chip" data-mk-course="${c.id}">${esc(c.title)}</button>`).join('')}</div>
+      <div id="mk-status"></div>
+      <div id="mk-list"></div>`;
+
+    const stopTimer = () => { if (timer) { clearInterval(timer); timer = null; } };
+    async function paint(c) {
+      current = c;
+      state.view.mockCourse = c.id;
+      view.querySelectorAll('.mk-chip').forEach((b) => b.classList.toggle('on', b.dataset.mkCourse === c.id));
+      const { assessments } = await api(c.kind === 'school' ? `/courses/${c.id}/assessments` : `/individual-courses/${c.id}/assessments`);
+      if (!document.getElementById('mk-list')) { stopTimer(); return; }
+      const papers = new Map();
+      assessments.filter((a) => a.type === 'Mock').forEach((a) => {
+        const key = a.paperId || a.id;
+        const p = papers.get(key) || { year: null, a: null, b: null, created: a.createdAt };
+        const m = String(a.title).match(/CBT Mock Exam (20\d\d)/);
+        if (m) p.year = Number(m[1]);
+        if (a.section === 'THEORY') p.b = a; else p.a = a;
+        papers.set(key, p);
+      });
+      const list = [...papers.values()];
+      const byYear = new Map(list.filter((p) => p.year).map((p) => [p.year, p]));
+      const others = list.filter((p) => !p.year);
+      const ready = byYear.size;
+      const card = (year, p) => `
+        <div class="mk-year ${p ? '' : 'wait'}"><div class="mk-y">${year}</div><div class="mk-ys">CBT Mock Exam</div>
+          ${p ? [p.a, p.b].filter(Boolean).map((a) => `
+          <div class="mk-sec"><div class="mk-st"><b>${a.section === 'THEORY' ? 'Section B · Theory' : 'Section A · Objective'}</b><span>${esc(paperSummary(a))}</span></div>
+            <button type="button" class="btn btn-primary btn-sm" data-take="${a.id}">Take exam</button></div>`).join('') : '<div class="mk-pending">Being written…</div>'}
+        </div>`;
+      view.querySelector('#mk-list').innerHTML = `<div class="mk-grid">${YEARS.map((y) => card(y, byYear.get(y))).join('')}${others.map((p) => card('Earlier', p)).join('')}</div>`;
+      view.querySelector('#mk-status').innerHTML = ready >= YEARS.length ? '' : `<div class="card" style="padding:12px 14px; margin-bottom:12px;">⏳ The system is writing the ${YEARS[YEARS.length - 1]}–${YEARS[0]} papers for this course: <b>${ready} of ${YEARS.length}</b> ready. This page fills in by itself.</div>`;
+      view.querySelectorAll('[data-take]').forEach((btn) => btn.addEventListener('click', () => navigate('take-assessment', { assessmentId: btn.dataset.take, backTo: 'cbt-mock' })));
+      stopTimer();
+      if (ready < YEARS.length) timer = setInterval(() => { if (!document.getElementById('mk-list')) return stopTimer(); paint(current).catch(() => {}); }, 25000);
+    }
+    view.querySelectorAll('.mk-chip').forEach((b) => b.addEventListener('click', () => paint(all.find((c) => c.id === b.dataset.mkCourse))));
+    paint(current);
+    // asks the system to start writing whatever this student's courses are missing (it runs in the background)
+    api('/practice/ensure', { method: 'POST' }).catch(() => {});
+  }
+
   async function renderAssessments(isLecturer, opts = {}) {
     const { heading, typeFilter, defaultType, excludeTypes } = opts;
     const courses = isLecturer ? (await ensureLectCourses()).courses : (await api('/students/me/courses')).courses;
@@ -5212,7 +5239,7 @@
       ...individualCourses.map(async (c) => ({ course: c, assessments: (await api(`/individual-courses/${c.id}/assessments`)).assessments })),
     ]);
     const defaultExclude = ['PAST_QUESTION', 'SEMESTER_EXAM'];
-    const kindLabel = isLecturer ? assessmentKindLabel(opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION']) : '';
+    const kindLabel = isLecturer ? assessmentKindLabel(opts.allowedTypes || ['CA', 'Test', 'Mock']) : '';
     view.innerHTML = `
       <div class="page-head"><h1>${esc(heading || (isLecturer ? 'Tests' : 'CBT Mock Exam Practice'))}</h1></div>
       ${isLecturer ? `<button class="btn btn-accent btn-sm" id="new-assessment-btn" style="margin-bottom:18px;">+ Set new ${esc(kindLabel)}</button>` : ''}
@@ -5234,7 +5261,7 @@
               <div class="list-row">
                 <div>
                   <div style="font-weight:600;">${esc(a.title)} ${isLecturer ? (a.sentAt ? '<span class="pill pill-pass" style="margin-left:6px;">Sent</span>' : '<span class="pill pill-muted" style="margin-left:6px;">Draft</span>') : ''}</div>
-                  <div class="meta">${esc(a.type === 'PAST_QUESTION' ? 'Past questions' : a.type)} · ${paperSummary(a)}</div>
+                  <div class="meta">${esc(a.type === 'PAST_QUESTION' ? 'Mock exam' : a.type)} · ${paperSummary(a)}</div>
                 </div>
                 ${isLecturer
                   ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -5242,7 +5269,7 @@
                       <button class="btn btn-ghost btn-sm" data-send="${a.id}">${a.sentAt ? 'Resend' : 'Send'}</button>
                       <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
                     </div>`
-                  : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${a.type === 'SEMESTER_EXAM' ? 'Take exam' : 'Take test'}</button>`}
+                  : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(a.type) ? 'Take exam' : 'Take test'}</button>`}
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>
@@ -5375,7 +5402,7 @@
       const theoryEl = document.getElementById('quiz-body').querySelector('.theory-answer');
       if (theoryEl) theoryEl.addEventListener('input', () => { answers[q.id] = { questionId: q.id, text: theoryEl.value }; });
       document.getElementById('quiz-prev-btn').disabled = qIdx === 0;
-      document.getElementById('quiz-next-btn').textContent = qIdx === questions.length - 1 ? 'Submit test' : 'Next →';
+      document.getElementById('quiz-next-btn').textContent = qIdx === questions.length - 1 ? (['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(assessment.type) ? 'Submit exam' : 'Submit test') : 'Next →';
     }
 
     document.getElementById('quiz-prev-btn').addEventListener('click', () => { if (qIdx > 0) { qIdx--; renderQuestion(); renderNav(); } });
@@ -6625,7 +6652,7 @@
     container.className = 'card';
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(560px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     let qCount = 1;
-    const allowedTypes = opts.allowedTypes || ['CA', 'Test', 'Mock', 'PAST_QUESTION'];
+    const allowedTypes = opts.allowedTypes || ['CA', 'Test', 'Mock'];
     const kindLabel = assessmentKindLabel(allowedTypes);
     const lockedType = existing ? existing.type : (allowedTypes.length === 1 ? allowedTypes[0] : null);
     const typeFieldHtml = lockedType

@@ -24,34 +24,9 @@ router.get('/library', requireAuth, async (req, res) => {
   res.json({ items });
 });
 
-router.post('/library', requireAuth, requireRole('LECTURER', 'ADMIN'), upload.single('file'), async (req, res) => {
-  const { title, publisher, type, courseId } = req.body;
-  const author = String(req.body.author || '').trim() || req.user.fullName;
-  if (!title || !type) return res.status(400).json({ error: 'A title and a type are required' });
-  if (!req.file) return res.status(400).json({ error: 'Attach a file from your device.' });
-  if (!hasSchool(req.user)) return res.status(403).json({ error: 'Only school staff can add to a school library.' });
-  if (courseId && !(await courseInSchool(courseId, req.user.schoolId))) return res.status(404).json({ error: 'Course not found' });
-
-  let fileUrl, storage;
-  try {
-    ({ url: fileUrl, storage } = await saveUpload(req.file));
-  } catch {
-    return res.status(502).json({ error: 'Upload to cloud storage failed. Please try again.' });
-  }
-
-  const item = await prisma.libraryResource.create({
-    data: { title, author, publisher: publisher || null, type, courseId: courseId || null, fileUrl, uploaderId: req.user.id, schoolId: req.user.schoolId },
-  });
-  if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'UPLOAD_LIBRARY_RESOURCE', title);
-  res.json({ item, storage });
-});
-
-// A lecturer removes what he added; the school admin can remove anything their school added.
-router.delete('/library/:id', requireAuth, requireRole('LECTURER', 'ADMIN'), async (req, res) => {
-  const item = hasSchool(req.user) ? await prisma.libraryResource.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId } }) : null;
-  if (!item || (req.user.role !== 'ADMIN' && item.uploaderId !== req.user.id)) return res.status(404).json({ error: 'File not found' });
-  await prisma.libraryResource.delete({ where: { id: item.id } });
-  res.json({ ok: true });
-});
+// E-books are added and removed by the platform's backend admin only (from the admin panel). Lecturers, school admins and
+// students read them; nobody at a school can upload or delete one.
+router.post('/library', requireAuth, (req, res) => res.status(403).json({ error: 'Only the backend admin can add e-books to the library.' }));
+router.delete('/library/:id', requireAuth, (req, res) => res.status(403).json({ error: 'Only the backend admin can remove e-books from the library.' }));
 
 module.exports = router;

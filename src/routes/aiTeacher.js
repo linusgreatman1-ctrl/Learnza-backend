@@ -8,6 +8,8 @@ const { loadCourse } = require('../scope');
 const { getSubscriptionStatus } = require('../subscription');
 const { aiGuard } = require('../aiGuard');
 
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 function handleAiError(res, err) {
@@ -83,6 +85,33 @@ router.get('/ai-teacher/prerecorded', requireAuth, requireRole('STUDENT'), async
   res.json({ lessons: out });
 });
 
+// The video of an AI live class, sent by the student's browser in pieces while the class goes on (so nothing is lost if the
+// page is closed). Each sitting is its own file; the list of them is kept with the session's plan.
+const AI_REC_DIR = path.join(__dirname, '..', '..', 'uploads', 'ai');
+const lastPiece = new Map();
+const pieceBody = express.raw({ type: () => true, limit: '25mb' });
+router.post('/ai-teacher/sessions/:id/recording/chunk', requireAuth, requireRole('STUDENT'), pieceBody, async (req, res) => {
+  const session = await prisma.aiTeacherSession.findFirst({ where: { id: req.params.id, studentId: req.user.id } });
+  if (!session) return res.status(404).json({ error: 'Class not found' });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Empty recording piece.' });
+  const rid = String(req.query.rid || '').replace(/[^0-9]/g, '').slice(0, 15) || String(Date.now());
+  const seq = parseInt(req.query.seq, 10);
+  const key = `${session.id}:${rid}`;
+  if (Number.isFinite(seq) && seq <= (lastPiece.get(key) ?? -1)) return res.json({ ok: true, duplicate: true });
+  fs.mkdirSync(AI_REC_DIR, { recursive: true });
+  await fs.promises.appendFile(path.join(AI_REC_DIR, `${session.id}-${rid}.webm`), req.body);
+  if (Number.isFinite(seq)) lastPiece.set(key, seq);
+  let plan = {};
+  try { plan = JSON.parse(session.planJson); } catch { plan = {}; }
+  const url = `/uploads/ai/${session.id}-${rid}.webm`;
+  plan.recordings = Array.isArray(plan.recordings) ? plan.recordings : [];
+  if (!plan.recordings.some((r) => r.url === url)) {
+    plan.recordings.push({ url, at: new Date().toISOString() });
+    await prisma.aiTeacherSession.update({ where: { id: session.id }, data: { planJson: JSON.stringify(plan) } });
+  }
+  res.json({ ok: true });
+});
+
 // Every AI Lecturer class this student has had, with its notes, so it can be looked at again or downloaded.
 router.get('/ai-teacher/my-sessions', requireAuth, requireRole('STUDENT'), async (req, res) => {
   const rows = await prisma.aiTeacherSession.findMany({
@@ -97,6 +126,7 @@ router.get('/ai-teacher/my-sessions', requireAuth, requireRole('STUDENT'), async
       try { plan = JSON.parse(r.planJson); } catch { plan = {}; }
       return {
         id: r.id, topic: r.topic, status: r.status, createdAt: r.createdAt, isIndividual: !!r.individualCourseId,
+        recordings: Array.isArray(plan.recordings) ? plan.recordings : [],
         course: r.course ? `${r.course.code} — ${r.course.title}` : (r.individualCourse ? r.individualCourse.title : ''),
         title: plan.title || r.topic,
         sections: (plan.sections || []).map((x) => ({ title: x.title, boardText: x.boardText, speechText: x.speechText })),

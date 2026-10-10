@@ -24,7 +24,6 @@ const { OBJECTIVE_PER_PAPER, THEORY_PER_PAPER, YEAR_PAPER, paperYears, profileFo
 const DAY = 24 * 60 * 60 * 1000;
 const PLAN = {
   MOCK: { perYear: true },   // one CBT mock paper for every year from 2016
-  PAST: { perYear: true },   // one past-question paper for every year from 2016
   PRACTICE: { initial: 1, perSet: 40, topUpEvery: 30 * DAY, max: 4 },
 };
 const PRACTICE_CHUNK = 20;
@@ -232,7 +231,6 @@ function todo(inv, { topUp }) {
   const jobs = [];
   const old = (d, every) => d && Date.now() - d.getTime() > every;
   for (const y of paperYears()) if (!inv.mockYears.has(y)) jobs.push(['MOCK', y]);
-  for (const y of paperYears()) if (!inv.pastYears.has(y)) jobs.push(['PAST', y]);
   if (inv.practiceSets < PLAN.PRACTICE.initial) jobs.push(['PRACTICE', inv.practiceSets + 1]);
   if (topUp && !jobs.length && inv.practiceSets < PLAN.PRACTICE.max && old(inv.lastPractice, PLAN.PRACTICE.topUpEvery)) jobs.push(['PRACTICE', inv.practiceSets + 1]);
   return jobs;

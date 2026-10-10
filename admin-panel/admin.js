@@ -627,14 +627,14 @@
   // ---------------- platform e-Library ----------------
   async function renderLibrary() {
     view.innerHTML = `
-      <div class="view-head"><div><h1>e-Library</h1><div class="muted">Add textbooks and past questions here and every student and every school can read them. Schools' own uploads stay private to that school and are listed below for oversight.</div></div></div>
+      <div class="view-head"><div><h1>e-Library</h1><div class="muted">Add e-books here and every student, lecturer and school can read them. Only the backend admin adds e-books. Schools' own uploads stay private to that school and are listed below for oversight.</div></div></div>
       <div class="panel">
         <h3>Add to the platform library</h3>
         <form id="lb-form">
           <div class="row">
             <div style="flex:2"><label>Title *</label><input id="lb-title" required></div>
             <div style="flex:2"><label>Author *</label><input id="lb-author" required></div>
-            <div><label>Type *</label><select id="lb-type"><option>Textbook</option><option>Journal</option><option>Past Question</option><option>Handout</option></select></div>
+            <div><label>Type *</label><select id="lb-type"><option>Textbook</option><option>Journal</option><option>Handout</option></select></div>
           </div>
           <div class="row">
             <div style="flex:2"><label>Publisher</label><input id="lb-pub"></div>
