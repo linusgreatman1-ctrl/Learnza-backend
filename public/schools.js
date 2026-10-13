@@ -452,6 +452,7 @@
       ['courses', 'My Courses'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
+      ['my-lectures', 'Lectures'],
       ['class-recordings', 'Class Recordings'],
       ['lab-hub', 'Digital Lab'],
       ['tests-hub', 'Tests'],
@@ -464,6 +465,10 @@
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['academic-record', 'Academic Record'],
+      ['course-registration', 'Course Registration'],
+      ['hostel', 'Hostel / Accommodation'],
+      ['clearance', 'Clearance'],
+      ['transcript-hub', 'Transcript'],
       ['fees', 'School Fees'],
       ['elections', 'Elections'],
       ['study-plan', 'Study Plan'],
@@ -497,7 +502,7 @@
     LECTURER: [
       ['lect-dashboard', 'Home'],
       ['lect-courses', 'My Courses'],
-      ['class-recordings', 'Class Recordings'],
+      ['class-recordings', 'My Recorded Classes'],
       ['lect-students', 'My Students'],
       ['lect-library', 'e-Library'],
       ['lect-attendance-hub', 'Class Attendance'],
@@ -974,6 +979,7 @@
         case 'cbt-mock': return renderCbtMock();
         case 'tests-hub': return renderAssessments(false, { heading: 'Tests', typeFilter: ['CA', 'Test'] });
         case 'academic-record': return renderAcademicRecord();
+        case 'course-registration': case 'hostel': case 'clearance': case 'transcript-hub': return renderStudentService();
         case 'student-results': return renderStudentResultsHub();
         case 'take-assessment': return renderTakeAssessment();
         case 'assessment-review': return renderAssessmentReview();
@@ -2381,7 +2387,7 @@
     const mins = (r) => (r.endedAt ? Math.max(1, Math.round((new Date(r.endedAt) - new Date(r.startedAt)) / 60000)) : null);
     const isLect = state.user.role === 'LECTURER';
     view.innerHTML = `
-      <div class="page-head"><h1>Class Recordings</h1></div>
+      <div class="page-head"><h1>${isLect ? 'My Recorded Classes' : 'Class Recordings'}</h1></div>
       <p class="muted" style="margin-bottom:18px;">${isLect ? 'Every live class you taught is recorded and saved here, with your voice and the students you let speak. You and your students can watch or download it.' : 'Live classes your lecturers taught are recorded and saved here. Watch them again or download them.'}</p>
       ${recordings.map((r) => `
         <div class="card" style="padding:16px 20px; margin-bottom:14px;" data-rec="${r.id}">
@@ -3911,6 +3917,71 @@
   function dhTile(nav, icon, label, pal) {
     return `<div class="dh-tile p${pal}" data-jump-nav="${nav}"><div class="dh-i">${icon}</div><div class="dh-l">${label}</div></div>`;
   }
+  // ---- The school's own services, each with a page of its own (sidebar and My Dashboard): course registration,
+  // hostel / accommodation, clearance and transcript. They are the same requests the Digital ID has always carried. ----
+  async function renderStudentService() {
+    const kind = state.view.screen;
+    if (kind === 'course-registration') {
+      const { courses } = await api('/students/me/courses');
+      view.innerHTML = `
+        <div class="page-head"><h1>Course Registration</h1><button class="btn btn-primary btn-sm" id="svc-more">Register courses</button></div>
+        <p class="muted" style="margin-bottom:14px;">The courses you are registered for. Open one to see its lectures, or register for more.</p>
+        <div class="card">${courses.map((c) => `
+          <div class="list-row" data-open-course="${c.id}" style="cursor:pointer;">
+            <div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">${esc(c.code || '')}${c.level ? ' · ' + esc(c.level) : ''}</div></div>
+            <span class="pill pill-pass">Registered</span>
+          </div>`).join('') || '<p class="muted" style="padding:16px;">You have not registered for any course yet. Tap Register courses to pick yours.</p>'}</div>
+        <p class="meta" style="margin-top:12px;">${courses.length} course${courses.length === 1 ? '' : 's'} registered</p>`;
+      view.querySelector('#svc-more').addEventListener('click', () => navigate('courses'));
+      view.querySelectorAll('[data-open-course]').forEach((el) => el.addEventListener('click', () => navigate('course-detail', { courseId: el.dataset.openCourse })));
+      return;
+    }
+    if (kind === 'hostel') {
+      const { application: h } = await api('/students/me/hostel-application');
+      view.innerHTML = `
+        <div class="page-head"><h1>Hostel / Accommodation</h1></div>
+        <div class="card" style="padding:20px;">
+          ${h ? (h.status === 'APPROVED'
+            ? `<span class="pill pill-pass">Approved</span><p style="margin-top:12px; font-size:1.15rem; font-weight:700;">${h.hostel ? esc(h.hostel.name) : 'Hostel'}</p><p class="muted">Room: ${esc(h.roomAssigned || '—')}</p>`
+            : h.status === 'REJECTED' ? '<span class="pill pill-danger">Not approved</span><p class="muted" style="margin-top:12px;">Your application was not approved. Ask the school for details.</p>'
+            : '<span class="pill pill-accent">Pending admin review</span><p class="muted" style="margin-top:12px;">Your application has been sent. The school will allocate a room.</p>')
+          : '<p class="muted" style="margin-bottom:14px;">You have not applied for school accommodation yet.</p><button class="btn btn-primary" id="svc-apply">Apply for hostel</button>'}
+        </div>`;
+      const b = view.querySelector('#svc-apply');
+      if (b) b.addEventListener('click', async () => {
+        const roomPreference = prompt('Any room/accommodation preference? (optional)') || '';
+        try { await api('/students/me/hostel-application', { method: 'POST', body: { roomPreference } }); toast('Hostel application submitted'); render(); } catch (err) { toast(err.message); }
+      });
+      return;
+    }
+    if (kind === 'clearance') {
+      const { request: c } = await api('/students/me/clearance-request');
+      view.innerHTML = `
+        <div class="page-head"><h1>Clearance</h1></div>
+        <div class="card" style="padding:20px;">
+          ${c ? (c.status === 'CLEARED' ? '<span class="pill pill-pass">Cleared</span><p class="muted" style="margin-top:12px;">You have been cleared by the school.</p>'
+            : c.status === 'DENIED' ? `<span class="pill pill-danger">Denied</span><p class="muted" style="margin-top:12px;">${c.note ? esc(c.note) : 'Ask the school for the reason.'}</p>`
+            : '<span class="pill pill-accent">Pending admin review</span><p class="muted" style="margin-top:12px;">Your request has been sent to the school.</p>')
+          : '<p class="muted" style="margin-bottom:14px;">Ask the school to clear you at the end of your studies or session.</p><button class="btn btn-primary" id="svc-apply">Request clearance</button>'}
+        </div>`;
+      const b = view.querySelector('#svc-apply');
+      if (b) b.addEventListener('click', async () => { try { await api('/students/me/clearance-request', { method: 'POST' }); toast('Clearance requested'); render(); } catch (err) { toast(err.message); } });
+      return;
+    }
+    const { request: t } = await api('/students/me/transcript-request');
+    view.innerHTML = `
+      <div class="page-head"><h1>Transcript</h1></div>
+      <div class="card" style="padding:20px;">
+        ${t ? (t.status === 'ISSUED' ? '<span class="pill pill-pass">Issued</span><p class="muted" style="margin:12px 0 14px;">Your official transcript is ready.</p><button class="btn btn-primary" id="svc-view">View transcript</button>'
+          : '<span class="pill pill-accent">Pending admin review</span><p class="muted" style="margin-top:12px;">Your request has been sent to the school.</p>')
+        : '<p class="muted" style="margin-bottom:14px;">Request your official transcript from the school.</p><button class="btn btn-primary" id="svc-apply">Request transcript</button>'}
+      </div>`;
+    const rb = view.querySelector('#svc-apply');
+    if (rb) rb.addEventListener('click', async () => { try { await api('/students/me/transcript-request', { method: 'POST' }); toast('Transcript requested'); render(); } catch (err) { toast(err.message); } });
+    const vb = view.querySelector('#svc-view');
+    if (vb) vb.addEventListener('click', () => navigate('transcript'));
+  }
+
   async function renderStudentHub() {
     const isIndividual = state.user.isIndividual;
     const { assignments, attendance, recentResults, individualAssessments } = await api('/students/me/dashboard');
@@ -3926,6 +3997,8 @@
       <div class="dh-title">📋 My Activities</div>
       <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
       <div class="dh-row" data-jump-nav="my-activity"><span>🔔</span><span class="dh-rt">Notifications</span><span class="dh-go">›</span></div>
+      ${isIndividual ? '' : `<div class="dh-title">🏫 School Services</div>
+      <div class="dh-grid">${dhTile('course-registration', '📝', 'Course Registration', 0)}${dhTile('hostel', '🏠', 'Hostel', 1)}${dhTile('clearance', '✅', 'Clearance', 2)}${dhTile('transcript-hub', '🎓', 'Transcript', 3)}${dhTile('my-lectures', '🎬', 'Lectures', 4)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 5)}</div>`}
       <div class="dh-title">🏆 Leaderboard Positions</div>
       <div class="dh-grid two">${dhTile('leaderboard', '🌍', 'Leaderboard', 4)}${dhTile('groups', '👨‍👩‍👧', 'Study Groups', 2)}</div>
       <div class="dh-title">📊 Progress</div>
@@ -5520,6 +5593,7 @@
               <span class="pill pill-pass">${esc(c.level)}</span>
               <span class="pill">${counts[i].count} enrolled</span>
             </div>
+            <button class="btn btn-accent btn-sm" data-go-live="${c.id}" style="margin-top:12px;">🔴 Go live</button>
           </div>
         `).join('') || '<p class="muted">No courses in your department yet — add one to get started.</p>'}
       </div>
@@ -5527,6 +5601,16 @@
     view.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-lessons', { courseId: el.dataset.open }));
     });
+    view.querySelectorAll('[data-go-live]').forEach((btn) => btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const course = courses.find((c) => c.id === btn.dataset.goLive);
+      const title = prompt('Title your live class:', `${course.code} live session`);
+      if (!title || !title.trim()) return;
+      try {
+        const { liveClass } = await api(`/courses/${course.id}/live/start`, { method: 'POST', body: { title: title.trim() } });
+        navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: true, title: liveClass.title });
+      } catch (err) { toast(err.message); }
+    }));
     view.querySelector('#add-course-btn').addEventListener('click', () => openAddCourseDialog(department));
   }
 
@@ -5588,20 +5672,13 @@
       </div>
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
-          <div style="font-weight:600;">Teach this course live</div>
-          <div class="meta">Students of this class join by one tap and listen. Everything is spoken, and the class is recorded for you and them to watch again.</div>
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn btn-ghost" id="class-recordings-btn">🎞 Class recordings</button><button class="btn btn-accent" id="go-live-btn">🔴 Go live</button></div>
-      </div>
-      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div>
           <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
           <div class="meta">Add curated practicals for this course. Students can also ask the AI Lecturer to draft one.</div>
         </div>
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
-        <h3 style="margin-bottom:4px; font-size:1rem;">Add a lecture</h3>
+        <h3 style="margin-bottom:4px; font-size:1rem;">Upload lectures</h3>
         <p class="meta" style="margin-bottom:12px;">Only the students enrolled in ${esc(course.code)} can see it.</p>
         <form id="lesson-form">
           <div class="field"><label>Title</label><input type="text" id="lsn-title" required></div>
@@ -5611,7 +5688,7 @@
           <button class="btn btn-primary" type="submit" id="lsn-submit-btn">Publish lecture</button>
         </form>
       </div>
-      <h3 style="margin-bottom:10px; font-size:1rem;">Lectures added to ${esc(course.code)}</h3>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Lectures uploaded to ${esc(course.code)}</h3>
       <div class="card" id="lecture-list">
         ${lessons.map((l) => `
           <div class="list-row" style="flex-wrap:wrap; gap:10px;">
@@ -5626,18 +5703,7 @@
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
-    document.getElementById('class-recordings-btn').addEventListener('click', () => navigate('class-recordings'));
     document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
-    document.getElementById('go-live-btn').addEventListener('click', async () => {
-      const title = prompt('Title your live class:', `${course.code} live session`);
-      if (!title || !title.trim()) return;
-      try {
-        const { liveClass } = await api(`/courses/${course.id}/live/start`, { method: 'POST', body: { title: title.trim() } });
-        navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: true, title: liveClass.title });
-      } catch (err) {
-        toast(err.message);
-      }
-    });
     document.getElementById('lesson-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData();
@@ -5784,7 +5850,7 @@
           <div class="hs" data-jump-nav="lect-students"><div class="hs-n" style="color:#FFD600">${totalStudents}</div><div class="hs-l">Students</div></div>
         </div></div>
       </div>
-      <div class="grid-cards tiles center">${homeTile('lect-lessons-entry', '📹', 'Upload Lecture', 'Video + notes')}${homeTile('lect-tests', '📝', 'Create Test', 'Notifies students')}${homeTile('lect-students', '👥', 'My Students', 'Your learners')}${homeTile('lect-classwork-quiz', '📋', 'Classwork / Quiz', 'Set work')}${homeTile('lect-mark-work', '✅', 'Mark Work', 'Score and feedback')}${homeTile('lect-attendance-hub', '🗓️', 'Attendance', 'Daily records')}<button type="button" class="card course-card" id="dash-announce-btn"><div class="code">📣</div><div class="meta">Announce</div><div class="sub">To a class</div></button>${homeTile('class-recordings', '🎞️', 'Class Recordings', 'Replays')}</div>
+      <div class="grid-cards tiles center">${homeTile('lect-lessons-entry', '📹', 'Upload Lectures', 'Video + notes')}${homeTile('lect-tests', '📝', 'Create Test', 'Notifies students')}${homeTile('lect-students', '👥', 'My Students', 'Your learners')}${homeTile('lect-classwork-quiz', '📋', 'Classwork / Quiz', 'Set work')}${homeTile('lect-mark-work', '✅', 'Mark Work', 'Score and feedback')}${homeTile('lect-attendance-hub', '🗓️', 'Attendance', 'Daily records')}<button type="button" class="card course-card" id="dash-announce-btn"><div class="code">📣</div><div class="meta">Announce</div><div class="sub">To a class</div></button>${homeTile('class-recordings', '🎞️', 'My Recorded Classes', 'Replays')}</div>
       ${homeSection('📚 My Courses', 'lect-courses', courses.length ? sjStrip(courses.map((c, i) => ({ title: c.title, sub: `${counts[i].count} student${counts[i].count === 1 ? '' : 's'}`, screen: 'lect-lessons', params: { courseId: c.id } }))) : pnRows([{ icon: '📚', title: 'No courses assigned yet' }]))}
       ${homeSection('🔔 Latest', null, notifRows(notifRes.notifications))}
     `;

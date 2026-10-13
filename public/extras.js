@@ -45,7 +45,7 @@
     .lzx-feerow .m { font-size: .82rem; opacity: .75; margin-top: 3px; line-height: 1.5; }
     .lzx-feerow .side { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
     .lzx-fee-page { padding-bottom: 20px; }
-    .lzx-paybar { position: sticky; bottom: 10px; z-index: 5; padding: 6px 0; }
+    .lzx-paybar { padding: 6px 0; }
     .lzx-paybar .btn { box-shadow: 0 8px 24px rgba(0,0,0,.25); }
     .lzx-sum { background: rgba(128,128,128,.12); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; font-size: .88rem; }
   `;
@@ -706,7 +706,7 @@
       <div class="lzx-id" id="lzx-id-card">
         <div class="lzx-id-top"><div class="lzx-id-brand">Learn<b>za</b> · Digital ID</div><div class="lzx-id-role">${esc(ROLE_LABEL[u.role] || 'Member')}</div></div>
         <div class="lzx-id-mid">
-          <div class="lzx-id-pic" ${canPhoto ? 'id="lzx-id-pic" title="Tap to add or change the photo"' : ''}>${u.avatarUrl ? `<img alt="" src="${esc(u.avatarUrl)}">` : esc(initialsOf(u.fullName))}${canPhoto ? '<span class="lzx-id-cam">📷</span>' : ''}</div>
+          <div class="lzx-id-pic" ${canPhoto ? 'id="lzx-id-pic" title="Tap to add or change the photo"' : ''}>${u.avatarUrl ? `<img alt="" src="${esc(u.avatarUrl)}">` : esc(initialsOf(u.fullName))}</div>
           <div><div class="lzx-id-name">${esc(u.fullName)}</div><div class="lzx-id-sub">${esc(idSubLine(u, ctx))}</div></div>
         </div>
         <div class="lzx-id-grid">${idFacts(u, ctx).map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
