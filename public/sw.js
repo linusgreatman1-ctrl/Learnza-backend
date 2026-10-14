@@ -4,9 +4,9 @@
      - /api, /socket.io, /uploads and anything cross-origin are NEVER cached or touched, so
        data, sign-in state and payments are always live;
      - pages and scripts are served from the saved copy at once and refreshed in the background (a deploy shows up on the next visit). */
-const CACHE = 'learnza-shell-v2';
+const CACHE = 'learnza-shell-v3';
 const PAGES = ['/app', '/schools'];
-const SHELL = ['/app', '/schools', '/style.css', '/auth.css', '/ui.css', '/extras.js', '/app.js', '/schools.js', '/icon.svg'];
+const SHELL = ['/app', '/schools', '/style.css', '/auth.css', '/ui.css', '/i18n.js', '/extras.js', '/app.js', '/schools.js', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (/^\/(api|socket\.io|uploads|admin|health|version\.json)/.test(url.pathname)) return;
-  const isAsset = /\.(js|css|svg|png|jpe?g|webp|gif|ico|webmanifest|woff2?)$/i.test(url.pathname);
+  const isAsset = /\.(js|css|svg|png|jpe?g|webp|gif|ico|webmanifest|woff2?)$/i.test(url.pathname) || /^\/i18n\/[a-z]+\.json$/.test(url.pathname);
   const isShellPage = req.mode === 'navigate' && PAGES.includes(url.pathname);
   if (!isAsset && !isShellPage) return;   // anything else (a public page, a download) goes straight to the network
 

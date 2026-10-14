@@ -102,7 +102,7 @@ router.post('/lab/:id/ask', requireAuth, aiGuard, loadDemo(), requireActiveSubsc
   const steps = JSON.parse(demo.stepsJson).map((s, i) => `${i + 1}. ${s.title}: ${s.instruction}`).join('\n');
   const systemPrompt = `You are the AI Lecturer guiding a student through a science/lab practical called "${demo.title}". Description: ${demo.description}\nSteps:\n${steps}\nAnswer the student's question about this practical clearly and briefly (2-4 sentences), staying on topic.`;
   try {
-    const answer = await ai.askForText(systemPrompt, question.trim());
+    const answer = await ai.askForText(systemPrompt + require('../utils/language').directive(req.user.aiLanguage), question.trim());
     await logAiConversation(req.user.id, 'LAB', question.trim(), answer);
     // Structured the same way AI Lecturer's interrupt answers are, so the frontend can
     // always render the answer onto the board rather than only in the chat log.

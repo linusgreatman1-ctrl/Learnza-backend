@@ -637,3 +637,9 @@ html { font-size: 14.5px; }
 .exit-actions .btn{flex:1}
 .exit-exam-btn{font-weight:700}
 .exit-actions .btn-danger{background:var(--danger,#c62f3b);color:#fff}
+
+/* ---- Language ---- */
+.lz-lang-pick{position:fixed;top:12px;right:12px;z-index:60;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:4px 10px;color:#fff;backdrop-filter:blur(6px)}
+.lz-lang-pick select{background:transparent;border:0;color:inherit;font:600 .8rem 'Plus Jakarta Sans',sans-serif;outline:none;cursor:pointer;max-width:130px}
+.lz-lang-pick select option{color:#142033}
+#lz-lang-card .field select{width:100%}

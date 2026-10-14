@@ -1,0 +1,219 @@
+# Learnza translation source. One line per phrase:  English ¦ Yoruba ¦ Hausa ¦ Igbo ¦ Nigerian Pidgin
+# {0} {1} stand for a part that changes (a name, a number). Run `node scripts/build-i18n.js` to write public/i18n/*.json.
+# --- sign in / sign up ---
+Welcome To Learnza ¦ Káàbọ̀ sí Learnza ¦ Barka da zuwa Learnza ¦ Nnọọ na Learnza ¦ Welcome to Learnza
+Welcome Back! ¦ Káàbọ̀ padà! ¦ Barka da dawowa! ¦ Nnọọ ọzọ! ¦ Welcome back!
+Continue your study journey ¦ Tẹ̀síwájú nínú ìrìn àjò ẹ̀kọ́ rẹ ¦ Ci gaba da tafiyar karatunka ¦ Gaa n'ihu n'njem ọmụmụ gị ¦ Continue your study journey
+Learn Smart | Anywhere ¦ Kọ́ṣẹ́ pẹ̀lú ọgbọ́n | Níbikíbi ¦ Koyi da hikima | Ko'ina ¦ Mụta n'ụzọ amamihe | Ebe ọ bụla ¦ Learn well | Anywhere
+Education At Your Fingertips ¦ Ẹ̀kọ́ ní ọwọ́ rẹ ¦ Ilimi a hannunka ¦ Agụmakwụkwọ n'aka gị ¦ Education dey your hand
+Get Started — It's Free ¦ Bẹ̀rẹ̀ — Ọ̀fẹ́ ni ¦ Fara — Kyauta ne ¦ Malite — Ọ bụ n'efu ¦ Start — E free
+Already have an account? Sign In ¦ O ti ní àkáǹtì? Wọlé ¦ Kana da asusu? Shiga ¦ Ị nwere akaụntụ? Banye ¦ You don get account? Sign In
+Already have an account? ¦ O ti ní àkáǹtì? ¦ Kana da asusu? ¦ Ị nwere akaụntụ? ¦ You don get account?
+Sign in ¦ Wọlé ¦ Shiga ¦ Banye ¦ Sign in
+Sign In ¦ Wọlé ¦ Shiga ¦ Banye ¦ Sign In
+Sign In → ¦ Wọlé → ¦ Shiga → ¦ Banye → ¦ Sign In →
+Sign out ¦ Jáde ¦ Fita ¦ Pụọ ¦ Sign out
+Log Out ¦ Jáde ¦ Fita ¦ Pụọ ¦ Log Out
+Create Account ¦ Ṣẹ̀dá àkáǹtì ¦ Ƙirƙiri asusu ¦ Mepụta akaụntụ ¦ Create Account
+Create Free Account → ¦ Ṣẹ̀dá àkáǹtì ọ̀fẹ́ → ¦ Ƙirƙiri asusu kyauta → ¦ Mepụta akaụntụ n'efu → ¦ Create Free Account →
+Create free account ¦ Ṣẹ̀dá àkáǹtì ọ̀fẹ́ ¦ Ƙirƙiri asusu kyauta ¦ Mepụta akaụntụ n'efu ¦ Create free account
+Forgot password? ¦ Ṣé o gbàgbé ọ̀rọ̀ aṣínà? ¦ Ka manta kalmar sirri? ¦ Chefuo okwuntughe? ¦ You forget password?
+Reset Password ¦ Tún ọ̀rọ̀ aṣínà ṣe ¦ Sake saita kalmar sirri ¦ Tọgharịa okwuntughe ¦ Reset Password
+Send reset link ¦ Fi ìjápọ̀ ìtúnṣe ránṣẹ́ ¦ Aika hanyar sake saitawa ¦ Zipu njikọ nrọgharị ¦ Send reset link
+Choose a New Password ¦ Yan ọ̀rọ̀ aṣínà tuntun ¦ Zaɓi sabuwar kalmar sirri ¦ Họrọ okwuntughe ọhụrụ ¦ Choose new password
+New Password ¦ Ọ̀rọ̀ aṣínà tuntun ¦ Sabuwar kalmar sirri ¦ Okwuntughe ọhụrụ ¦ New Password
+Confirm New Password ¦ Jẹ́rìí ọ̀rọ̀ aṣínà tuntun ¦ Tabbatar da sabuwar kalmar sirri ¦ Kwenye okwuntughe ọhụrụ ¦ Confirm New Password
+Save new password ¦ Fi ọ̀rọ̀ aṣínà tuntun pamọ́ ¦ Ajiye sabuwar kalmar sirri ¦ Chekwaa okwuntughe ọhụrụ ¦ Save new password
+Password ¦ Ọ̀rọ̀ aṣínà ¦ Kalmar sirri ¦ Okwuntughe ¦ Password
+Confirm Password ¦ Jẹ́rìí ọ̀rọ̀ aṣínà ¦ Tabbatar da kalmar sirri ¦ Kwenye okwuntughe ¦ Confirm Password
+Your password ¦ Ọ̀rọ̀ aṣínà rẹ ¦ Kalmar sirrinka ¦ Okwuntughe gị ¦ Your password
+At least 6 characters ¦ O kéré jù ọ̀nà mẹ́fà ¦ Akalla haruffa 6 ¦ Opekata mpe mkpụrụedemede 6 ¦ At least 6 characters
+Repeat your password ¦ Tún ọ̀rọ̀ aṣínà rẹ kọ ¦ Maimaita kalmar sirrinka ¦ Megharịa okwuntughe gị ¦ Type your password again
+Your two passwords do not match. ¦ Àwọn ọ̀rọ̀ aṣínà méjèèjì kò jọra. ¦ Kalmomin sirri biyu ba su yi daidai ba. ¦ Okwuntughe abụọ ahụ adabaghị. ¦ Di two passwords no match.
+Email ¦ Ímeèlì ¦ Imel ¦ Email ¦ Email
+Email (optional) ¦ Ímeèlì (kò pọn dandan) ¦ Imel (ba dole ba) ¦ Email (ọ bụghị ihe a ga-emerịrị) ¦ Email (optional)
+Full Name ¦ Orúkọ kíkún ¦ Cikakken suna ¦ Aha zuru ezu ¦ Full Name
+Full name ¦ Orúkọ kíkún ¦ Cikakken suna ¦ Aha zuru ezu ¦ Full name
+Your Full Name ¦ Orúkọ kíkún rẹ ¦ Cikakken sunanka ¦ Aha zuru ezu gị ¦ Your Full Name
+Phone Number ¦ Nọ́ńbà fóònù ¦ Lambar waya ¦ Nọmba ekwentị ¦ Phone Number
+Phone number ¦ Nọ́ńbà fóònù ¦ Lambar waya ¦ Nọmba ekwentị ¦ Phone number
+Phone number (optional) ¦ Nọ́ńbà fóònù (kò pọn dandan) ¦ Lambar waya (ba dole ba) ¦ Nọmba ekwentị (ọ bụghị ihe a ga-emerịrị) ¦ Phone number (optional)
+Phone ¦ Fóònù ¦ Waya ¦ Ekwentị ¦ Phone
+Institution Type ¦ Irú ilé-ẹ̀kọ́ ¦ Nau'in cibiyar ilimi ¦ Ụdị ụlọ akwụkwọ ¦ Type of school
+Institution Name ¦ Orúkọ ilé-ẹ̀kọ́ ¦ Sunan cibiyar ilimi ¦ Aha ụlọ akwụkwọ ¦ Name of school
+Institution type ¦ Irú ilé-ẹ̀kọ́ ¦ Nau'in cibiyar ilimi ¦ Ụdị ụlọ akwụkwọ ¦ Type of school
+Institution ¦ Ilé-ẹ̀kọ́ ¦ Cibiyar ilimi ¦ Ụlọ akwụkwọ ¦ School
+University ¦ Yunifásítì ¦ Jami'a ¦ Mahadum ¦ University
+Polytechnic ¦ Pọ́lítẹ́kíníìkì ¦ Kwalejin kimiyya da fasaha ¦ Polytechnic ¦ Polytechnic
+Monotechnic ¦ Mọ́nọ́tẹ́kíníìkì ¦ Monotechnic ¦ Monotechnic ¦ Monotechnic
+College of Education ¦ Kọ́lẹ́ẹ̀jì Ẹ̀kọ́ ìmọ̀ ¦ Kwalejin Ilimi ¦ Kọleejị Agụmakwụkwọ ¦ College of Education
+Other ¦ Òmíràn ¦ Wani ¦ Ọzọ ¦ Other
+Department ¦ Ẹ̀ka ¦ Sashe ¦ Ngalaba ¦ Department
+Course of Study ¦ Ẹ̀kọ́ tí ò ń kọ́ ¦ Kwas ɗin karatu ¦ Usoro ọmụmụ ¦ Course of Study
+Course of study ¦ Ẹ̀kọ́ tí ò ń kọ́ ¦ Kwas ɗin karatu ¦ Usoro ọmụmụ ¦ Course of study
+Level ¦ Ipele ¦ Matakin karatu ¦ Ọkwa ¦ Level
+School Name ¦ Orúkọ ilé-ẹ̀kọ́ ¦ Sunan makaranta ¦ Aha ụlọ akwụkwọ ¦ School Name
+School name ¦ Orúkọ ilé-ẹ̀kọ́ ¦ Sunan makaranta ¦ Aha ụlọ akwụkwọ ¦ School name
+Join Code ¦ Kóòdù ìdarapọ̀ ¦ Lambar shiga ¦ Koodu nbanye ¦ Join Code
+Access Code ¦ Kóòdù ìwọlé ¦ Lambar shiga ¦ Koodu ịbanye ¦ Access Code
+Access code ¦ Kóòdù ìwọlé ¦ Lambar shiga ¦ Koodu ịbanye ¦ Access code
+Student ¦ Akẹ́kọ̀ọ́ ¦ Ɗalibi ¦ Nwa akwụkwọ ¦ Student
+Students ¦ Àwọn akẹ́kọ̀ọ́ ¦ Ɗalibai ¦ Ụmụ akwụkwọ ¦ Students
+Lecturer ¦ Olùkọ́ ilé-ẹ̀kọ́ gíga ¦ Malami ¦ Onye nkụzi ¦ Lecturer
+Lecturers ¦ Àwọn olùkọ́ ¦ Malamai ¦ Ndị nkụzi ¦ Lecturers
+Lecturer / Staff / Admin ¦ Olùkọ́ / Òṣìṣẹ́ / Alákòóso ¦ Malami / Ma'aikaci / Admin ¦ Onye nkụzi / Onye ọrụ / Admin ¦ Lecturer / Staff / Admin
+School Admin ¦ Alákòóso ilé-ẹ̀kọ́ ¦ Shugaban makaranta ¦ Onye isi ụlọ akwụkwọ ¦ School Admin
+School admin ¦ Alákòóso ilé-ẹ̀kọ́ ¦ Shugaban makaranta ¦ Onye isi ụlọ akwụkwọ ¦ School admin
+Who are you? ¦ Ta ni ọ́? ¦ Wane ne kai? ¦ Ònye ka ị bụ? ¦ Who be you?
+Select your account type to begin ¦ Yan irú àkáǹtì rẹ láti bẹ̀rẹ̀ ¦ Zaɓi nau'in asusunka don farawa ¦ Họrọ ụdị akaụntụ gị iji malite ¦ Pick your account type to start
+Student Sign In ¦ Ìwọlé akẹ́kọ̀ọ́ ¦ Shigar ɗalibi ¦ Ntinye nwa akwụkwọ ¦ Student Sign In
+Lecturer / Staff Sign In ¦ Ìwọlé olùkọ́ / òṣìṣẹ́ ¦ Shigar malami / ma'aikaci ¦ Ntinye onye nkụzi / onye ọrụ ¦ Lecturer / Staff Sign In
+School Sign In ¦ Ìwọlé ilé-ẹ̀kọ́ ¦ Shigar makaranta ¦ Ntinye ụlọ akwụkwọ ¦ School Sign In
+Sign in with your Name, School & Access Code ¦ Wọlé pẹ̀lú orúkọ rẹ, ilé-ẹ̀kọ́ àti kóòdù ìwọlé ¦ Shiga da sunanka, makaranta da lambar shiga ¦ Banye site n'aha gị, ụlọ akwụkwọ na koodu ịbanye ¦ Sign in with your Name, School and Access Code
+Your school already registered you. Enter your full name, School Name, and the Access Code your lecturer gave you. ¦ Ilé-ẹ̀kọ́ rẹ ti forúkọ rẹ sílẹ̀. Tẹ orúkọ kíkún rẹ, orúkọ ilé-ẹ̀kọ́ àti kóòdù ìwọlé tí olùkọ́ rẹ fún ọ. ¦ Makarantarka ta riga ta yi maka rajista. Shigar da cikakken sunanka, sunan makaranta da lambar shiga da malaminka ya ba ka. ¦ Ụlọ akwụkwọ gị debanyela gị. Tinye aha gị zuru ezu, aha ụlọ akwụkwọ na koodu ịbanye onye nkụzi gị nyere gị. ¦ Your school don register you. Put your full name, School Name and the Access Code wey your lecturer give you.
+Lost your code? Ask your lecturer: they can see it in your student details, and it never changes. ¦ Ṣé o sọ kóòdù rẹ nù? Béèrè lọ́wọ́ olùkọ́ rẹ: ó lè rí i nínú àlàyé akẹ́kọ̀ọ́ rẹ, kì í sì yí padà. ¦ Ka rasa lambarka? Ka tambayi malaminka: yana iya ganin ta a bayanan ɗalibinka, kuma ba ta canjawa. ¦ Ị funahụrụ koodu gị? Jụọ onye nkụzi gị: ọ nwere ike ịhụ ya na nkọwa gị, ọ naghịkwa agbanwe. ¦ You lose your code? Ask your lecturer: e fit see am for your student details, and e no dey change.
+Exactly as your school registered you ¦ Bí ilé-ẹ̀kọ́ rẹ ṣe forúkọ rẹ sílẹ̀ gẹ́lẹ́ ¦ Daidai yadda makarantarka ta yi maka rajista ¦ Dịka ụlọ akwụkwọ gị si debanye gị ¦ Just as your school register you
+Exactly as Learnza registered it ¦ Bí Learnza ṣe forúkọ rẹ̀ sílẹ̀ gẹ́lẹ́ ¦ Daidai yadda Learnza ta yi rajistarta ¦ Dịka Learnza si debanye ya ¦ Just as Learnza register am
+Learnza for Schools ¦ Learnza fún àwọn ilé-ẹ̀kọ́ ¦ Learnza ga makarantu ¦ Learnza maka ụlọ akwụkwọ ¦ Learnza for Schools
+Lecturer / Student / Staff ¦ Olùkọ́ / Akẹ́kọ̀ọ́ / Òṣìṣẹ́ ¦ Malami / Ɗalibi / Ma'aikaci ¦ Onye nkụzi / Nwa akwụkwọ / Onye ọrụ ¦ Lecturer / Student / Staff
+Sign in with your Access Code ¦ Wọlé pẹ̀lú kóòdù ìwọlé rẹ ¦ Shiga da lambar shigarka ¦ Banye site na koodu ịbanye gị ¦ Sign in with your Access Code
+By continuing you agree to our ¦ Bí o bá tẹ̀síwájú, o gbà pẹ̀lú ¦ Ta ci gaba, ka amince da ¦ Site n'ịga n'ihu, ị kwetara na ¦ If you continue, you agree to our
+I have read and accept the ¦ Mo ti kà mo sì gbà ¦ Na karanta na kuma yarda da ¦ Agụọla m ma kwenye na ¦ I don read and accept the
+Terms & Conditions ¦ Àwọn òfin àti ipò ¦ Sharuɗɗa da Ka'idoji ¦ Usoro na Ọnọdụ ¦ Terms & Conditions
+Privacy Policy ¦ Ìlànà àṣírí ¦ Manufar Sirri ¦ Iwu Nzuzo ¦ Privacy Policy
+Select… ¦ Yan… ¦ Zaɓi… ¦ Họrọ… ¦ Pick one…
+Please wait… ¦ Jọ̀wọ́ dúró… ¦ Don Allah jira… ¦ Biko chere… ¦ Abeg wait…
+Open menu ¦ Ṣí àtòjọ ¦ Buɗe menu ¦ Mepee menu ¦ Open menu
+Mark all read ¦ Fi gbogbo wọn sí kíkà ¦ Yi alamar an karanta duka ¦ Maa ha niile dị ka agụla ¦ Mark all as read
+Your session expired. Please sign in again. ¦ Àkókò ìwọlé rẹ ti parí. Jọ̀wọ́ tún wọlé. ¦ Zaman shigarka ya ƙare. Don Allah sake shiga. ¦ Oge ịbanye gị agwụla. Biko banyeghachi. ¦ Your time don end. Abeg sign in again.
+# --- the menu ---
+Home ¦ Ilé ¦ Gida ¦ Ụlọ ¦ Home
+My Courses ¦ Àwọn kóòsì mi ¦ Darussana ¦ Usoro ọmụmụ m ¦ My Courses
+My Dashboard ¦ Pẹpẹ mi ¦ Allon bayanaina ¦ Pepa m ¦ My Dashboard
+e-Library ¦ Ibi ìkàwé orí íńtánẹ́ẹ̀tì ¦ Ɗakin karatu na intanet ¦ Ụlọ akwụkwọ ịntanetị ¦ e-Library
+Study Groups ¦ Àwọn ẹgbẹ́ ìkẹ́kọ̀ọ́ ¦ Ƙungiyoyin karatu ¦ Otu ọmụmụ ¦ Study Groups
+Digital Lab ¦ Yàrá ìdánwò oníkẹ̀ẹ́ ¦ Dakin gwaje-gwaje na dijital ¦ Ụlọ nyocha dijitalụ ¦ Digital Lab
+Tests ¦ Àwọn ìdánwò ¦ Gwaje-gwaje ¦ Ule ụlọ akwụkwọ ¦ Tests
+Semester Exam ¦ Ìdánwò ìparí semesta ¦ Jarrabawar semisti ¦ Ule njedebe semesta ¦ Semester Exam
+CBT Mock Exam Practice ¦ Ìdánwò àṣetúnṣe CBT ¦ Atisayen jarrabawar CBT ¦ Omume ule CBT ¦ CBT Mock Exam Practice
+CBT Mock Exam ¦ Ìdánwò àṣetúnṣe CBT ¦ Jarrabawar gwaji ta CBT ¦ Ule ịkwadebe CBT ¦ CBT Mock Exam
+CBT Mock ¦ Àṣetúnṣe CBT ¦ Gwajin CBT ¦ Ịkwadebe CBT ¦ CBT Mock
+AI Pre-recorded Lectures ¦ Àwọn ẹ̀kọ́ AI tí a ti gbà sílẹ̀ ¦ Laccocin AI da aka riga aka naɗa ¦ Ihe ọmụmụ AI edeburu ¦ AI Lectures wey dem don record
+AI Live Recorded Lectures ¦ Àwọn ẹ̀kọ́ AI àyè tí a gbà sílẹ̀ ¦ Laccocin AI kai tsaye da aka naɗa ¦ Ihe ọmụmụ AI ndụ edeburu ¦ AI Live Lectures wey dem record
+AI Pre-recorded ¦ AI tí a ti gbà sílẹ̀ ¦ AI da aka riga aka naɗa ¦ AI edeburu ¦ AI Pre-recorded
+AI Live Recorded ¦ AI àyè tí a gbà sílẹ̀ ¦ AI kai tsaye da aka naɗa ¦ AI ndụ edeburu ¦ AI Live Recorded
+AI Research Assistant ¦ Olùrànlọ́wọ́ ìwádìí AI ¦ Mataimakin bincike na AI ¦ Onye enyemaka nyocha AI ¦ AI Research Assistant
+My Progress ¦ Ìlọsíwájú mi ¦ Ci gabana ¦ Ọganihu m ¦ My Progress
+Leaderboard ¦ Pẹpẹ àwọn aṣíwájú ¦ Allon jagorori ¦ Tebụl ndị na-eduga ¦ Leaderboard
+Study Plan ¦ Ètò ìkẹ́kọ̀ọ́ ¦ Tsarin karatu ¦ Atụmatụ ọmụmụ ¦ Study Plan
+Daily Challenge ¦ Ìpèníjà ojoojúmọ́ ¦ Ƙalubalen yau da kullum ¦ Ihe mmegharị kwa ụbọchị ¦ Daily Challenge
+Academic Record ¦ Ìwé àkọsílẹ̀ ẹ̀kọ́ ¦ Bayanan karatu ¦ Ndekọ agụmakwụkwọ ¦ Academic Record
+School Fees ¦ Owó ilé-ẹ̀kọ́ ¦ Kuɗin makaranta ¦ Ụgwọ ụlọ akwụkwọ ¦ School Fees
+Elections ¦ Ìdìbò ¦ Zaɓuka ¦ Ntuli aka ¦ Elections
+Digital ID ¦ Káàdì ìdánimọ̀ oníkẹ̀ẹ́ ¦ Shaidar dijital ¦ Njirimara dijitalụ ¦ Digital ID
+Digital ID & Profile ¦ Káàdì ìdánimọ̀ àti àkọọ́lẹ̀ ¦ Shaidar dijital da bayanin kai ¦ Njirimara dijitalụ na profaịlụ ¦ Digital ID & Profile
+Your Digital ID ¦ Káàdì ìdánimọ̀ oníkẹ̀ẹ́ rẹ ¦ Shaidar dijital ɗinka ¦ Njirimara dijitalụ gị ¦ Your Digital ID
+Subscription ¦ Ìforúkọsílẹ̀ oṣooṣù ¦ Biyan kuɗin shiga ¦ Ndebanye aha ịkwụ ụgwọ ¦ Subscription
+AI Minutes & Coins ¦ Ìṣẹ́jú AI àti àwọn owó ẹyọ ¦ Mintunan AI da tsabar kuɗi ¦ Nkeji AI na mkpụrụ ego ¦ AI Minutes & Coins
+Settings ¦ Ètò ¦ Saituna ¦ Ntọala ¦ Settings
+Results ¦ Àwọn àbájáde ¦ Sakamako ¦ Nsonaazụ ¦ Results
+Class Recordings ¦ Àwọn ẹ̀kọ́ tí a gbà sílẹ̀ ¦ Rikodin azuzuwa ¦ Ndekọ klaasị ¦ Class Recordings
+My Recorded Classes ¦ Àwọn ẹ̀kọ́ mi tí a gbà sílẹ̀ ¦ Azuzuwana da aka naɗa ¦ Klaasị m edeburu ¦ My Recorded Classes
+Lectures ¦ Àwọn ẹ̀kọ́ ¦ Laccoci ¦ Ihe ọmụmụ ¦ Lectures
+Lecture ¦ Ẹ̀kọ́ ¦ Laccoci ¦ Ihe ọmụmụ ¦ Lecture
+Course Registration ¦ Ìforúkọsílẹ̀ kóòsì ¦ Rajistar kwas ¦ Ndebanye aha usoro ọmụmụ ¦ Course Registration
+Hostel / Accommodation ¦ Ilé ibùgbé akẹ́kọ̀ọ́ ¦ Masauki / Gidan kwana ¦ Ụlọ obibi ụmụ akwụkwọ ¦ Hostel / Accommodation
+Clearance ¦ Ìfọ̀mọ́ ìparí ẹ̀kọ́ ¦ Yarda da kammala karatu ¦ Nkwenye ịhapụ ụlọ akwụkwọ ¦ Clearance
+Transcript ¦ Ìwé àmì-ẹ̀kọ́ ¦ Takardar sakamako ¦ Akwụkwọ nsonaazụ ¦ Transcript
+Home ¦ Ilé ¦ Gida ¦ Ụlọ ¦ Home
+My Students ¦ Àwọn akẹ́kọ̀ọ́ mi ¦ Ɗalibaina ¦ Ụmụ akwụkwọ m ¦ My Students
+Class Attendance ¦ Ìkópa kíláàsì ¦ Halartar aji ¦ Ọbịbịa klaasị ¦ Class Attendance
+Assignments ¦ Àwọn iṣẹ́ àṣetiléwá ¦ Ayyuka ¦ Ọrụ ụlọ ¦ Assignments
+Student Results ¦ Àbájáde àwọn akẹ́kọ̀ọ́ ¦ Sakamakon ɗalibai ¦ Nsonaazụ ụmụ akwụkwọ ¦ Student Results
+My Staff Profile ¦ Àkọọ́lẹ̀ òṣìṣẹ́ mi ¦ Bayanan ma'aikaci na ¦ Profaịlụ onye ọrụ m ¦ My Staff Profile
+Class Rep Voting ¦ Ìdìbò aṣojú kíláàsì ¦ Zaɓen wakilin aji ¦ Ntuli aka onye nnọchite klaasị ¦ Class Rep Voting
+Preview Student Dashboard ¦ Wo pẹpẹ akẹ́kọ̀ọ́ ṣáájú ¦ Duba allon ɗalibi tukuna ¦ Lee pepa nwa akwụkwọ tupu ¦ See Student Dashboard first
+# --- greetings and common words ---
+Good morning, ¦ Káàrọ̀, ¦ Barka da safiya, ¦ Ụtụtụ ọma, ¦ Good morning,
+Good afternoon, ¦ Káàsán, ¦ Barka da rana, ¦ Ehihie ọma, ¦ Good afternoon,
+Good evening, ¦ Kú ìrọ̀lẹ́, ¦ Barka da yamma, ¦ Mgbede ọma, ¦ Good evening,
+Back ¦ Padà ¦ Koma ¦ Laghachi ¦ Go back
+← Back ¦ ← Padà ¦ ← Koma ¦ ← Laghachi ¦ ← Go back
+Cancel ¦ Fagilé ¦ Soke ¦ Kagbuo ¦ Cancel
+Save ¦ Fi pamọ́ ¦ Ajiye ¦ Chekwaa ¦ Save
+Save changes ¦ Fi àwọn àtúnṣe pamọ́ ¦ Ajiye canje-canje ¦ Chekwaa mgbanwe ¦ Save changes
+Saved ¦ A ti fi pamọ́ ¦ An ajiye ¦ Echekwara ¦ Don save
+Send ¦ Ránṣẹ́ ¦ Aika ¦ Zipu ¦ Send
+Sent ¦ A ti ránṣẹ́ ¦ An aika ¦ Ezigara ya ¦ Don send
+Sending… ¦ Ń ránṣẹ́… ¦ Ana aikawa… ¦ Na-eziga… ¦ Dey send…
+Submit ¦ Fi ránṣẹ́ ¦ Miƙa ¦ Nyefee ¦ Submit
+Submit answer ¦ Fi ìdáhùn ránṣẹ́ ¦ Miƙa amsa ¦ Nyefee azịza ¦ Submit answer
+Submitted ¦ A ti fi ránṣẹ́ ¦ An miƙa ¦ Enyefela ya ¦ Don submit
+Delete ¦ Parẹ́ ¦ Share ¦ Hichapụ ¦ Delete
+Edit ¦ Ṣàtúnṣe ¦ Gyara ¦ Dezie ¦ Edit
+Add ¦ Fikún ¦ Ƙara ¦ Tinye ¦ Add
+Open ¦ Ṣí ¦ Buɗe ¦ Mepee ¦ Open
+Close ¦ Padé ¦ Rufe ¦ Mechie ¦ Close
+✕ Close ¦ ✕ Padé ¦ ✕ Rufe ¦ ✕ Mechie ¦ ✕ Close
+Continue ¦ Tẹ̀síwájú ¦ Ci gaba ¦ Gaa n'ihu ¦ Continue
+Next → ¦ Tókàn → ¦ Na gaba → ¦ Nke ọzọ → ¦ Next →
+← Previous ¦ ← Tẹ́lẹ̀ ¦ ← Na baya ¦ ← Nke gara aga ¦ ← Previous
+Done ¦ Ó ti parí ¦ An gama ¦ Emechala ¦ Done
+Yes ¦ Bẹ́ẹ̀ni ¦ Eh ¦ Ee ¦ Yes
+No ¦ Rárá ¦ A'a ¦ Mba ¦ No
+Loading… ¦ Ń gbé wọlé… ¦ Ana lodawa… ¦ Na-ebuga… ¦ E dey load…
+Thinking… ¦ Ń ronú… ¦ Ana tunani… ¦ Na-eche echiche… ¦ E dey think…
+Generating… ¦ Ń ṣẹ̀dá… ¦ Ana ƙirƙira… ¦ Na-emepụta… ¦ E dey make am…
+Search ¦ Wá ¦ Bincika ¦ Chọọ ¦ Search
+All ¦ Gbogbo ¦ Duka ¦ Niile ¦ All
+None ¦ Kò sí ¦ Babu ¦ Enweghị ¦ None
+Name ¦ Orúkọ ¦ Suna ¦ Aha ¦ Name
+Title ¦ Àkọlé ¦ Taken ¦ Ọkụ okwu ¦ Title
+Date ¦ Déètì ¦ Kwanan wata ¦ Ụbọchị ¦ Date
+Due ¦ Ọjọ́ ìparí ¦ Ranar ƙarshe ¦ Ụbọchị njedebe ¦ Due
+Status ¦ Ipò ¦ Matsayi ¦ Ọnọdụ ¦ Status
+Type ¦ Irú ¦ Nau'i ¦ Ụdị ¦ Type
+Score ¦ Ìpín ẹ̀kọ́ ¦ Maki ¦ Akara ¦ Score
+Grade ¦ Ìpele ìdánwò ¦ Maki / Daraja ¦ Ọkwa ¦ Grade
+Course ¦ Kóòsì ¦ Kwas ¦ Usoro ọmụmụ ¦ Course
+Courses ¦ Àwọn kóòsì ¦ Darussa ¦ Usoro ọmụmụ ¦ Courses
+Semester ¦ Semesta ¦ Semisti ¦ Semesta ¦ Semester
+Description ¦ Àpèjúwe ¦ Bayani ¦ Nkọwa ¦ Description
+Notifications ¦ Àwọn ìfitónilétí ¦ Sanarwa ¦ Ọkwa ¦ Notifications
+No notifications yet. ¦ Kò sí ìfitónilétí kankan síbẹ̀. ¦ Babu sanarwa tukuna. ¦ Enwebeghị ọkwa ọ bụla. ¦ No notification yet.
+Nothing here yet. ¦ Kò sí nǹkan níbí síbẹ̀. ¦ Babu komai a nan tukuna. ¦ Ọ nweghị ihe ebe a ugbu a. ¦ Nothing dey here yet.
+Something went wrong ¦ Nǹkan kan ṣẹlẹ̀ tí kò dára ¦ Wani abu ya faru ba daidai ba ¦ Ihe gbagoro ¦ Something don spoil
+Something went wrong. Please try again. ¦ Nǹkan kan ṣẹlẹ̀ tí kò dára. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan sí i. ¦ Wani abu ya faru ba daidai ba. Don Allah sake gwadawa. ¦ Ihe gbagoro. Biko nwaa ọzọ. ¦ Something don spoil. Abeg try again.
+Not found. ¦ A kò rí i. ¦ Ba a samu ba. ¦ Achọtaghị ya. ¦ We no see am.
+Copied to clipboard ¦ A ti dà á kọ ¦ An kwafa ¦ Edepụtara ya ¦ Copied
+Copied ¦ A ti dà á kọ ¦ An kwafa ¦ Edepụtara ya ¦ Copied
+📋 Copy ¦ 📋 Dà á kọ ¦ 📋 Kwafa ¦ 📋 Depụta ¦ 📋 Copy
+Language ¦ Èdè ¦ Harshe ¦ Asụsụ ¦ Language
+Language saved ¦ A ti fi èdè pamọ́ ¦ An ajiye harshe ¦ Echekwara asụsụ ¦ Language don save
+Could not save the language. ¦ A kò lè fi èdè pamọ́. ¦ Ba a iya ajiye harshen ba. ¦ Enweghị ike ichekwa asụsụ. ¦ We no fit save the language.
+App language ¦ Èdè ohun-èlò ¦ Harshen manhaja ¦ Asụsụ ngwa ¦ App language
+Menus, buttons, messages and help text. ¦ Àtòjọ, bọ́tìnì, ìfiránṣẹ́ àti ọ̀rọ̀ ìrànlọ́wọ́. ¦ Menu, maɓallai, saƙonni da rubutun taimako. ¦ Menu, bọtịnụ, ozi na ederede enyemaka. ¦ Menus, buttons, messages and help text.
+Use this language for the AI and voice too ¦ Lo èdè yìí fún AI àti ohùn pẹ̀lú ¦ Yi amfani da wannan harshe don AI da murya ma ¦ Jiri asụsụ a maka AI na olu nke ọma ¦ Use this language for AI and voice too
+AI teaching language ¦ Èdè ìkọ́ni AI ¦ Harshen koyarwar AI ¦ Asụsụ nkuzi AI ¦ AI teaching language
+What the AI Lecturer and the research assistant write and say. Formulas, units and official exam terms stay as they are. ¦ Ohun tí AI olùkọ́ àti olùrànlọ́wọ́ ìwádìí kọ tí wọ́n sì sọ. Àwọn ìlànà ìṣirò, ìwọ̀n àti ọ̀rọ̀ ìdánwò àṣẹ kò ní yípadà. ¦ Abin da malamin AI da mataimakin bincike ke rubutawa da faɗa. Ka'idojin lissafi, ma'auni da kalmomin jarrabawa na hukuma ba za su canza ba. ¦ Ihe onye nkụzi AI na onye enyemaka nyocha na-ede ma na-ekwu. Usoro mgbakọ, nke ọtụtụ na okwu ule gọọmentị agaghị agbanwe. ¦ Wetin AI Lecturer and research assistant go write and talk. Formulas, units and official exam words no go change.
+Voice language ¦ Èdè ohùn ¦ Harshen murya ¦ Asụsụ olu ¦ Voice language
+The language you speak in and the AI speaks back in. If your device has no voice for it, the AI shows the words and speaks in English or Pidgin. ¦ Èdè tí ò ń sọ àti èyí tí AI fi ń dáhùn. Tí ẹ̀rọ rẹ kò bá ní ohùn fún un, AI yóò fi àwọn ọ̀rọ̀ hàn, yóò sì sọ̀rọ̀ ní Gẹ̀ẹ́sì tàbí Pidgin. ¦ Harshen da kake magana da shi da kuma da AI ke amsawa. Idan na'urarka ba ta da murya a ciki, AI zai nuna kalmomin kuma ya yi magana da Turanci ko Pidgin. ¦ Asụsụ ị na-asụ na nke AI na-aza. Ọ bụrụ na ngwaọrụ gị enweghị olu maka ya, AI ga-egosi okwu ma kwuo n'Bekee ma ọ bụ Pidgin. ¦ The language wey you dey talk and wey AI go answer for. If your device no get voice for am, AI go show the words and talk for English or Pidgin.
+Appearance ¦ Ìrísí ¦ Kamanni ¦ Ọdịdị ¦ Appearance
+Dark Mode ¦ Ipò òkùnkùn ¦ Yanayin duhu ¦ Ọnọdụ ọchịchịrị ¦ Dark Mode
+Easier on the eyes at night ¦ Ó rọrùn fún ojú ní alẹ́ ¦ Ya fi sauƙi ga idanu da dare ¦ Ọ dị mfe n'anya n'abalị ¦ E soft for eye for night
+Help ¦ Ìrànlọ́wọ́ ¦ Taimako ¦ Enyemaka ¦ Help
+Help & Support ¦ Ìrànlọ́wọ́ àti àtìlẹ́yìn ¦ Taimako da tallafi ¦ Enyemaka na nkwado ¦ Help & Support
+Tickets and live chat ¦ Àwọn tíkẹ́ẹ̀tì àti ìfọ̀rọ̀jomitoro lórí ayélujára ¦ Tikiti da hira kai tsaye ¦ Tiketi na mkparịta ụka ndụ ¦ Tickets and live chat
+Rate Learnza ¦ Ṣàyẹ̀wò Learnza ¦ Ba Learnza maki ¦ Tụọ Learnza ọkwa ¦ Rate Learnza
+Account ¦ Àkáǹtì ¦ Asusu ¦ Akaụntụ ¦ Account
+Edit Profile ¦ Ṣàtúnṣe àkọọ́lẹ̀ ¦ Gyara bayanin kai ¦ Dezie profaịlụ ¦ Edit Profile
+Change Password ¦ Yí ọ̀rọ̀ aṣínà padà ¦ Canja kalmar sirri ¦ Gbanwee okwuntughe ¦ Change Password
+Name and phone number ¦ Orúkọ àti nọ́ńbà fóònù ¦ Suna da lambar waya ¦ Aha na nọmba ekwentị ¦ Name and phone number
+← Back to Settings ¦ ← Padà sí Ètò ¦ ← Koma zuwa Saituna ¦ ← Laghachi na Ntọala ¦ ← Back to Settings
+Profile updated ¦ A ti ṣàtúnṣe àkọọ́lẹ̀ ¦ An sabunta bayanin kai ¦ Emelitela profaịlụ ¦ Profile don update
+Current password ¦ Ọ̀rọ̀ aṣínà ìsinsìnyí ¦ Kalmar sirri ta yanzu ¦ Okwuntughe ugbu a ¦ Current password
+New password ¦ Ọ̀rọ̀ aṣínà tuntun ¦ Sabuwar kalmar sirri ¦ Okwuntughe ọhụrụ ¦ New password
+Confirm new password ¦ Jẹ́rìí ọ̀rọ̀ aṣínà tuntun ¦ Tabbatar da sabuwar kalmar sirri ¦ Kwenye okwuntughe ọhụrụ ¦ Confirm new password
+Update password ¦ Ṣe ìmúdójúìwọ̀n ọ̀rọ̀ aṣínà ¦ Sabunta kalmar sirri ¦ Melite okwuntughe ¦ Update password
+Password updated ¦ A ti ṣe ìmúdójúìwọ̀n ọ̀rọ̀ aṣínà ¦ An sabunta kalmar sirri ¦ Emelitela okwuntughe ¦ Password don update
+Photo updated ¦ A ti ṣe ìmúdójúìwọ̀n fọ́tò ¦ An sabunta hoto ¦ Emelitela foto ¦ Photo don update

@@ -94,6 +94,9 @@ model User {
   department     Department? @relation(fields: [departmentId], references: [id])
   departmentId   String?
   yearOfStudy    Int?      // school students' level (1,2,3 -> 100L/200L/300L); individual learners set their own at registration too
+  uiLanguage     String    @default("en") // Settings > Language: the language of the app's screens (en | yo | ha | ig | pcm)
+  aiLanguage     String    @default("en") // the language the AI Lecturer and research assistant teach and answer in
+  voiceLanguage  String    @default("en") // the language used when listening to the student and speaking back
   notificationsMuted Boolean @default(false) // Settings: "Mute notifications" -- suppresses new in-app notifications, doesn't delete existing ones
   avatarUrl      String?   // Settings/Digital ID: profile picture, uploaded from device -- replaces the initials circle when set
   addedById      String?   // students: the lecturer who added them (only lecturers add students)

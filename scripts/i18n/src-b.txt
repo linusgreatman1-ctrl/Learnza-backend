@@ -1,0 +1,279 @@
+# --- student home, dashboard, courses ---
+Your streak ¦ Ìtẹ̀síwájú rẹ ojoojúmọ́ ¦ Jerin kwanakinka ¦ Usoro ụbọchị gị ¦ Your streak
+🔥 Your Streak ¦ 🔥 Ìtẹ̀síwájú ojoojúmọ́ rẹ ¦ 🔥 Jerin kwanakinka ¦ 🔥 Usoro ụbọchị gị ¦ 🔥 Your Streak
+Streak ¦ Ìtẹ̀síwájú ¦ Jerin kwanaki ¦ Usoro ụbọchị ¦ Streak
+Points ¦ Àwọn ojú ìdíwọ̀n ¦ Maki ¦ Isi ¦ Points
+Avg Score ¦ Àpapọ̀ ìpín ¦ Matsakaicin maki ¦ Nkezi akara ¦ Avg Score
+Average ¦ Àpapọ̀ ¦ Matsakaici ¦ Nkezi ¦ Average
+Today's Goal ¦ Àfojúsùn òní ¦ Burin yau ¦ Ebumnuche taa ¦ Today's Goal
+My details ¦ Àlàyé mi ¦ Bayanana ¦ Nkọwa m ¦ My details
+My profile ¦ Àkọọ́lẹ̀ mi ¦ Bayanin kaina ¦ Profaịlụ m ¦ My profile
+Continue Learning ¦ Tẹ̀síwájú ẹ̀kọ́ ¦ Ci gaba da koyo ¦ Gaa n'ihu ịmụ ihe ¦ Continue Learning
+No courses yet ¦ Kò sí kóòsì síbẹ̀ ¦ Babu kwas tukuna ¦ Enwebeghị usoro ọmụmụ ¦ No course yet
+No courses yet. ¦ Kò sí kóòsì síbẹ̀. ¦ Babu kwas tukuna. ¦ Enwebeghị usoro ọmụmụ. ¦ No course yet.
+Your classes ¦ Àwọn kíláàsì rẹ ¦ Azuzuwanka ¦ Klaasị gị ¦ Your classes
+Your own courses ¦ Àwọn kóòsì tìrẹ ¦ Darussanka na kanka ¦ Usoro ọmụmụ nke gị ¦ Your own courses
+Open My Courses to enrol. ¦ Ṣí Àwọn kóòsì mi láti forúkọ sílẹ̀. ¦ Buɗe Darussana don yin rajista. ¦ Mepee Usoro ọmụmụ m iji debanye aha. ¦ Open My Courses to enrol.
+Create a course and your AI lecturer prepares the lectures. ¦ Ṣẹ̀dá kóòsì, AI olùkọ́ rẹ yóò sì pèsè àwọn ẹ̀kọ́. ¦ Ƙirƙiri kwas, malamin AI ɗinka zai shirya laccocin. ¦ Mepụta usoro ọmụmụ, onye nkụzi AI gị ga-edozi ihe ọmụmụ. ¦ Create course, your AI lecturer go prepare the lectures.
+Practise a little every day ¦ Ṣe àṣetúnṣe díẹ̀ lójoojúmọ́ ¦ Yi ɗan atisaye kowace rana ¦ Mee ntakịrị omume kwa ụbọchị ¦ Practise small every day
+Practise questions from your courses every day ¦ Ṣe àṣetúnṣe àwọn ìbéèrè látinú àwọn kóòsì rẹ lójoojúmọ́ ¦ Yi atisayen tambayoyi daga darussanka kowace rana ¦ Mee ajụjụ sitere n'usoro ọmụmụ gị kwa ụbọchị ¦ Practise questions from your courses every day
+Start now ¦ Bẹ̀rẹ̀ báyìí ¦ Fara yanzu ¦ Malite ugbu a ¦ Start now
+Start ¦ Bẹ̀rẹ̀ ¦ Fara ¦ Malite ¦ Start
+Today ¦ Òní ¦ Yau ¦ Taa ¦ Today
+Latest ¦ Tuntun jùlọ ¦ Sabbin abubuwa ¦ Nke kachasị ọhụrụ ¦ Latest
+🔔 Latest ¦ 🔔 Tuntun jùlọ ¦ 🔔 Sabbin abubuwa ¦ 🔔 Nke kachasị ọhụrụ ¦ 🔔 Latest
+See all ¦ Wo gbogbo rẹ̀ ¦ Duba duka ¦ Lee ha niile ¦ See all
+Nothing due right now ¦ Kò sí ohun tí ó yẹ kí a parí báyìí ¦ Babu abin da ya kamata yanzu ¦ Ọ dịghị ihe dị mkpa ugbu a ¦ Nothing dey due now
+⏰ Coming Up ¦ ⏰ Ń bọ̀ lọ́nà ¦ ⏰ Mai zuwa ¦ ⏰ Na-abịa ¦ ⏰ Wetin dey come
+📋 Study Plan — Today ¦ 📋 Ètò ìkẹ́kọ̀ọ́ — Òní ¦ 📋 Tsarin karatu — Yau ¦ 📋 Atụmatụ ọmụmụ — Taa ¦ 📋 Study Plan — Today
+See Full Plan → ¦ Wo gbogbo ètò → ¦ Duba cikakken tsari → ¦ Lee atụmatụ niile → ¦ See Full Plan →
+📋 My Activities ¦ 📋 Àwọn ìgbòkègbodò mi ¦ 📋 Ayyukana ¦ 📋 Ihe m na-eme ¦ 📋 My Activities
+🏆 Leaderboard Positions ¦ 🏆 Ipò lórí pẹpẹ àwọn aṣíwájú ¦ 🏆 Matsayi a allon jagorori ¦ 🏆 Ọnọdụ na tebụl ndị na-eduga ¦ 🏆 Leaderboard Positions
+📊 Progress ¦ 📊 Ìlọsíwájú ¦ 📊 Ci gaba ¦ 📊 Ọganihu ¦ 📊 Progress
+👤 More ¦ 👤 Síwájú sí i ¦ 👤 Ƙari ¦ 👤 Ọzọ ¦ 👤 More
+🏫 School Services ¦ 🏫 Àwọn iṣẹ́ ilé-ẹ̀kọ́ ¦ 🏫 Ayyukan makaranta ¦ 🏫 Ọrụ ụlọ akwụkwọ ¦ 🏫 School Services
+Recent Activity ¦ Ìgbòkègbodò àìpẹ́ ¦ Ayyukan kwanan nan ¦ Ihe emere n'oge na-adịbeghị anya ¦ Recent Activity
+Assignments & Tests ¦ Àwọn iṣẹ́ àṣetiléwá àti ìdánwò ¦ Ayyuka da gwaje-gwaje ¦ Ọrụ ụlọ na ule ¦ Assignments & Tests
+Assignments pending ¦ Iṣẹ́ àṣetiléwá tí kò tíì parí ¦ Ayyukan da ke jiran ¦ Ọrụ ụlọ ka na-echere ¦ Assignments wey never finish
+Attendance ¦ Ìkópa ¦ Halarta ¦ Ọbịbịa ¦ Attendance
+Attendance rate ¦ Ìpín ìkópa ¦ Adadin halarta ¦ Ọnụọgụ ọbịbịa ¦ Attendance rate
+My attendance ¦ Ìkópa mi ¦ Halartata ¦ Ọbịbịa m ¦ My attendance
+Test Results ¦ Àbájáde ìdánwò ¦ Sakamakon gwaje-gwaje ¦ Nsonaazụ ule ¦ Test Results
+My exams ¦ Àwọn ìdánwò mi ¦ Jarrabawata ¦ Ule m ¦ My exams
+To do ¦ Láti ṣe ¦ Abin da za a yi ¦ Ihe a ga-eme ¦ To do
+Taken ¦ Tí a ti ṣe ¦ An ɗauka ¦ Emere ya ¦ Don take
+Take a CBT test to start earning badges. ¦ Ṣe ìdánwò CBT láti bẹ̀rẹ̀ sí gba àmì-ẹ̀yẹ. ¦ Yi gwajin CBT don fara samun lambobin yabo. ¦ Were ule CBT iji malite inweta baajị. ¦ Take CBT test to start collect badges.
+Current streak ¦ Ìtẹ̀síwájú lọ́wọ́lọ́wọ́ ¦ Jerin kwanaki na yanzu ¦ Usoro ụbọchị ugbu a ¦ Current streak
+Longest streak ¦ Ìtẹ̀síwájú tó gùn jù ¦ Jerin kwanaki mafi tsawo ¦ Usoro ụbọchị kacha ogologo ¦ Longest streak
+Badges earned ¦ Àwọn àmì-ẹ̀yẹ tí a gbà ¦ Lambobin yabo da aka samu ¦ Baajị enwetara ¦ Badges wey you don collect
+Your rank: ¦ Ipò rẹ: ¦ Matsayinka: ¦ Ọnọdụ gị: ¦ Your rank:
+Browse & enroll by semester ¦ Wá kí o sì forúkọ sílẹ̀ nípasẹ̀ semesta ¦ Bincika ka yi rajista bisa semisti ¦ Chọọ ma debanye aha site na semesta ¦ Browse and enroll by semester
+Your department ¦ Ẹ̀ka rẹ ¦ Sashenka ¦ Ngalaba gị ¦ Your department
+Enrolled ¦ A ti forúkọ sílẹ̀ ¦ An yi rajista ¦ Edebanyela aha ¦ Don enroll
+Unenrolled ¦ A ti yọ orúkọ kúrò ¦ An fita daga rajista ¦ Ewepụla aha ¦ Don unenroll
+Unenroll from this course? ¦ Ṣé o fẹ́ yọ orúkọ rẹ kúrò nínú kóòsì yìí? ¦ Za ka fita daga wannan kwas ɗin? ¦ Wepụ aha gị na usoro ọmụmụ a? ¦ Comot from this course?
+Register courses ¦ Forúkọ sílẹ̀ fún kóòsì ¦ Yi rajistar kwasa-kwasai ¦ Debanye aha usoro ọmụmụ ¦ Register courses
+Registered ¦ A ti forúkọ sílẹ̀ ¦ An yi rajista ¦ Edebanyela ya ¦ Don register
+You have not registered for any course yet. Tap Register courses to pick yours. ¦ O kò tíì forúkọ sílẹ̀ fún kóòsì kankan. Tẹ Forúkọ sílẹ̀ fún kóòsì láti yan tìrẹ. ¦ Ba ka yi rajistar kowane kwas ba tukuna. Danna Yi rajistar kwasa-kwasai don zaɓar naka. ¦ Edebanyebeghị aha gị na usoro ọmụmụ ọ bụla. Pịa Debanye aha usoro ọmụmụ iji họrọ nke gị. ¦ You never register for any course. Tap Register courses make you pick yours.
+The courses you are registered for. Open one to see its lectures, or register for more. ¦ Àwọn kóòsì tí o ti forúkọ sílẹ̀ fún. Ṣí ọ̀kan láti wo àwọn ẹ̀kọ́ rẹ̀, tàbí kí o forúkọ sílẹ̀ fún àwọn míràn. ¦ Kwasa-kwasan da ka yi rajista. Buɗe ɗaya don ganin laccocinsa, ko ka yi rajista don ƙarin. ¦ Usoro ọmụmụ ị debanyere aha. Mepee otu ka ị hụ ihe ọmụmụ ya, ma ọ bụ debanye maka ndị ọzọ. ¦ The courses wey you don register for. Open one see im lectures, or register for more.
++ Add course ¦ + Fi kóòsì kún ¦ + Ƙara kwas ¦ + Tinye usoro ọmụmụ ¦ + Add course
++ New course ¦ + Kóòsì tuntun ¦ + Sabon kwas ¦ + Usoro ọmụmụ ọhụrụ ¦ + New course
+Delete this course ¦ Pa kóòsì yìí rẹ́ ¦ Share wannan kwas ɗin ¦ Hichapụ usoro ọmụmụ a ¦ Delete this course
+Course deleted ¦ A ti pa kóòsì rẹ́ ¦ An share kwas ɗin ¦ Ehichapụla usoro ọmụmụ ¦ Course don delete
+Pre-recorded lectures ¦ Àwọn ẹ̀kọ́ tí a ti gbà sílẹ̀ ¦ Laccocin da aka riga aka naɗa ¦ Ihe ọmụmụ edeburu ¦ Pre-recorded lectures
+Lecture notes ¦ Àkọsílẹ̀ ẹ̀kọ́ ¦ Bayanan laccoci ¦ Ndetu ihe ọmụmụ ¦ Lecture notes
+Start AI Lectures ¦ Bẹ̀rẹ̀ àwọn ẹ̀kọ́ AI ¦ Fara laccocin AI ¦ Malite ihe ọmụmụ AI ¦ Start AI Lectures
+AI Lecturer ¦ AI olùkọ́ ¦ Malamin AI ¦ Onye nkụzi AI ¦ AI Lecturer
+Tell the AI Lecturer what to cover in this course. ¦ Sọ fún AI olùkọ́ ohun tí yóò kọ́ nínú kóòsì yìí. ¦ Gaya wa malamin AI abin da zai koyar a wannan kwas. ¦ Gwa onye nkụzi AI ihe ọ ga-akụzi n'usoro ọmụmụ a. ¦ Tell the AI Lecturer wetin e go teach for this course.
+Open course ¦ Ṣí kóòsì ¦ Buɗe kwas ¦ Mepee usoro ọmụmụ ¦ Open course
+Subscribers only ¦ Fún àwọn tó forúkọ sílẹ̀ nìkan ¦ Don masu biyan kuɗi kawai ¦ Maka ndị debanyere aha naanị ¦ Subscribers only
+AI Lecturer · narrated lecture ¦ AI olùkọ́ · ẹ̀kọ́ tí a sọ ¦ Malamin AI · laccar da aka karanta ¦ Onye nkụzi AI · ihe ọmụmụ a gwara ¦ AI Lecturer · lecture wey dem narrate
+Nothing yet — check back shortly. ¦ Kò sí nǹkan síbẹ̀ — padà wá láìpẹ́. ¦ Babu komai tukuna — a dawo ba da jimawa ba. ¦ Ọ dịghị ihe ugbu a — lọghachi n'oge na-adịghị anya. ¦ Nothing yet — come back small time.
+No pre-recorded lectures in your courses yet. They appear here, and inside each course, as the system records them. ¦ Kò sí ẹ̀kọ́ tí a ti gbà sílẹ̀ nínú àwọn kóòsì rẹ síbẹ̀. Wọ́n máa hàn níbí, àti nínú kóòsì kọ̀ọ̀kan, bí ètò ṣe ń gbà wọ́n sílẹ̀. ¦ Babu laccocin da aka riga aka naɗa a kwasa-kwasanka tukuna. Za su bayyana a nan, da cikin kowane kwas, yayin da tsarin ke naɗa su. ¦ Enwebeghị ihe ọmụmụ edeburu n'usoro ọmụmụ gị. Ha ga-apụta ebe a, na n'ime usoro ọmụmụ ọ bụla, ka sistemụ na-edekọ ha. ¦ No pre-recorded lectures for your courses yet. Dem go show here, and inside each course, as the system dey record dem.
+The pre-recorded lectures the system's AI Lecturer made for each of your courses: the same ones listed inside the course. This is where you carry on learning when your live AI minutes or coins run out. Classes you took live are under AI Live Recorded Lectures. ¦ Àwọn ẹ̀kọ́ tí AI olùkọ́ ètò ti gbà sílẹ̀ fún kóòsì rẹ kọ̀ọ̀kan: àwọn kan náà tí a tò sínú kóòsì náà. Níbí ni o ti lè tẹ̀síwájú láti kẹ́kọ̀ọ́ tí ìṣẹ́jú AI àyè tàbí owó ẹyọ rẹ bá tán. Àwọn kíláàsì tí o kọ́ ní àyè wà lábẹ́ Àwọn ẹ̀kọ́ AI àyè tí a gbà sílẹ̀. ¦ Laccocin da malamin AI na tsarin ya naɗa wa kowane kwasarka: iri ɗaya da waɗanda aka lissafa a cikin kwas ɗin. Nan ne za ka ci gaba da koyo idan mintunan AI ko tsabar kuɗinka suka ƙare. Azuzuwan da ka ɗauka kai tsaye suna ƙarƙashin Laccocin AI kai tsaye da aka naɗa. ¦ Ihe ọmụmụ onye nkụzi AI nke sistemụ dere maka usoro ọmụmụ gị ọ bụla: otu ihe ahụ edepụtara n'ime usoro ọmụmụ ahụ. Ebe a ka ị ga-aga n'ihu na-amụ mgbe nkeji AI ma ọ bụ mkpụrụ ego gị gwụrụ. Klaasị ị gara n'ụzọ ndụ nọ n'okpuru Ihe ọmụmụ AI ndụ edeburu. ¦ The pre-recorded lectures wey the system AI Lecturer make for each of your courses: the same ones wey dey inside the course. Na here you go continue to learn when your live AI minutes or coins finish. Classes wey you take live dey under AI Live Recorded Lectures.
+The live classes the AI Lecturer taught you, recorded as they happened. Watch a class again, pick it up where you stopped, or download its notes. Lectures the system recorded in advance are under AI Pre-recorded Lectures. ¦ Àwọn kíláàsì àyè tí AI olùkọ́ kọ́ ọ, tí a gbà sílẹ̀ bí wọ́n ṣe ń ṣẹlẹ̀. Wo kíláàsì lẹ́ẹ̀kan sí i, tẹ̀síwájú níbi tí o dúró, tàbí ṣe ìgbàsílẹ̀ àkọsílẹ̀ rẹ̀. Àwọn ẹ̀kọ́ tí ètò gbà sílẹ̀ ṣáájú wà lábẹ́ Àwọn ẹ̀kọ́ AI tí a ti gbà sílẹ̀. ¦ Azuzuwan kai tsaye da malamin AI ya koyar da kai, an naɗa su yayin da suke faruwa. Kalli aji kuma, ci gaba daga inda ka tsaya, ko ka sauke bayanansa. Laccocin da tsarin ya naɗa tun da farko suna ƙarƙashin Laccocin AI da aka riga aka naɗa. ¦ Klaasị ndụ onye nkụzi AI kụziri gị, edeburu ka ha na-eme. Lee klaasị ọzọ, gaa n'ihu ebe ị kwụsịrị, ma ọ bụ budata ndetu ya. Ihe ọmụmụ sistemụ dere na mbụ nọ n'okpuru Ihe ọmụmụ AI edeburu. ¦ The live classes wey AI Lecturer teach you, wey dem record as e dey happen. Watch class again, continue from where you stop, or download di notes. Lectures wey the system record before dey under AI Pre-recorded Lectures.
+No attendance recorded yet. ¦ A kò tíì kọ ìkópa sílẹ̀. ¦ Ba a yi rikodin halarta ba tukuna. ¦ Edekọbeghị ọbịbịa. ¦ Dem never record attendance.
+No assignments posted yet. ¦ A kò tíì fi iṣẹ́ àṣetiléwá sílẹ̀. ¦ Ba a saka ayyuka ba tukuna. ¦ Ekwuputabeghị ọrụ ụlọ. ¦ Dem never post assignments.
+No lecturer-uploaded lectures yet. ¦ Olùkọ́ kò tíì gbé ẹ̀kọ́ kankan sórí. ¦ Malami bai ɗora laccoci ba tukuna. ¦ Onye nkụzi etinyebeghị ihe ọmụmụ. ¦ Lecturer never upload any lecture yet.
+No lectures uploaded yet. ¦ A kò tíì gbé ẹ̀kọ́ kankan sórí. ¦ Ba a ɗora laccoci ba tukuna. ¦ Etinyebeghị ihe ọmụmụ. ¦ No lecture don upload yet.
+No results yet. ¦ Kò sí àbájáde síbẹ̀. ¦ Babu sakamako tukuna. ¦ Enwebeghị nsonaazụ. ¦ No result yet.
+No recordings yet. ¦ Kò sí ìgbàsílẹ̀ síbẹ̀. ¦ Babu rikodi tukuna. ¦ Enwebeghị ndekọ. ¦ No recording yet.
+When a lecturer teaches a live class, the recording appears here. ¦ Nígbà tí olùkọ́ bá kọ́ kíláàsì àyè, ìgbàsílẹ̀ yóò hàn níbí. ¦ Idan malami ya koyar da aji kai tsaye, rikodin zai bayyana a nan. ¦ Mgbe onye nkụzi kụziri klaasị ndụ, ndekọ ga-apụta ebe a. ¦ When lecturer teach live class, the recording go show here.
+Watch ¦ Wò ¦ Kalla ¦ Lelee ¦ Watch
+▶ Watch ¦ ▶ Wò ¦ ▶ Kalla ¦ ▶ Lelee ¦ ▶ Watch
+⬇ Download ¦ ⬇ Gbà sílẹ̀ ¦ ⬇ Sauke ¦ ⬇ Budata ¦ ⬇ Download
+Download ¦ Gbà sílẹ̀ ¦ Sauke ¦ Budata ¦ Download
+Live class ¦ Kíláàsì àyè ¦ Aji kai tsaye ¦ Klaasị ndụ ¦ Live class
+Join live class ¦ Darapọ̀ mọ́ kíláàsì àyè ¦ Shiga aji kai tsaye ¦ Sonye na klaasị ndụ ¦ Join live class
+Live ¦ Àyè ¦ Kai tsaye ¦ Ndụ ¦ Live
+🎤 Ask a question ¦ 🎤 Béèrè ìbéèrè ¦ 🎤 Yi tambaya ¦ 🎤 Jụọ ajụjụ ¦ 🎤 Ask a question
+✋ Got a question? Raise your hand ¦ ✋ Ṣé o ní ìbéèrè? Gbé ọwọ́ sókè ¦ ✋ Kana da tambaya? Ɗaga hannu ¦ ✋ Ị nwere ajụjụ? Welie aka ¦ ✋ You get question? Raise your hand
+# --- tests, exams, mock ---
+Choose a course, then the year of the paper. ¦ Yan kóòsì, lẹ́yìn náà ọdún ìwé ìdánwò. ¦ Zaɓi kwas, sannan shekarar takardar jarrabawa. ¦ Họrọ usoro ọmụmụ, mgbe ahụ afọ akwụkwọ ule. ¦ Choose course, then the year of the paper.
+Take exam ¦ Ṣe ìdánwò ìparí ¦ Ɗauki jarrabawa ¦ Were ule ¦ Take exam
+Take test ¦ Ṣe ìdánwò ¦ Ɗauki gwaji ¦ Were ule ntụkwasị ¦ Take test
+Submit exam ¦ Fi ìdánwò ìparí ránṣẹ́ ¦ Miƙa jarrabawa ¦ Nyefee ule ¦ Submit exam
+Submit test ¦ Fi ìdánwò ránṣẹ́ ¦ Miƙa gwaji ¦ Nyefee ule ntụkwasị ¦ Submit test
+Mock exam ¦ Ìdánwò àṣetúnṣe ¦ Jarrabawar gwaji ¦ Ule ịkwadebe ¦ Mock exam
+Section A · Objective ¦ Apá A · Ìbéèrè àṣàyàn ¦ Sashe na A · Zaɓi ¦ Ngalaba A · Ajụjụ nhọrọ ¦ Section A · Objective
+Section B · Theory ¦ Apá B · Ìbéèrè àkọsílẹ̀ ¦ Sashe na B · Rubutu ¦ Ngalaba B · Ajụjụ edemede ¦ Section B · Theory
+Section A ¦ Apá A ¦ Sashe na A ¦ Ngalaba A ¦ Section A
+Section B ¦ Apá B ¦ Sashe na B ¦ Ngalaba B ¦ Section B
+Being written… ¦ À ń kọ ọ́… ¦ Ana rubuta shi… ¦ A na-ede ya… ¦ Dem dey write am…
+Earlier ¦ Tẹ́lẹ̀ ¦ Na baya ¦ Mbụ ¦ Earlier
+Already submitted ¦ A ti fi ránṣẹ́ tẹ́lẹ̀ ¦ An riga an miƙa ¦ Enyefeela ya ¦ Don submit already
+🔍 Review mistakes ¦ 🔍 Ṣàyẹ̀wò àwọn àṣìṣe ¦ 🔍 Duba kurakurai ¦ 🔍 Lelee njehie ¦ 🔍 Check mistakes
+✕ Exit ¦ ✕ Jáde ¦ ✕ Fita ¦ ✕ Pụọ ¦ ✕ Exit
+Exit now? ¦ Jáde báyìí? ¦ Fita yanzu? ¦ Pụọ ugbu a? ¦ Exit now?
+Your progress on this exam will be lost. ¦ Ìtẹ̀síwájú rẹ lórí ìdánwò yìí yóò sọnù. ¦ Ci gabanka a wannan jarrabawa zai ɓace. ¦ Ọganihu gị na ule a ga-efu. ¦ Your progress for this exam go lost.
+Your progress on this test will be lost. ¦ Ìtẹ̀síwájú rẹ lórí ìdánwò yìí yóò sọnù. ¦ Ci gabanka a wannan gwaji zai ɓace. ¦ Ọganihu gị na ule a ga-efu. ¦ Your progress for this test go lost.
+Stay ¦ Dúró ¦ Tsaya ¦ Nọrọ ¦ Stay
+Exit ¦ Jáde ¦ Fita ¦ Pụọ ¦ Exit
+Question ¦ Ìbéèrè ¦ Tambaya ¦ Ajụjụ ¦ Question
+Questions ¦ Àwọn ìbéèrè ¦ Tambayoyi ¦ Ajụjụ ¦ Questions
+Your answer ¦ Ìdáhùn rẹ ¦ Amsarka ¦ Azịza gị ¦ Your answer
+Model answer ¦ Ìdáhùn àwòṣe ¦ Amsar samfuri ¦ Azịza ndebe ¦ Model answer
+Model answer: ¦ Ìdáhùn àwòṣe: ¦ Amsar samfuri: ¦ Azịza ndebe: ¦ Model answer:
+Correct! ¦ Ó tọ́! ¦ Daidai ne! ¦ Ọ ziri ezi! ¦ Correct!
+That's correct! ¦ Ó tọ́! ¦ Hakan daidai ne! ¦ Nke ahụ ziri ezi! ¦ Dat one correct!
+Not quite. ¦ Kò tíì tọ́ pátápátá. ¦ Ba daidai ba ne sosai. ¦ Ọ bụghị nke ziri ezi kpam kpam. ¦ E never correct well.
+Not quite — ¦ Kò tíì tọ́ pátápátá — ¦ Ba daidai ba ne sosai — ¦ Ọ bụghị nke ziri ezi kpam kpam — ¦ E never correct well —
+Your result ¦ Àbájáde rẹ ¦ Sakamakonka ¦ Nsonaazụ gị ¦ Your result
+Time is up — submitting your answers. ¦ Àkókò ti parí — à ń fi àwọn ìdáhùn rẹ ránṣẹ́. ¦ Lokaci ya ƙare — ana miƙa amsoshinka. ¦ Oge agwụla — a na-eziga azịza gị. ¦ Time don finish — we dey submit your answers.
+Practice anytime ¦ Ṣe àṣetúnṣe nígbàkigbà ¦ Yi atisaye a kowane lokaci ¦ Mee omume oge ọ bụla ¦ Practice anytime
+Exam practice ¦ Àṣetúnṣe ìdánwò ¦ Atisayen jarrabawa ¦ Omume ule ¦ Exam practice
+Your study helper ¦ Olùrànlọ́wọ́ ìkẹ́kọ̀ọ́ rẹ ¦ Mataimakin karatunka ¦ Onye enyemaka ọmụmụ gị ¦ Your study helper
+Textbooks ¦ Àwọn ìwé ẹ̀kọ́ ¦ Littattafai ¦ Akwụkwọ ọmụmụ ¦ Textbooks
+Pending admin review ¦ Ń dúró fún àyẹ̀wò alákòóso ¦ Yana jiran duba na admin ¦ Na-echere nyocha onye isi ¦ Dey wait for admin review
+# --- AI lecturer sessions ---
+AI Lecturer — thinking… ¦ AI olùkọ́ — ń ronú… ¦ Malamin AI — yana tunani… ¦ Onye nkụzi AI — na-eche echiche… ¦ AI Lecturer — dey think…
+AI Lecturer — explaining ¦ AI olùkọ́ — ń ṣàlàyé ¦ Malamin AI — yana bayani ¦ Onye nkụzi AI — na-akọwa ¦ AI Lecturer — dey explain
+AI Lecturer — answering your question ¦ AI olùkọ́ — ń dáhùn ìbéèrè rẹ ¦ Malamin AI — yana amsa tambayarka ¦ Onye nkụzi AI — na-aza ajụjụ gị ¦ AI Lecturer — dey answer your question
+AI Lecturer — checking your understanding ¦ AI olùkọ́ — ń ṣàyẹ̀wò òye rẹ ¦ Malamin AI — yana duba fahimtarka ¦ Onye nkụzi AI — na-enyocha nghọta gị ¦ AI Lecturer — dey check if you understand
+AI Lecturer — well done! ¦ AI olùkọ́ — ṣé o ṣe é dáadáa! ¦ Malamin AI — ka yi kyau! ¦ Onye nkụzi AI — ọ dị mma! ¦ AI Lecturer — well done!
+AI Lecturer — writing on the board ¦ AI olùkọ́ — ń kọ̀wé lórí pátákó ¦ Malamin AI — yana rubutu a allo ¦ Onye nkụzi AI — na-ede na bọọdụ ¦ AI Lecturer — dey write for board
+AI Lecturer — live session ¦ AI olùkọ́ — ìpàdé àyè ¦ Malamin AI — zaman kai tsaye ¦ Onye nkụzi AI — nzukọ ndụ ¦ AI Lecturer — live session
+AI Lecturer — video avatar connected ¦ AI olùkọ́ — avatar fídíò ti sopọ̀ ¦ Malamin AI — avatar na bidiyo ya haɗu ¦ Onye nkụzi AI — avatar vidiyo jikọtara ¦ AI Lecturer — video avatar don connect
+AI Lecturer — video avatar available ¦ AI olùkọ́ — avatar fídíò wà ¦ Malamin AI — avatar na bidiyo yana nan ¦ Onye nkụzi AI — avatar vidiyo dị ¦ AI Lecturer — video avatar dey
+🎥 Connect video avatar ¦ 🎥 Sopọ̀ avatar fídíò ¦ 🎥 Haɗa avatar na bidiyo ¦ 🎥 Jikọọ avatar vidiyo ¦ 🎥 Connect video avatar
+Connecting video avatar… ¦ À ń so avatar fídíò pọ̀… ¦ Ana haɗa avatar na bidiyo… ¦ Na-ejikọ avatar vidiyo… ¦ Dey connect video avatar…
+Connecting… ¦ À ń sopọ̀… ¦ Ana haɗawa… ¦ Na-ejikọ… ¦ Dey connect…
+Wait for the AI Lecturer to start… ¦ Dúró kí AI olùkọ́ bẹ̀rẹ̀… ¦ Jira malamin AI ya fara… ¦ Chere ka onye nkụzi AI malite… ¦ Wait make AI Lecturer start…
+Listening… ¦ Ń gbọ́… ¦ Ana saurara… ¦ Na-ege ntị… ¦ Dey listen…
+🛑 Listening… tap to cancel ¦ 🛑 Ń gbọ́… tẹ láti fagilé ¦ 🛑 Ana saurara… danna don soke ¦ 🛑 Na-ege ntị… pịa ka kagbuo ¦ 🛑 Dey listen… tap to cancel
+🛑 Listening… tap to stop ¦ 🛑 Ń gbọ́… tẹ láti dúró ¦ 🛑 Ana saurara… danna don tsayawa ¦ 🛑 Na-ege ntị… pịa ka kwụsị ¦ 🛑 Dey listen… tap to stop
+🎤 Ask by voice ¦ 🎤 Béèrè pẹ̀lú ohùn ¦ 🎤 Yi tambaya da murya ¦ 🎤 Jụọ site n'olu ¦ 🎤 Ask by voice
+🎤 Answer by voice ¦ 🎤 Dáhùn pẹ̀lú ohùn ¦ 🎤 Amsa da murya ¦ 🎤 Zaa site n'olu ¦ 🎤 Answer by voice
+🔊 Listen ¦ 🔊 Gbọ́ ¦ 🔊 Saurara ¦ 🔊 Gee ntị ¦ 🔊 Listen
+⏹ Stop ¦ ⏹ Dúró ¦ ⏹ Tsaya ¦ ⏹ Kwụsị ¦ ⏹ Stop
+🔊 Read aloud ¦ 🔊 Kà á sókè ¦ 🔊 Karanta da ƙarfi ¦ 🔊 Gụọ ya n'olu dara ụda ¦ 🔊 Read am loud
+Stop ¦ Dúró ¦ Tsaya ¦ Kwụsị ¦ Stop
+Pause ¦ Dúró díẹ̀ ¦ Dakata ¦ Kwụsị nwa oge ¦ Pause
+▶ Play AI narration ¦ ▶ Ṣe ìsọ́rọ̀ AI ¦ ▶ Kunna labarin AI ¦ ▶ Kpọọ ịkọ AI ¦ ▶ Play AI narration
+Ask ¦ Béèrè ¦ Tambaya ¦ Jụọ ¦ Ask
+Your topic or question ¦ Kókó ọ̀rọ̀ tàbí ìbéèrè rẹ ¦ Batunka ko tambayarka ¦ Isiokwu ma ọ bụ ajụjụ gị ¦ Your topic or question
+Voice needs Chrome or Edge on this device — type instead. ¦ Ohùn nílò Chrome tàbí Edge lórí ẹ̀rọ yìí — kọ̀wé dípò rẹ̀. ¦ Murya na buƙatar Chrome ko Edge a wannan na'ura — rubuta maimakon haka. ¦ Olu chọrọ Chrome ma ọ bụ Edge na ngwaọrụ a — dee kama. ¦ Voice need Chrome or Edge for this device — type instead.
+Voice answers need Chrome or Edge on this device — type instead. ¦ Ìdáhùn ohùn nílò Chrome tàbí Edge lórí ẹ̀rọ yìí — kọ̀wé dípò rẹ̀. ¦ Amsoshin murya na buƙatar Chrome ko Edge a wannan na'ura — rubuta maimakon haka. ¦ Azịza olu chọrọ Chrome ma ọ bụ Edge na ngwaọrụ a — dee kama. ¦ Voice answers need Chrome or Edge for this device — type instead.
+Allow the microphone to ask by voice. ¦ Gba maikirofóònù láàyè láti béèrè pẹ̀lú ohùn. ¦ Ba da damar makirufo don yin tambaya da murya. ¦ Kwe ka igwe okwu rụọ ọrụ iji jụọ site n'olu. ¦ Allow microphone make you ask by voice.
+Could not hear that — try again. ¦ A kò gbọ́ ọ — gbìyànjú lẹ́ẹ̀kan sí i. ¦ Ban ji hakan ba — sake gwadawa. ¦ Anụghị m nke ahụ — nwaa ọzọ. ¦ We no hear am — try again.
+This browser cannot listen in that language, so it is listening for English. ¦ Ẹ̀rọ aṣàwákiri yìí kò lè gbọ́ èdè náà, nítorí náà ó ń gbọ́ Gẹ̀ẹ́sì. ¦ Wannan mai bincike ba ya iya saurare a wannan harshe, don haka yana sauraren Turanci. ¦ Ihe nchọgharị a enweghị ike ige ntị n'asụsụ ahụ, ya mere ọ na-ege ntị n'Bekee. ¦ This browser no fit listen for that language, so e dey listen for English.
+No voice is available on this device for this language, so the answer is shown in writing. ¦ Kò sí ohùn fún èdè yìí lórí ẹ̀rọ yìí, nítorí náà a fi ìdáhùn hàn ní kíkọ. ¦ Babu murya ga wannan harshe a wannan na'ura, don haka an nuna amsa a rubuce. ¦ Enweghị olu maka asụsụ a na ngwaọrụ a, ya mere a na-egosi azịza n'ede. ¦ No voice for this language for this device, so we show the answer for writing.
+Copy ¦ Dà á kọ ¦ Kwafa ¦ Depụta ¦ Copy
+# --- practicals / lab ---
+Practicals ¦ Àwọn ìdánwò ìṣe ¦ Gwaje-gwajen aiki ¦ Ọrụ nyocha ¦ Practicals
+Practical ready ¦ Ìdánwò ìṣe ti ṣetán ¦ Gwajin aiki ya shirya ¦ Ọrụ nyocha dị njikere ¦ Practical don ready
+Generate practical ¦ Ṣẹ̀dá ìdánwò ìṣe ¦ Ƙirƙiri gwajin aiki ¦ Mepụta ọrụ nyocha ¦ Generate practical
+Practical complete — nice work! ¦ Ìdánwò ìṣe ti parí — iṣẹ́ rere! ¦ Gwajin aiki ya cika — aiki mai kyau! ¦ Ọrụ nyocha emechaala — ọrụ ọma! ¦ Practical don finish — nice work!
+Step ¦ Ìgbésẹ̀ ¦ Mataki ¦ Nzọụkwụ ¦ Step
+Expected result: ¦ Àbájáde tí a retí: ¦ Sakamakon da ake tsammani: ¦ Nsonaazụ a tụrụ anya: ¦ Result wey we expect:
+# --- e-library, groups ---
+📖 e-Library ¦ 📖 Ibi ìkàwé orí íńtánẹ́ẹ̀tì ¦ 📖 Ɗakin karatu na intanet ¦ 📖 Ụlọ akwụkwọ ịntanetị ¦ 📖 e-Library
+Textbook ¦ Ìwé ẹ̀kọ́ ¦ Littafi ¦ Akwụkwọ ọmụmụ ¦ Textbook
+Notes ¦ Àwọn àkọsílẹ̀ ¦ Bayanai ¦ Ndetu ¦ Notes
+All types ¦ Gbogbo irú ¦ Duk nau'i ¦ Ụdị niile ¦ All types
+Nothing matches that search. ¦ Kò sí ohun tó bá àwárí náà mu. ¦ Babu abin da ya dace da wannan bincike. ¦ Ọ dịghị ihe dabara nchọcha ahụ. ¦ Nothing match that search.
+Every course ¦ Gbogbo kóòsì ¦ Kowane kwas ¦ Usoro ọmụmụ niile ¦ Every course
++ Create new group ¦ + Ṣẹ̀dá ẹgbẹ́ tuntun ¦ + Ƙirƙiri sabuwar ƙungiya ¦ + Mepụta otu ọhụrụ ¦ + Create new group
+No groups yet — start one. ¦ Kò sí ẹgbẹ́ síbẹ̀ — bẹ̀rẹ̀ ọ̀kan. ¦ Babu ƙungiya tukuna — fara ɗaya. ¦ Enwebeghị otu — malite otu. ¦ No group yet — start one.
+Study group ¦ Ẹgbẹ́ ìkẹ́kọ̀ọ́ ¦ Ƙungiyar karatu ¦ Otu ọmụmụ ¦ Study group
+← Back to groups ¦ ← Padà sí àwọn ẹgbẹ́ ¦ ← Koma zuwa ƙungiyoyi ¦ ← Laghachi na otu ¦ ← Back to groups
+No messages yet — say hello. ¦ Kò sí ìfiránṣẹ́ síbẹ̀ — kí wọn. ¦ Babu saƙonni tukuna — gaisa. ¦ Enwebeghị ozi — kele ha. ¦ No message yet — say hello.
+Type a message… ¦ Kọ ìfiránṣẹ́… ¦ Rubuta saƙo… ¦ Dee ozi… ¦ Type message…
+Peer discussion spaces for your courses — no scores, no leaderboard. ¦ Àwọn ibi ìjíròrò láàrín ọ̀rẹ́ fún àwọn kóòsì rẹ — kò sí ìpín, kò sí pẹpẹ aṣíwájú. ¦ Wuraren tattaunawar abokai don kwasa-kwasanka — babu maki, babu allon jagorori. ¦ Ebe mkparịta ụka ndị ọgbọ maka usoro ọmụmụ gị — enweghị akara, enweghị tebụl ndị na-eduga. ¦ Space wey friends fit discuss your courses — no score, no leaderboard.
+# --- wallet, subscription, payment ---
+Coin balance ¦ Ìyókù owó ẹyọ ¦ Ragowar tsabar kuɗi ¦ Ego mkpụrụ fọdụrụ ¦ Coin balance
+Buy coins ¦ Ra owó ẹyọ ¦ Sayi tsabar kuɗi ¦ Zụta mkpụrụ ego ¦ Buy coins
+Buy ¦ Ra ¦ Saya ¦ Zụta ¦ Buy
+History ¦ Ìtàn ¦ Tarihi ¦ Akụkọ ihe mere ¦ History
+Top up live AI Lecturer time ¦ Fi ìgbà AI olùkọ́ àyè kún ¦ Ƙara lokacin malamin AI kai tsaye ¦ Tinye oge onye nkụzi AI ndụ ¦ Top up live AI Lecturer time
+Choose payment method ¦ Yan ọ̀nà ìsanwó ¦ Zaɓi hanyar biyan kuɗi ¦ Họrọ ụzọ ịkwụ ụgwọ ¦ Choose how you wan pay
+🏦 Bank transfer ¦ 🏦 Ìgbéwọ́ bánkì ¦ 🏦 Canja wurin banki ¦ 🏦 Ibufe ego ụlọ akụ ¦ 🏦 Bank transfer
+Pay with Flutterwave ¦ Sanwó pẹ̀lú Flutterwave ¦ Biya da Flutterwave ¦ Kwụọ ụgwọ site na Flutterwave ¦ Pay with Flutterwave
+Pay with Paystack ¦ Sanwó pẹ̀lú Paystack ¦ Biya da Paystack ¦ Kwụọ ụgwọ site na Paystack ¦ Pay with Paystack
+Or pay directly ¦ Tàbí sanwó tààrà ¦ Ko ka biya kai tsaye ¦ Ma ọ bụ kwụọ ụgwọ ozugbo ¦ Or pay direct
+Pay by bank transfer ¦ Sanwó nípasẹ̀ ìgbéwọ́ bánkì ¦ Biya ta canja wurin banki ¦ Kwụọ ụgwọ site n'ibufe ego ụlọ akụ ¦ Pay by bank transfer
+Bank ¦ Bánkì ¦ Banki ¦ Ụlọ akụ ¦ Bank
+Account number ¦ Nọ́ńbà àkáǹtì ¦ Lambar asusu ¦ Nọmba akaụntụ ¦ Account number
+Account name ¦ Orúkọ àkáǹtì ¦ Sunan asusu ¦ Aha akaụntụ ¦ Account name
+Amount ¦ Iye owó ¦ Adadin kuɗi ¦ Ọnụ ego ¦ Amount
+📋 Copy account number ¦ 📋 Dà nọ́ńbà àkáǹtì kọ ¦ 📋 Kwafa lambar asusu ¦ 📋 Depụta nọmba akaụntụ ¦ 📋 Copy account number
+✅ I've made the transfer ¦ ✅ Mo ti ṣe ìgbéwọ́ náà ¦ ✅ Na yi canja wurin ¦ ✅ Eburu m ego ahụ ¦ ✅ I don make the transfer
+✅ Coins added! ¦ ✅ A ti fi àwọn owó ẹyọ kún un! ¦ ✅ An ƙara tsabar kuɗi! ¦ ✅ Etinyela mkpụrụ ego! ¦ ✅ Coins don add!
+✅ Payment successful! Your plan is now active. ¦ ✅ Ìsanwó ṣàṣeyọrí! Ètò rẹ ti ṣiṣẹ́ báyìí. ¦ ✅ An biya cikin nasara! Tsarinka ya fara aiki yanzu. ¦ ✅ Ịkwụ ụgwọ gara nke ọma! Atụmatụ gị na-arụ ọrụ ugbu a. ¦ ✅ Payment don work! Your plan don start.
+Payment confirmed — coins added! ¦ A ti jẹ́rìí ìsanwó — a ti fi àwọn owó ẹyọ kún un! ¦ An tabbatar da biyan kuɗi — an ƙara tsabar kuɗi! ¦ Ekwenyela ịkwụ ụgwọ — etinyela mkpụrụ ego! ¦ Payment don confirm — coins don add!
+Payment confirmed — subscription activated! ¦ A ti jẹ́rìí ìsanwó — ìforúkọsílẹ̀ ti ṣiṣẹ́! ¦ An tabbatar da biyan kuɗi — an kunna biyan kuɗin shiga! ¦ Ekwenyela ịkwụ ụgwọ — ndebanye aha ejirila! ¦ Payment don confirm — subscription don start!
+Monthly ¦ Oṣooṣù ¦ Wata-wata ¦ Kwa ọnwa ¦ Monthly
+Yearly ¦ Ọdọọdún ¦ Shekara-shekara ¦ Kwa afọ ¦ Yearly
+Monthly plan ¦ Ètò oṣooṣù ¦ Tsarin wata-wata ¦ Atụmatụ kwa ọnwa ¦ Monthly plan
+Yearly plan ¦ Ètò ọdọọdún ¦ Tsarin shekara-shekara ¦ Atụmatụ kwa afọ ¦ Yearly plan
+Subscribe monthly ¦ Forúkọ sílẹ̀ ní oṣooṣù ¦ Yi rajista wata-wata ¦ Debanye aha kwa ọnwa ¦ Subscribe monthly
+Subscribe yearly ¦ Forúkọ sílẹ̀ ní ọdọọdún ¦ Yi rajista shekara-shekara ¦ Debanye aha kwa afọ ¦ Subscribe yearly
+Active ¦ Ń ṣiṣẹ́ ¦ Yana aiki ¦ Na-arụ ọrụ ¦ Active
+No active plan ¦ Kò sí ètò tó ń ṣiṣẹ́ ¦ Babu tsarin da ke aiki ¦ Enweghị atụmatụ na-arụ ọrụ ¦ No active plan
+This needs an active subscription ¦ Èyí nílò ìforúkọsílẹ̀ tó ń ṣiṣẹ́ ¦ Wannan yana buƙatar biyan kuɗin shiga mai aiki ¦ Nke a chọrọ ndebanye aha na-arụ ọrụ ¦ This need active subscription
+See plans ¦ Wo àwọn ètò ¦ Duba tsare-tsare ¦ Lee atụmatụ ¦ See plans
+Free during testing ¦ Ọ̀fẹ́ nígbà ìdánwò ¦ Kyauta a lokacin gwaji ¦ N'efu n'oge nnwale ¦ Free during testing
+# --- fees (student) ---
+Your fees ¦ Àwọn owó rẹ ¦ Kuɗinka ¦ Ụgwọ gị ¦ Your fees
+Select all unpaid ¦ Yan gbogbo èyí tí a kò tíì san ¦ Zaɓi duk waɗanda ba a biya ba ¦ Họrọ ndị niile akwụghị ụgwọ ¦ Select all wey never pay
+Tick the fees you are paying ¦ Yan àwọn owó tí o ń san ¦ Yi alama kan kuɗin da kake biya ¦ Kaa akara na ụgwọ ị na-akwụ ¦ Tick the fees wey you dey pay
+Paid ✓ ¦ A ti san ✓ ¦ An biya ✓ ¦ Akwụọla ✓ ¦ Don pay ✓
+Part paid ¦ A ti san apá kan ¦ An biya wani ɓangare ¦ Akwụọla akụkụ ¦ Part pay
+Unpaid ¦ A kò tíì san ¦ Ba a biya ba ¦ Akwụghị ụgwọ ¦ Never pay
+Awaiting school ¦ Ń dúró de ilé-ẹ̀kọ́ ¦ Yana jiran makaranta ¦ Na-echere ụlọ akwụkwọ ¦ Dey wait for school
+🧾 Your payments ¦ 🧾 Àwọn ìsanwó rẹ ¦ 🧾 Biyan kuɗinka ¦ 🧾 Ụgwọ ị kwụrụ ¦ 🧾 Your payments
+➕ Other fees — choose from the list ¦ ➕ Àwọn owó míràn — yan láti inú àtòjọ ¦ ➕ Wasu kuɗaɗe — zaɓi daga jerin ¦ ➕ Ụgwọ ndị ọzọ — họrọ site na ndepụta ¦ ➕ Other fees — choose from the list
+🏦 The school's account ¦ 🏦 Àkáǹtì ilé-ẹ̀kọ́ ¦ 🏦 Asusun makaranta ¦ 🏦 Akaụntụ ụlọ akwụkwọ ¦ 🏦 The school account
+Tell the school you have paid ¦ Sọ fún ilé-ẹ̀kọ́ pé o ti sanwó ¦ Gaya wa makaranta ka biya ¦ Gwa ụlọ akwụkwọ na ị kwụọla ụgwọ ¦ Tell the school say you don pay
+✅ I have paid ¦ ✅ Mo ti sanwó ¦ ✅ Na biya ¦ ✅ Akwụọla m ụgwọ ¦ ✅ I don pay
+Amount (₦) ¦ Iye owó (₦) ¦ Adadin kuɗi (₦) ¦ Ọnụ ego (₦) ¦ Amount (₦)
+Receipt ¦ Ìwé ẹ̀rí ìsanwó ¦ Rasidi ¦ Akwụkwọ ọnụahịa ¦ Receipt
+Fee payment ¦ Ìsanwó owó ilé-ẹ̀kọ́ ¦ Biyan kuɗin makaranta ¦ Ịkwụ ụgwọ ụlọ akwụkwọ ¦ Fee payment
+# --- Digital ID / records ---
+Digital credentials ¦ Àwọn ẹ̀rí oníkẹ̀ẹ́ ¦ Takardun shaida na dijital ¦ Akwụkwọ ikike dijitalụ ¦ Digital credentials
+e-Library access ¦ Àyè sí ibi ìkàwé orí íńtánẹ́ẹ̀tì ¦ Samun damar ɗakin karatu na intanet ¦ Ịbanye na ụlọ akwụkwọ ịntanetị ¦ e-Library access
+Granted ¦ A ti fún ní ààyè ¦ An ba da dama ¦ Enyela ikike ¦ Don grant
+Request transcript ¦ Béèrè fún ìwé àmì-ẹ̀kọ́ ¦ Nemi takardar sakamako ¦ Rịọ akwụkwọ nsonaazụ ¦ Request transcript
+View transcript ¦ Wo ìwé àmì-ẹ̀kọ́ ¦ Duba takardar sakamako ¦ Lee akwụkwọ nsonaazụ ¦ View transcript
+Transcript requested ¦ A ti béèrè fún ìwé àmì-ẹ̀kọ́ ¦ An nemi takardar sakamako ¦ Arịọla akwụkwọ nsonaazụ ¦ Transcript don request
+Request clearance ¦ Béèrè fún ìfọ̀mọ́ ¦ Nemi yarda da kammala ¦ Rịọ nkwenye ịhapụ ¦ Request clearance
+Clearance requested ¦ A ti béèrè fún ìfọ̀mọ́ ¦ An nemi yarda ¦ Arịọla nkwenye ¦ Clearance don request
+Apply for hostel ¦ Béèrè fún ilé ibùgbé ¦ Nemi masauki ¦ Rịọ ụlọ obibi ¦ Apply for hostel
+Hostel application submitted ¦ A ti fi ìbéèrè ilé ibùgbé ránṣẹ́ ¦ An miƙa neman masauki ¦ Ezigala arịrịọ ụlọ obibi ¦ Hostel application don submit
+Any room/accommodation preference? (optional) ¦ Ṣé yàrá tàbí ibùgbé kan wà tí o fẹ́? (kò pọn dandan) ¦ Kana da fifiko game da ɗaki/masauki? (ba dole ba) ¦ Ị nwere ọchịchọ ụlọ/ebe obibi? (ọ bụghị ihe a ga-emerịrị) ¦ You get room/accommodation wey you like? (optional)
+Hostel ¦ Ilé ibùgbé ¦ Masauki ¦ Ụlọ obibi ¦ Hostel
+Approved ¦ A ti fọwọ́ sí i ¦ An amince ¦ Anabatala ya ¦ Don approve
+Not approved ¦ A kò fọwọ́ sí i ¦ Ba a amince ba ¦ Anabataghị ya ¦ No approve
+Cleared ¦ A ti fọ̀ ọ́ mọ́ ¦ An yarda ¦ Ekwenyela ya ¦ Don clear
+Denied ¦ A ti kọ̀ ọ́ ¦ An hana ¦ Ajụrụ ya ¦ Dem don deny
+Issued ¦ A ti fúnni ¦ An bayar ¦ Ekesala ya ¦ Don issue
+Request clearance ¦ Béèrè fún ìfọ̀mọ́ ¦ Nemi yarda da kammala ¦ Rịọ nkwenye ịhapụ ¦ Request clearance
+Your official transcript is ready. ¦ Ìwé àmì-ẹ̀kọ́ àṣẹ rẹ ti ṣetán. ¦ Takardar sakamakonka ta hukuma ta shirya. ¦ Akwụkwọ nsonaazụ gị gọọmentị dị njikere. ¦ Your official transcript don ready.
+Request your official transcript from the school. ¦ Béèrè fún ìwé àmì-ẹ̀kọ́ àṣẹ rẹ lọ́wọ́ ilé-ẹ̀kọ́. ¦ Nemi takardar sakamakonka ta hukuma daga makaranta. ¦ Rịọ akwụkwọ nsonaazụ gị gọọmentị site na ụlọ akwụkwọ. ¦ Request your official transcript from the school.
+Your request has been sent to the school. ¦ A ti fi ìbéèrè rẹ ránṣẹ́ sí ilé-ẹ̀kọ́. ¦ An aika neman ka zuwa makaranta. ¦ Ezigara arịrịọ gị n'ụlọ akwụkwọ. ¦ Dem don send your request go the school.
+You have been cleared by the school. ¦ Ilé-ẹ̀kọ́ ti fọ̀ ọ́ mọ́. ¦ Makaranta ta yarda da kai. ¦ Ụlọ akwụkwọ ekwenyela gị. ¦ School don clear you.
+Ask the school to clear you at the end of your studies or session. ¦ Béèrè lọ́wọ́ ilé-ẹ̀kọ́ láti fọ̀ ọ́ mọ́ ní ìparí ẹ̀kọ́ tàbí ọdún rẹ. ¦ Ka nemi makaranta ta yarda da kai a ƙarshen karatunka ko zangon karatu. ¦ Rịọ ụlọ akwụkwọ ka ọ kwenye gị n'ọgwụgwụ ọmụmụ gị ma ọ bụ afọ ọmụmụ. ¦ Ask school make dem clear you for end of your studies or session.
+You have not applied for school accommodation yet. ¦ O kò tíì béèrè fún ibùgbé ilé-ẹ̀kọ́. ¦ Ba ka nemi masaukin makaranta ba tukuna. ¦ Arịọbeghị ebe obibi ụlọ akwụkwọ. ¦ You never apply for school accommodation.
+Your application has been sent. The school will allocate a room. ¦ A ti fi ìbéèrè rẹ ránṣẹ́. Ilé-ẹ̀kọ́ yóò fún ọ ní yàrá. ¦ An aika neman ka. Makaranta za ta ba ka ɗaki. ¦ Ezigara arịrịọ gị. Ụlọ akwụkwọ ga-enye gị ụlọ. ¦ Dem don send your application. School go give you room.
+Your application was not approved. Ask the school for details. ¦ A kò fọwọ́ sí ìbéèrè rẹ. Béèrè lọ́wọ́ ilé-ẹ̀kọ́ fún àlàyé. ¦ Ba a amince da neman ka ba. Ka tambayi makaranta don cikakken bayani. ¦ Anabataghị arịrịọ gị. Jụọ ụlọ akwụkwọ maka nkọwa. ¦ Dem no approve your application. Ask school for details.
+Hostel / accommodation ¦ Ilé ibùgbé akẹ́kọ̀ọ́ ¦ Masauki / Gidan kwana ¦ Ụlọ obibi ụmụ akwụkwọ ¦ Hostel / accommodation
+Course registration ¦ Ìforúkọsílẹ̀ kóòsì ¦ Rajistar kwas ¦ Ndebanye aha usoro ọmụmụ ¦ Course registration
+Certificates & graduation records ¦ Àwọn ìwé-ẹ̀rí àti àkọsílẹ̀ ìgboyè ¦ Takardun shaida da bayanan kammala karatu ¦ Asambodo na ndekọ ọgụgụ isi ¦ Certificates & graduation records
+None issued yet ¦ A kò tíì fúnni ní kankan ¦ Ba a bayar da ko ɗaya ba tukuna ¦ Ekebeghị ọ bụla ¦ None don issue yet
+Formal results (published by lecturers) ¦ Àwọn àbájáde lọ́fíísì (àwọn olùkọ́ tẹ̀ jáde) ¦ Sakamakon hukuma (malamai suka wallafa) ¦ Nsonaazụ gọọmentị (ndị nkụzi bipụtara) ¦ Formal results (wey lecturers publish)
+Results ¦ Àwọn àbájáde ¦ Sakamako ¦ Nsonaazụ ¦ Results
+Remark ¦ Àkíyèsí ¦ Bayani ¦ Okwu ngosi ¦ Remark
+Published ¦ A ti tẹ̀ ẹ́ jáde ¦ An wallafa ¦ Ebipụtala ya ¦ Don publish
+Official Transcript ¦ Ìwé àmì-ẹ̀kọ́ àṣẹ ¦ Takardar sakamako ta hukuma ¦ Akwụkwọ nsonaazụ gọọmentị ¦ Official Transcript
+Print / Save as PDF ¦ Tẹ̀ jáde / Fi pamọ́ bí PDF ¦ Buga / Ajiye a matsayin PDF ¦ Bipụta / Chekwaa dị ka PDF ¦ Print / Save as PDF
+⬇ Save as picture ¦ ⬇ Fi pamọ́ bí àwòrán ¦ ⬇ Ajiye a matsayin hoto ¦ ⬇ Chekwaa dị ka foto ¦ ⬇ Save as picture
+Show this ID or its QR code when asked. ¦ Fi ìdánimọ̀ yìí tàbí kóòdù QR rẹ̀ hàn nígbà tí wọ́n bá béèrè. ¦ Nuna wannan shaida ko lambar QR ɗinta idan an nema. ¦ Gosi njirimara a ma ọ bụ koodu QR ya mgbe a jụrụ. ¦ Show this ID or im QR code when dem ask.
+Tap the photo to add or change it. ¦ Tẹ fọ́tò náà láti fi kún un tàbí yí i padà. ¦ Danna hoton don ƙara ko canza shi. ¦ Pịa foto ahụ iji tinye ma ọ bụ gbanwee ya. ¦ Tap the photo to add or change am.
+📸 Photo saved ¦ 📸 A ti fi fọ́tò pamọ́ ¦ 📸 An ajiye hoto ¦ 📸 Echekwara foto ¦ 📸 Photo don save
+Member since ¦ Ọmọ ẹgbẹ́ láti ¦ Memba tun daga ¦ Onye otu kemgbe ¦ Member since
+Matric number ¦ Nọ́ńbà ìforúkọsílẹ̀ ¦ Lambar rajista ¦ Nọmba ndebanye aha ¦ Matric number
+Matric No. ¦ Nọ́ńbà ìforúkọsílẹ̀ ¦ Lambar rajista ¦ Nọmba ndebanye ¦ Matric No.
+Staff ID ¦ Ìdánimọ̀ òṣìṣẹ́ ¦ Lambar ma'aikaci ¦ Njirimara onye ọrụ ¦ Staff ID
+Position ¦ Ipò ¦ Mukami ¦ Ọnọdụ ¦ Position
+Year admitted ¦ Ọdún tí a gbà wọlé ¦ Shekarar shigarwa ¦ Afọ e nabatara ¦ Year admitted
+On record ¦ Nínú àkọsílẹ̀ ¦ A rikodi ¦ Na ndekọ ¦ On record

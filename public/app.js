@@ -252,6 +252,7 @@
   // ---------- Auth screen ----------
   const authScreen = document.getElementById('auth-screen');
   const appScreen = document.getElementById('app-screen');
+  if (window.LZI18N) LZI18N.mountPicker(authScreen);
 
   // The sign-in screens are a stack of panels (#lg-*), one visible at a time. Any element
   // inside #auth-screen with a data-go="panel-id" attribute switches to that panel.
@@ -391,6 +392,7 @@
     state.refreshToken = refreshToken || null;
     state.user = user;
     saveSession(token, user, refreshToken);
+    if (window.LZI18N) await LZI18N.afterLogin(user, api);
     authScreen.style.display = 'none';
     appScreen.classList.add('active');
     await loadHeaderContext();
@@ -412,6 +414,7 @@
       // details, etc.) never reaches an already-logged-in browser until they log out and
       // back in, since state.user was only ever set once at login time.
       if (user) { state.user = user; saveSession(state.token, user); }
+      if (user && window.LZI18N) LZI18N.sync(user);
       state.school = school;
       state.department = department;
     } catch { state.school = null; state.department = null; }
@@ -822,6 +825,9 @@
   function navigate(screen, params = {}) {
     aiRecStop();
     window.speechSynthesis && window.speechSynthesis.cancel();
+    if (window.LZI18N) LZI18N.stopSpeaking();
+    if (speechCtrl && speechCtrl.stop) { try { speechCtrl.stop(); } catch { /* already stopped */ } }
+    window.dispatchEvent(new Event('lzleave'));
     if (examTimerHandle) { clearInterval(examTimerHandle); examTimerHandle = null; }
     if (simliAvatarClient) { try { simliAvatarClient.close(); } catch { /* already closed */ } simliAvatarClient = null; }
     if (speechCtrl) {
@@ -1251,11 +1257,33 @@
 
   // ================= AI LECTURER (live interactive session) =================
 
+  // For languages the device has no voice for (most have none for Yoruba, Hausa or Igbo) the server makes the voice.
+  function speakServer(text, avatarEl, onDone) {
+    const ctrl = { mode: 'browser', ringEl: avatarEl, text, onDone, stop: null };
+    speechCtrl = ctrl;
+    api('/ai-teacher/tts', { method: 'POST', body: { text } }).then(({ data, sampleRate }) => {
+      if (speechCtrl !== ctrl) return;   // paused or left meanwhile
+      if (avatarEl) avatarEl.classList.add('speaking');
+      const h = window.LZI18N.playPcm(data, sampleRate);
+      ctrl.stop = h.stop;
+      h.done.then(() => { if (avatarEl) avatarEl.classList.remove('speaking'); if (speechCtrl === ctrl) speechCtrl = null; if (onDone) onDone(); });
+    }).catch((err) => {
+      if (speechCtrl === ctrl) speechCtrl = null;
+      if (err && (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED')) renderUpgradePrompt(err.message);
+      if (onDone) onDone();
+    });
+  }
+
   function speak(text, avatarEl, onDone) {
+    const L = window.LZI18N;
+    const lang = L ? L.prefs.ai : 'en';
+    const voice = L ? L.pickVoice(lang) : null;
+    if (L && lang !== 'en' && lang !== 'pcm' && !voice) return speakServer(text, avatarEl, onDone);
     if (!window.speechSynthesis) { if (onDone) onDone(); return; }
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 0.98;
+    if (voice) { utter.voice = voice; utter.lang = voice.lang; }
     if (avatarEl) utter.onstart = () => avatarEl.classList.add('speaking');
     utter.onend = () => { if (avatarEl) avatarEl.classList.remove('speaking'); speechCtrl = null; if (onDone) onDone(); };
     utter.onerror = () => { if (avatarEl) avatarEl.classList.remove('speaking'); speechCtrl = null; };
@@ -1396,6 +1424,7 @@
       if (speechCtrl.doneTimeout) clearTimeout(speechCtrl.doneTimeout);
     }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (speechCtrl && speechCtrl.stop) { try { speechCtrl.stop(); } catch { /* already stopped */ } }
     speechCtrl = null;
     if (!simliAvatarClient) return speak(text, ringEl, onDone);
     try {
@@ -1428,7 +1457,10 @@
     if (ctrl.mode === 'avatar') {
       if (ctrl.timer) clearInterval(ctrl.timer);
       if (ctrl.doneTimeout) clearTimeout(ctrl.doneTimeout);
-    } else if (ctrl.mode === 'browser' && window.speechSynthesis) window.speechSynthesis.cancel();
+    } else if (ctrl.mode === 'browser') {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (ctrl.stop) { try { ctrl.stop(); } catch { /* already stopped */ } }
+    }
     if (ctrl.ringEl) ctrl.ringEl.classList.remove('speaking');
     speechCtrl = null;
     return ctrl;
@@ -1464,7 +1496,7 @@
       return null;
     }
     const recognizer = new SR();
-    recognizer.lang = 'en-US';
+    recognizer.lang = window.LZI18N ? LZI18N.voiceTag() : 'en-US';
     recognizer.interimResults = false;
     recognizer.maxAlternatives = 1;
     let heardSomething = false;
@@ -1486,7 +1518,8 @@
       if (transcript) onTranscript(transcript);
       else if (onCancelled) onCancelled();
     };
-    recognizer.onerror = () => {
+    recognizer.onerror = (e) => {
+      if (e && e.error === 'language-not-supported') { toast('This browser cannot listen in that language yet — switch the voice language to English, or type instead.'); return; }
       if (!heardSomething) toast("Didn't catch that — try again, or type instead.");
     };
     recognizer.onend = () => {
@@ -2287,6 +2320,11 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-label">Language</div>
+        ${window.LZI18N ? LZI18N.settingsHtml() : ''}
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-label">Notifications</div>
         <div class="card">
           ${settingsToggleRowHtml({ icon: '🔔', label: 'Notifications', sub: u.notificationsMuted ? 'Muted -- you won\'t get new alerts' : 'You\'ll get new alerts as they happen', key: 'notificationsMuted', on: !u.notificationsMuted })}
@@ -2322,6 +2360,7 @@
       </div>
     `;
 
+    if (window.LZI18N) LZI18N.wireSettings(view, { api, toast });
     view.querySelectorAll('[data-toggle-key]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const key = btn.dataset.toggleKey;
@@ -3281,6 +3320,7 @@
   // Read-only records of lab activity -- students get lab access straight from their
   // subscription now, so there's nothing here for admin to approve/reject any more.
   async function renderResearchAssistant() {
+    const L = window.LZI18N;
     view.innerHTML = `
       <div class="page-head"><h1>AI Research Assistant</h1></div>
       <p class="muted" style="margin-bottom:18px;">Ask it to explain a concept, help structure a project or lecture, or suggest what to search for. It can't browse the web, so it won't invent fake citations — always verify sources with your ${state.user.role === 'STUDENT' ? 'lecturer or library' : 'own research'}.</p>
@@ -3289,33 +3329,73 @@
           <label>Your topic or question</label>
           <textarea id="research-input" placeholder="e.g. How should I structure a project comparing two teaching methods for primary science?"></textarea>
         </div>
-        <button class="btn btn-primary" id="research-ask-btn">Ask</button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-primary" id="research-ask-btn">Ask</button>
+          <button class="btn btn-ghost" id="research-mic-btn" type="button">🎤 Ask by voice</button>
+          <span class="meta" id="research-voice-note" aria-live="polite"></span>
+        </div>
         <div id="research-answer-wrap" hidden style="margin-top:18px;">
-          <div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:6px;">
+            <button class="btn btn-ghost btn-sm" id="research-listen-btn" title="Read the answer aloud">🔊 Listen</button>
             <button class="btn btn-ghost btn-sm" id="research-copy-btn" title="Copy answer">📋 Copy</button>
           </div>
-          <div id="research-answer" style="white-space:pre-wrap; line-height:1.7;"></div>
+          <div id="research-answer" data-i18n-skip style="white-space:pre-wrap; line-height:1.7;"></div>
         </div>
       </div>
     `;
-    let lastAnswer = '';
-    document.getElementById('research-copy-btn').addEventListener('click', () => { if (lastAnswer) copyToClipboard(lastAnswer); });
-    document.getElementById('research-ask-btn').addEventListener('click', async () => {
-      const question = document.getElementById('research-input').value.trim();
+    let lastAnswer = '', lastLang = 'en', listening = null, speaking = false;
+    const $ = (id) => document.getElementById(id);
+    const tr = (m) => (L ? L.t(m) : m);
+    const note = (msg) => { const n = $('research-voice-note'); if (n) n.textContent = msg ? tr(msg) : ''; };
+    const stopAll = () => { if (listening) { listening.stop(); listening = null; } if (L) L.stopSpeaking(); speaking = false; const b = $('research-listen-btn'); if (b) b.textContent = tr('🔊 Listen'); };
+    window.addEventListener('lzleave', stopAll, { once: true });
+
+    async function readAloud(text, lang) {
+      if (!L) return;
+      speaking = true; $('research-listen-btn').textContent = tr('⏹ Stop');
+      const how = await L.speak(text, { lang, api });
+      speaking = false; const b = $('research-listen-btn'); if (b) b.textContent = tr('🔊 Listen');
+      if (how === 'none') note('No voice is available on this device for this language, so the answer is shown in writing.');
+    }
+
+    async function ask(byVoice) {
+      const question = $('research-input').value.trim();
       if (!question) return;
-      const wrap = document.getElementById('research-answer-wrap');
-      const answerBox = document.getElementById('research-answer');
+      stopAll();
+      const wrap = $('research-answer-wrap');
+      const answerBox = $('research-answer');
       wrap.hidden = false;
-      answerBox.textContent = 'Thinking…';
+      answerBox.textContent = tr('Thinking…');
       try {
-        const { answer } = await api('/research-assistant/ask', { method: 'POST', body: { question } });
+        // a question asked out loud is answered in the voice language, in short spoken sentences
+        const body = { question };
+        if (byVoice && L) { body.spoken = true; body.language = L.prefs.voice; }
+        const { answer, language } = await api('/research-assistant/ask', { method: 'POST', body });
         answerBox.textContent = answer;
-        lastAnswer = answer;
+        lastAnswer = answer; lastLang = language || (L ? L.prefs.ai : 'en');
+        if (byVoice) readAloud(answer, lastLang);
       } catch (err) {
         if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') return renderUpgradePrompt(err.message);
         answerBox.innerHTML = `<span style="color:var(--danger);">${esc(aiErrorMessage(err))}</span>`;
         lastAnswer = '';
       }
+    }
+
+    $('research-copy-btn').addEventListener('click', () => { if (lastAnswer) copyToClipboard(lastAnswer); });
+    $('research-listen-btn').addEventListener('click', () => { if (speaking) return stopAll(); if (lastAnswer) readAloud(lastAnswer, lastLang); });
+    $('research-ask-btn').addEventListener('click', () => ask(false));
+    $('research-mic-btn').addEventListener('click', () => {
+      if (!L) return;
+      const btn = $('research-mic-btn');
+      if (listening) { stopAll(); note(''); btn.textContent = tr('🎤 Ask by voice'); return; }
+      stopAll();
+      listening = L.listen({
+        onStart: () => { btn.textContent = tr('🛑 Listening… tap to stop'); note('Listening…'); },
+        onText: (text) => { $('research-input').value = text; },
+        onFallback: () => note('This browser cannot listen in that language, so it is listening for English.'),
+        onError: (kind) => { note(kind === 'denied' ? 'Allow the microphone to ask by voice.' : kind === 'unsupported' ? 'Voice needs Chrome or Edge on this device — type instead.' : 'Could not hear that — try again.'); btn.textContent = tr('🎤 Ask by voice'); listening = null; },
+        onEnd: (heard, text) => { btn.textContent = tr('🎤 Ask by voice'); listening = null; if (heard && text) { note(''); ask(true); } else note('Could not hear that — try again.'); },
+      });
     });
   }
 

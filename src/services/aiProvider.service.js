@@ -178,6 +178,8 @@ async function askForJson(systemPrompt, userPrompt) {
 // Sends a prompt pair and returns the model's raw text reply -- for open-ended
 // answers (e.g. the research assistant) where forcing a JSON shape would be wrong.
 async function askForText(systemPrompt, userPrompt) {
+  // test mode: reports which language the prompt asked for, so the language plumbing can be checked without a real model
+  if (fakeAi()) { const m = String(systemPrompt).match(/must be written in ([A-Za-z ]+) \(/); return 'Fake answer' + (m ? ' [' + m[1] + ']' : ' [English]') + (/read aloud/.test(systemPrompt) ? ' [spoken]' : ''); }
   const provider = requireProvider();
   try {
     return provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: false }) : await callAnthropic(systemPrompt, userPrompt);

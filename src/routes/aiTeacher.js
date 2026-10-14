@@ -33,7 +33,7 @@ async function startSession(req, res, { courseId, individualCourseId, courseTitl
   if (!topic || !topic.trim()) return res.status(400).json({ error: 'Tell the AI Lecturer what topic to cover.' });
 
   try {
-    const plan = await aiTeacher.generateLessonPlan({ courseTitle, topic });
+    const plan = await aiTeacher.generateLessonPlan({ courseTitle, topic, language: req.user.aiLanguage });
     const session = await prisma.aiTeacherSession.create({
       data: {
         studentId: req.user.id,
@@ -183,6 +183,7 @@ router.post('/ai-teacher/sessions/:id/interrupt', requireAuth, requireRole('STUD
       topic: session.topic,
       sectionTitle: section.title,
       question,
+      language: req.user.aiLanguage,
     });
     await prisma.aiTeacherTurn.createMany({
       data: [
@@ -206,7 +207,7 @@ router.post('/ai-teacher/sessions/:id/check-answer', requireAuth, requireRole('S
   if (!section.checkQuestion) return res.status(400).json({ error: 'This section has no check question.' });
 
   try {
-    const result = await aiTeacher.gradeCheckAnswer({ checkQuestion: section.checkQuestion, studentAnswer: answer });
+    const result = await aiTeacher.gradeCheckAnswer({ checkQuestion: section.checkQuestion, studentAnswer: answer, language: req.user.aiLanguage });
     await prisma.aiTeacherTurn.createMany({
       data: [
         { sessionId: session.id, role: 'STUDENT', type: 'CHECK_ANSWER', content: answer, sectionIdx: session.sectionIdx },

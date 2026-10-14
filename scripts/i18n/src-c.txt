@@ -1,0 +1,177 @@
+# --- patterns (the changing part is {0}, {1}) ---
+{n} course ¦ kóòsì {n} ¦ kwas {n} ¦ usoro ọmụmụ {n} ¦ {n} course
+{n} courses ¦ kóòsì {n} ¦ kwasa-kwasai {n} ¦ usoro ọmụmụ {n} ¦ {n} courses
+{n} course registered ¦ kóòsì {n} ni a ti forúkọ sílẹ̀ ¦ an yi rajistar kwas {n} ¦ edebanyela usoro ọmụmụ {n} ¦ {n} course don register
+{n} courses registered ¦ kóòsì {n} ni a ti forúkọ sílẹ̀ ¦ an yi rajistar kwasa-kwasai {n} ¦ edebanyela usoro ọmụmụ {n} ¦ {n} courses don register
+{n} enrolled ¦ {n} ti forúkọ sílẹ̀ ¦ {n} sun yi rajista ¦ {n} edebanyela aha ¦ {n} don enroll
+{n} student ¦ akẹ́kọ̀ọ́ {n} ¦ ɗalibi {n} ¦ nwa akwụkwọ {n} ¦ {n} student
+{n} students ¦ àwọn akẹ́kọ̀ọ́ {n} ¦ ɗalibai {n} ¦ ụmụ akwụkwọ {n} ¦ {n} students
+{n} minutes ¦ ìṣẹ́jú {n} ¦ mintuna {n} ¦ nkeji {n} ¦ {n} minutes
+{n} minute ¦ ìṣẹ́jú {n} ¦ minti {n} ¦ nkeji {n} ¦ {n} minute
+{n} min ¦ ìṣẹ́jú {n} ¦ mintuna {n} ¦ nkeji {n} ¦ {n} min
+{n} questions ¦ àwọn ìbéèrè {n} ¦ tambayoyi {n} ¦ ajụjụ {n} ¦ {n} questions
+{n} question ¦ ìbéèrè {n} ¦ tambaya {n} ¦ ajụjụ {n} ¦ {n} question
+{n} objective ¦ ìbéèrè àṣàyàn {n} ¦ zaɓi {n} ¦ ajụjụ nhọrọ {n} ¦ {n} objective
+{n} theory ¦ ìbéèrè àkọsílẹ̀ {n} ¦ rubutu {n} ¦ ajụjụ edemede {n} ¦ {n} theory
+{n} marks ¦ àmì {n} ¦ maki {n} ¦ akara {n} ¦ {n} marks
+{0} · auto-graded on submit ¦ {0} · a óò ṣe àmì rẹ̀ fúnrarẹ̀ nígbà tí o bá fi ránṣẹ́ ¦ {0} · ana duba kai tsaye idan an miƙa ¦ {0} · a ga-enyocha ya n'onwe ya mgbe i nyefere ¦ {0} · e go mark am by itself when you submit
+{0} · write full answers; compare them with the model answer afterwards ¦ {0} · kọ ìdáhùn kíkún; fi wọ́n wé ìdáhùn àwòṣe lẹ́yìn náà ¦ {0} · rubuta cikakkun amsoshi; kwatanta su da amsar samfuri daga baya ¦ {0} · dee azịza zuru ezu; tụnyere ha na azịza ndebe mgbe emechara ¦ {0} · write full answers; compare dem with the model answer after
+Lecture {n} ¦ Ẹ̀kọ́ {n} ¦ Laccoci {n} ¦ Ihe ọmụmụ {n} ¦ Lecture {n}
+Question {n} of {m} ¦ Ìbéèrè {n} nínú {m} ¦ Tambaya {n} cikin {m} ¦ Ajụjụ {n} n'ime {m} ¦ Question {n} of {m}
+Active until {0} ¦ Ń ṣiṣẹ́ títí di {0} ¦ Yana aiki har zuwa {0} ¦ Na-arụ ọrụ ruo {0} ¦ Active until {0}
+Course {0} ¦ Kóòsì {0} ¦ Kwas {0} ¦ Usoro ọmụmụ {0} ¦ Course {0}
+{0} ago ¦ {0} sẹ́yìn ¦ {0} da suka wuce ¦ {0} gara aga ¦ {0} ago
+Class attendance — {0} ¦ Ìkópa kíláàsì — {0} ¦ Halartar aji — {0} ¦ Ọbịbịa klaasị — {0} ¦ Class attendance — {0}
+Preparing your lecture on "{0}" ¦ À ń pèsè ẹ̀kọ́ rẹ lórí "{0}" ¦ Ana shirya laccarka kan "{0}" ¦ A na-akwado ihe ọmụmụ gị gbasara "{0}" ¦ We dey prepare your lecture on "{0}"
+Delete “{0}” from the e-Library? ¦ Ṣé kí a pa “{0}” rẹ́ kúrò nínú ibi ìkàwé orí íńtánẹ́ẹ̀tì? ¦ Share “{0}” daga ɗakin karatu na intanet? ¦ Hichapụ “{0}” na ụlọ akwụkwọ ịntanetị? ¦ Delete “{0}” from the e-Library?
+Lectures uploaded to {0} ¦ Àwọn ẹ̀kọ́ tí a gbé sórí {0} ¦ Laccocin da aka ɗora zuwa {0} ¦ Ihe ọmụmụ etinyere na {0} ¦ Lectures wey dem upload to {0}
+Only the students enrolled in {0} can see it. ¦ Àwọn akẹ́kọ̀ọ́ tí wọ́n forúkọ sílẹ̀ nínú {0} nìkan ni wọ́n lè rí i. ¦ Ɗaliban da suka yi rajista a {0} ne kawai za su iya ganinsa. ¦ Naanị ụmụ akwụkwọ debanyere aha na {0} nwere ike ịhụ ya. ¦ Na only students wey enroll for {0} fit see am.
+# --- lecturer ---
+Upload Lectures ¦ Gbé àwọn ẹ̀kọ́ sórí ¦ Ɗora laccoci ¦ Bulite ihe ọmụmụ ¦ Upload Lectures
+Upload lectures ¦ Gbé àwọn ẹ̀kọ́ sórí ¦ Ɗora laccoci ¦ Bulite ihe ọmụmụ ¦ Upload lectures
+Video + notes ¦ Fídíò + àkọsílẹ̀ ¦ Bidiyo + bayanai ¦ Vidiyo + ndetu ¦ Video + notes
+Publish lecture ¦ Tẹ ẹ̀kọ́ jáde ¦ Wallafa laccar ¦ Bipụta ihe ọmụmụ ¦ Publish lecture
+Lecture published ¦ A ti tẹ ẹ̀kọ́ jáde ¦ An wallafa laccar ¦ Ebipụtala ihe ọmụmụ ¦ Lecture don publish
+Delete this lecture? ¦ Ṣé kí a pa ẹ̀kọ́ yìí rẹ́? ¦ Share wannan laccar? ¦ Hichapụ ihe ọmụmụ a? ¦ Delete this lecture?
+No lectures yet. ¦ Kò sí ẹ̀kọ́ síbẹ̀. ¦ Babu laccoci tukuna. ¦ Enwebeghị ihe ọmụmụ. ¦ No lectures yet.
+Uploading… ¦ Ń gbé sórí… ¦ Ana ɗorawa… ¦ Na-ebubata… ¦ E dey upload…
+Publishing… ¦ Ń tẹ̀ jáde… ¦ Ana wallafawa… ¦ Na-ebipụta… ¦ E dey publish…
+Order ¦ Ìtẹ̀léra ¦ Jeri ¦ Usoro ¦ Order
+Lecture file (a video, or a document such as PDF, Word or PowerPoint) ¦ Fáìlì ẹ̀kọ́ (fídíò, tàbí ìwé bíi PDF, Word tàbí PowerPoint) ¦ Fayil ɗin laccar (bidiyo, ko takarda kamar PDF, Word ko PowerPoint) ¦ Faịlụ ihe ọmụmụ (vidiyo, ma ọ bụ akwụkwọ dị ka PDF, Word ma ọ bụ PowerPoint) ¦ Lecture file (video, or document like PDF, Word or PowerPoint)
+Notes (optional when you attach a file) ¦ Àkọsílẹ̀ (kò pọn dandan tí o bá so fáìlì mọ́) ¦ Bayanai (ba dole ba idan ka haɗa fayil) ¦ Ndetu (ọ bụghị ihe a ga-emerịrị ma ọ bụrụ na ị tinyere faịlụ) ¦ Notes (optional if you attach file)
+Title ¦ Àkọlé ¦ Taken ¦ Isiokwu ¦ Title
+Create Test ¦ Ṣẹ̀dá ìdánwò ¦ Ƙirƙiri gwaji ¦ Mepụta ule ¦ Create Test
+Notifies students ¦ Ó ń fi ìkìlọ̀ ránṣẹ́ sí àwọn akẹ́kọ̀ọ́ ¦ Yana sanar da ɗalibai ¦ Na-agwa ụmụ akwụkwọ ¦ E dey notify students
+Your learners ¦ Àwọn akẹ́kọ̀ọ́ rẹ ¦ Ɗalibanka ¦ Ụmụ akwụkwọ gị ¦ Your learners
+Classwork / Quiz ¦ Iṣẹ́ kíláàsì / Ìdánwò kékeré ¦ Aikin aji / Tambayoyi ¦ Ọrụ klaasị / Ajụjụ obere ¦ Classwork / Quiz
+Set work ¦ Fi iṣẹ́ lélẹ̀ ¦ Bayar da aiki ¦ Nye ọrụ ¦ Set work
+Mark Work ¦ Ṣàmì sí iṣẹ́ ¦ Duba aiki ¦ Nyochaa ọrụ ¦ Mark Work
+Score and feedback ¦ Ìpín àti àbájáde ¦ Maki da ra'ayi ¦ Akara na nzaghachi ¦ Score and feedback
+Daily records ¦ Àkọsílẹ̀ ojoojúmọ́ ¦ Bayanan yau da kullum ¦ Ndekọ kwa ụbọchị ¦ Daily records
+Announce ¦ Kéde ¦ Sanar ¦ Kwupụta ¦ Announce
+To a class ¦ Sí kíláàsì kan ¦ Ga aji ¦ Nye klaasị ¦ To a class
+Replays ¦ Àtúnwò ¦ Sake kallo ¦ Lelee ọzọ ¦ Replays
+📚 My Courses ¦ 📚 Àwọn kóòsì mi ¦ 📚 Darussana ¦ 📚 Usoro ọmụmụ m ¦ 📚 My Courses
+No courses assigned yet ¦ A kò tíì yan kóòsì kankan fún ọ ¦ Ba a ba ka kwas ba tukuna ¦ Enyebeghị gị usoro ọmụmụ ¦ Dem never give you any course
+🔴 Go live ¦ 🔴 Lọ àyè ¦ 🔴 Fara kai tsaye ¦ 🔴 Gaa ndụ ¦ 🔴 Go live
+Title your live class: ¦ Fún kíláàsì àyè rẹ ní orúkọ: ¦ Ba aji kai tsaye taken: ¦ Nye klaasị ndụ gị isiokwu: ¦ Give your live class title:
+End class ¦ Parí kíláàsì ¦ Kawo ƙarshen aji ¦ Kwụsị klaasị ¦ End class
+Leave ¦ Kúrò ¦ Fita ¦ Hapụ ¦ Leave
+Class ended — it lasted ¦ Kíláàsì ti parí — ó gbà ¦ Aji ya ƙare — ya ɗauki ¦ Klaasị agwụla — ọ were ¦ Class don end — e last
+🎤 Ask the class ¦ 🎤 Béèrè lọ́wọ́ kíláàsì ¦ 🎤 Tambayi aji ¦ 🎤 Jụọ klaasị ¦ 🎤 Ask the class
+✋ Hands & questions ¦ ✋ Àwọn ọwọ́ àti ìbéèrè ¦ ✋ Hannaye da tambayoyi ¦ ✋ Aka na ajụjụ ¦ ✋ Hands & questions
+Put my hand down ¦ Gbé ọwọ́ mi sílẹ̀ ¦ Sauke hannuna ¦ Budata aka m ¦ Put my hand down
+✋ Raise your hand to answer ¦ ✋ Gbé ọwọ́ sókè láti dáhùn ¦ ✋ Ɗaga hannu don amsawa ¦ ✋ Welie aka ka ị zaa ¦ ✋ Raise your hand to answer
+Create a course... ¦ Ṣẹ̀dá kóòsì... ¦ Ƙirƙiri kwas... ¦ Mepụta usoro ọmụmụ... ¦ Create a course...
+Add a course ¦ Fi kóòsì kún un ¦ Ƙara kwas ¦ Tinye usoro ọmụmụ ¦ Add a course
+Create course ¦ Ṣẹ̀dá kóòsì ¦ Ƙirƙiri kwas ¦ Mepụta usoro ọmụmụ ¦ Create course
+Course code ¦ Kóòdù kóòsì ¦ Lambar kwas ¦ Koodu usoro ọmụmụ ¦ Course code
+Course Title ¦ Àkọlé kóòsì ¦ Taken kwas ¦ Isiokwu usoro ọmụmụ ¦ Course Title
+Class (course) ¦ Kíláàsì (kóòsì) ¦ Aji (kwas) ¦ Klaasị (usoro ọmụmụ) ¦ Class (course)
+All my students ¦ Gbogbo àwọn akẹ́kọ̀ọ́ mi ¦ Duk ɗalibaina ¦ Ụmụ akwụkwọ m niile ¦ All my students
++ Add student ¦ + Fi akẹ́kọ̀ọ́ kún ¦ + Ƙara ɗalibi ¦ + Tinye nwa akwụkwọ ¦ + Add student
++ Add a new student ¦ + Fi akẹ́kọ̀ọ́ tuntun kún ¦ + Ƙara sabon ɗalibi ¦ + Tinye nwa akwụkwọ ọhụrụ ¦ + Add a new student
+Add student ¦ Fi akẹ́kọ̀ọ́ kún ¦ Ƙara ɗalibi ¦ Tinye nwa akwụkwọ ¦ Add student
+Copy code ¦ Dà kóòdù kọ ¦ Kwafa lambar ¦ Depụta koodu ¦ Copy code
+Post assignment ¦ Fi iṣẹ́ àṣetiléwá sílẹ̀ ¦ Saka aiki ¦ Kwupụta ọrụ ụlọ ¦ Post assignment
++ Post assignment ¦ + Fi iṣẹ́ àṣetiléwá sílẹ̀ ¦ + Saka aiki ¦ + Kwupụta ọrụ ụlọ ¦ + Post assignment
+Assignments & Projects ¦ Àwọn iṣẹ́ àṣetiléwá àti iṣẹ́ àkànṣe ¦ Ayyuka da ayyuka na musamman ¦ Ọrụ ụlọ na ọrụ pụrụ iche ¦ Assignments & Projects
+Instructions ¦ Àwọn ìtọ́ni ¦ Umarni ¦ Ntụziaka ¦ Instructions
+Post a new assignment ¦ Fi iṣẹ́ àṣetiléwá tuntun sílẹ̀ ¦ Saka sabon aiki ¦ Kwupụta ọrụ ụlọ ọhụrụ ¦ Post new assignment
+Save and Send ¦ Fi pamọ́ kí o sì ránṣẹ́ ¦ Ajiye ka aika ¦ Chekwaa ma zipu ¦ Save and Send
+Saved and sent ¦ A ti fi pamọ́ a sì ti ránṣẹ́ ¦ An ajiye an aika ¦ Echekwara ma ezipụ ya ¦ Don save and send
+Saved as a draft ¦ A ti fi pamọ́ bí ìwé àfọwọ́kọ ¦ An ajiye a matsayin daftari ¦ Echekwara dị ka ndebiri ¦ Don save as draft
+Posted and sent ¦ A ti fi sílẹ̀ a sì ti ránṣẹ́ ¦ An saka an aika ¦ Ekwuputara ma ezipụ ya ¦ Don post and send
+Mark ¦ Ṣàmì ¦ Duba ¦ Nyochaa ¦ Mark
+Marked ¦ A ti ṣàmì ¦ An duba ¦ Enyochala ya ¦ Don mark
+Save mark ¦ Fi àmì pamọ́ ¦ Ajiye maki ¦ Chekwaa akara ¦ Save mark
+Awaiting mark ¦ Ń dúró de àmì ¦ Yana jiran dubawa ¦ Na-echere nyocha ¦ Dey wait for mark
+Submissions ¦ Àwọn tí a fi ránṣẹ́ ¦ Waɗanda aka miƙa ¦ Ndị e nyefere ¦ Submissions
+No submissions yet. ¦ Kò sí ohun tí a fi ránṣẹ́ síbẹ̀. ¦ Babu abin da aka miƙa tukuna. ¦ Enwebeghị ihe e nyefere. ¦ Nobody don submit yet.
+Student's answer ¦ Ìdáhùn akẹ́kọ̀ọ́ ¦ Amsar ɗalibi ¦ Azịza nwa akwụkwọ ¦ Student's answer
+Objective (multiple choice) ¦ Àṣàyàn (ọ̀pọ̀ ìdáhùn) ¦ Zaɓi (zaɓi da yawa) ¦ Nhọrọ (nhọrọ dị iche iche) ¦ Objective (multiple choice)
+Theory (free response) ¦ Àkọsílẹ̀ (ìdáhùn ọ̀fẹ́) ¦ Rubutu (amsa kyauta) ¦ Edemede (azịza n'efu) ¦ Theory (free response)
++ Add question ¦ + Fi ìbéèrè kún ¦ + Ƙara tambaya ¦ + Tinye ajụjụ ¦ + Add question
+Add at least one question. ¦ Fi ó kéré tán ìbéèrè kan kún. ¦ Ƙara aƙalla tambaya ɗaya. ¦ Tinye opekata mpe otu ajụjụ. ¦ Add at least one question.
+View results ¦ Wo àwọn àbájáde ¦ Duba sakamako ¦ Lee nsonaazụ ¦ View results
+View questions ¦ Wo àwọn ìbéèrè ¦ Duba tambayoyi ¦ Lee ajụjụ ¦ View questions
+No semester exams set yet. ¦ A kò tíì ṣètò ìdánwò semesta kankan. ¦ Ba a shirya jarrabawar semisti ba tukuna. ¦ Edebeghị ule semesta ọ bụla. ¦ No semester exam set yet.
+No tests set yet. ¦ A kò tíì ṣètò ìdánwò kankan. ¦ Ba a shirya gwaji ba tukuna. ¦ Edebeghị ule ọ bụla. ¦ No test set yet.
+Announce to a class ¦ Kéde fún kíláàsì kan ¦ Sanarwa ga aji ¦ Kwupụta nye klaasị ¦ Announce to a class
+Announcement sent ¦ A ti fi ìkéde ránṣẹ́ ¦ An aika sanarwa ¦ Ezigara nkwupụta ¦ Announcement don send
+Send announcement ¦ Fi ìkéde ránṣẹ́ ¦ Aika sanarwa ¦ Zipu nkwupụta ¦ Send announcement
+Message ¦ Ìfiránṣẹ́ ¦ Saƙo ¦ Ozi ¦ Message
+Pick a class to mark today's (or a past) attendance. ¦ Yan kíláàsì láti ṣàmì ìkópa òní (tàbí ti àtẹ̀yìnwá). ¦ Zaɓi aji don alamar halartar yau (ko ta baya). ¦ Họrọ klaasị iji tụọ ọbịbịa taa (ma ọ bụ nke gara aga). ¦ Pick class make you mark today (or old) attendance.
+Present ¦ Ó wà níbẹ̀ ¦ Yana nan ¦ Ọ nọ ¦ Present
+Absent ¦ Kò sí níbẹ̀ ¦ Ba ya nan ¦ Ọ nọghị ¦ Absent
+Late ¦ Ó pẹ́ ¦ Ya makara ¦ O mechiri ¦ Late
+Excused ¦ A dáríjì ¦ An yafe ¦ Agbaghara ya ¦ Excused
+Check in today ¦ Wọlé òní ¦ Yi rajista yau ¦ Banye taa ¦ Check in today
+Checked in ✓ ¦ A ti wọlé ✓ ¦ An yi rajista ✓ ¦ Abanyela ✓ ¦ Don check in ✓
+You're checked in for today. ¦ O ti wọlé fún òní. ¦ Ka yi rajista na yau. ¦ Abanyela gị taa. ¦ You don check in for today.
+Not checked in yet today. ¦ O kò tíì wọlé fún òní. ¦ Ba ka yi rajista ba yau. ¦ Abanyebeghị gị taa. ¦ You never check in today.
+# --- the live-class and tickets ---
+Live chat ¦ Ìfọ̀rọ̀jomitoro lórí ayélujára ¦ Hira kai tsaye ¦ Mkparịta ụka ndụ ¦ Live chat
+My tickets ¦ Àwọn tíkẹ́ẹ̀tì mi ¦ Tikitina ¦ Tiketi m ¦ My tickets
+Ask for help ¦ Béèrè fún ìrànlọ́wọ́ ¦ Nemi taimako ¦ Rịọ enyemaka ¦ Ask for help
+Send to Learnza ¦ Ránṣẹ́ sí Learnza ¦ Aika zuwa Learnza ¦ Zipu na Learnza ¦ Send to Learnza
+How is Learnza working for you? ¦ Báwo ni Learnza ṣe ń ṣiṣẹ́ fún ọ? ¦ Yaya Learnza ke yi maka aiki? ¦ Kedu ka Learnza si na-arụ ọrụ maka gị? ¦ How Learnza dey work for you?
+Submit review ¦ Fi àyẹ̀wò ránṣẹ́ ¦ Miƙa ra'ayi ¦ Nyefee nyocha ¦ Submit review
+Thank you for your feedback! ¦ A dúpẹ́ fún èsì rẹ! ¦ Na gode da ra'ayinka! ¦ Daalụ maka nzaghachi gị! ¦ Thank you for your feedback!
+# --- study plan, progress, daily challenge ---
+⚡ Daily Challenge ¦ ⚡ Ìpèníjà ojoojúmọ́ ¦ ⚡ Ƙalubalen yau da kullum ¦ ⚡ Ihe mmegharị kwa ụbọchị ¦ ⚡ Daily Challenge
+Study plan saved ¦ A ti fi ètò ìkẹ́kọ̀ọ́ pamọ́ ¦ An ajiye tsarin karatu ¦ Echekwara atụmatụ ọmụmụ ¦ Study plan don save
+💾 Save Plan ¦ 💾 Fi ètò pamọ́ ¦ 💾 Ajiye tsari ¦ 💾 Chekwaa atụmatụ ¦ 💾 Save Plan
+🔄 Regenerate ¦ 🔄 Tún ṣẹ̀dá ¦ 🔄 Sake ƙirƙira ¦ 🔄 Megharia ¦ 🔄 Make am again
+📅 This Week ¦ 📅 Ọ̀sẹ̀ yìí ¦ 📅 Wannan makon ¦ 📅 Izu a ¦ 📅 This Week
+⚠️ Priority Weak Areas ¦ ⚠️ Àwọn apá aláìlera pàtàkì ¦ ⚠️ Muhimman wuraren rauni ¦ ⚠️ Ebe adịghị ike dị mkpa ¦ ⚠️ Weak areas wey important
+Goal ¦ Àfojúsùn ¦ Buri ¦ Ebumnuche ¦ Goal
+Exam date ¦ Ọjọ́ ìdánwò ¦ Ranar jarrabawa ¦ Ụbọchị ule ¦ Exam date
+Hours a day ¦ Wákàtí lójoojúmọ́ ¦ Awanni a rana ¦ Awa kwa ụbọchị ¦ Hours a day
+Sunday ¦ Ọjọ́ Ìsinmi ¦ Lahadi ¦ Sọnde ¦ Sunday
+Monday ¦ Ọjọ́ Ajé ¦ Litinin ¦ Mọnde ¦ Monday
+Tuesday ¦ Ọjọ́ Ìṣẹ́gun ¦ Talata ¦ Tuzde ¦ Tuesday
+Wednesday ¦ Ọjọ́rú ¦ Laraba ¦ Wenezde ¦ Wednesday
+Thursday ¦ Ọjọ́bọ̀ ¦ Alhamis ¦ Tọzde ¦ Thursday
+Friday ¦ Ọjọ́ Ẹtì ¦ Jumma'a ¦ Fraịde ¦ Friday
+Saturday ¦ Ọjọ́ Àbámẹ́ta ¦ Asabar ¦ Satọde ¦ Saturday
+No weak areas. Keep going! 🎉 ¦ Kò sí apá aláìlera. Máa tẹ̀síwájú! 🎉 ¦ Babu wuraren rauni. Ci gaba! 🎉 ¦ Enweghị ebe adịghị ike. Gaa n'ihu! 🎉 ¦ No weak areas. Keep going! 🎉
+Not started — take a test ¦ A kò tíì bẹ̀rẹ̀ — ṣe ìdánwò kan ¦ Ba a fara ba — yi gwaji ¦ Amalitebeghị — were ule ¦ Never start — take test
+Revision ¦ Àtúnyẹ̀wò ¦ Bita ¦ Nlegharị anya ¦ Revision
+Mixed revision ¦ Àtúnyẹ̀wò àdàpọ̀ ¦ Bita gauraye ¦ Nlegharị anya jikọtara ¦ Mixed revision
+Missed ¦ A kò ṣe é ¦ An rasa ¦ Ahapụrụ ya ¦ Miss am
+Done ✓ ¦ Ó ti parí ✓ ¦ An gama ✓ ¦ Emechala ✓ ¦ Done ✓
+Today's Goal ¦ Àfojúsùn òní ¦ Burin yau ¦ Ebumnuche taa ¦ Today's Goal
+# --- admin screens (common) ---
+Staff & Student Directory ¦ Àtòjọ òṣìṣẹ́ àti akẹ́kọ̀ọ́ ¦ Jerin ma'aikata da ɗalibai ¦ Ndepụta ndị ọrụ na ụmụ akwụkwọ ¦ Staff & Student Directory
+Departments & Courses ¦ Àwọn ẹ̀ka àti kóòsì ¦ Sassa da kwasa-kwasai ¦ Ngalaba na usoro ọmụmụ ¦ Departments & Courses
+Lecturer Activity ¦ Ìgbòkègbodò olùkọ́ ¦ Ayyukan malamai ¦ Ihe ndị nkụzi na-eme ¦ Lecturer Activity
+Student Activity ¦ Ìgbòkègbodò akẹ́kọ̀ọ́ ¦ Ayyukan ɗalibai ¦ Ihe ụmụ akwụkwọ na-eme ¦ Student Activity
+Staff Records ¦ Àkọsílẹ̀ òṣìṣẹ́ ¦ Bayanan ma'aikata ¦ Ndekọ ndị ọrụ ¦ Staff Records
+Student Requests ¦ Àwọn ìbéèrè akẹ́kọ̀ọ́ ¦ Buƙatun ɗalibai ¦ Arịrịọ ụmụ akwụkwọ ¦ Student Requests
+Hostels ¦ Àwọn ilé ibùgbé ¦ Masaukai ¦ Ụlọ obibi ¦ Hostels
+Fee Payment ¦ Ìsanwó owó ilé-ẹ̀kọ́ ¦ Biyan kuɗin makaranta ¦ Ịkwụ ụgwọ ụlọ akwụkwọ ¦ Fee Payment
+Bulk SMS/Email ¦ SMS/Ímeèlì lọ́pọ̀lọpọ̀ ¦ SMS/Imel da yawa ¦ SMS/Email nke ọtụtụ ¦ Bulk SMS/Email
+Admin Management ¦ Ìṣàkóso àwọn alákòóso ¦ Gudanar da admin ¦ Njikwa ndị admin ¦ Admin Management
+Add Departments and Courses ¦ Fi àwọn ẹ̀ka àti kóòsì kún ¦ Ƙara sassa da kwasa-kwasai ¦ Tinye ngalaba na usoro ọmụmụ ¦ Add Departments and Courses
+Add department ¦ Fi ẹ̀ka kún ¦ Ƙara sashe ¦ Tinye ngalaba ¦ Add department
+Department added ¦ A ti fi ẹ̀ka kún ¦ An ƙara sashe ¦ Etinyela ngalaba ¦ Department don add
+Course added ¦ A ti fi kóòsì kún ¦ An ƙara kwas ¦ Etinyela usoro ọmụmụ ¦ Course don add
+Pay ¦ Sanwó ¦ Biya ¦ Kwụọ ụgwọ ¦ Pay
+Remove ¦ Yọ kúrò ¦ Cire ¦ Wepụ ¦ Remove
+Suspend ¦ Dá dúró ¦ Dakatar ¦ Kwụsịtụ ¦ Suspend
+Lift suspension ¦ Gbé ìdádúró kúrò ¦ Dage dakatarwa ¦ Wepụ nkwụsịtụ ¦ Lift suspension
+Suspended ¦ A ti dá dúró ¦ An dakatar ¦ Akwụsịtụrụ ya ¦ Don suspend
+Expired ¦ Ó ti parí ¦ Ya ƙare ¦ Agwụla ¦ Don expire
+Rejected ¦ A ti kọ̀ ọ́ ¦ An ƙi ¦ Ajụrụ ya ¦ Dem reject am
+Waiting ¦ Ń dúró ¦ Yana jira ¦ Na-echere ¦ Dey wait
+Closed ¦ Ó ti tìpa ¦ A rufe ¦ Emechiri ya ¦ Don close
+Open ¦ Ṣí ¦ Buɗe ¦ Mepee ¦ Open
+Draft ¦ Ìwé àfọwọ́kọ ¦ Daftari ¦ Ndebiri ¦ Draft
+Elections ¦ Ìdìbò ¦ Zaɓuka ¦ Ntuli aka ¦ Elections
+Vote now → ¦ Dìbò báyìí → ¦ Yi zaɓe yanzu → ¦ Tụọ vootu ugbu a → ¦ Vote now →
+✓ You voted ¦ ✓ O ti dìbò ¦ ✓ Ka yi zaɓe ¦ ✓ I tụọla vootu ¦ ✓ You don vote
+🗳️ Vote counted — thank you! ¦ 🗳️ A ti ka ìbò rẹ — a dúpẹ́! ¦ 🗳️ An ƙidaya ƙuri'arka — na gode! ¦ 🗳️ Ebugharịala vootu gị — daalụ! ¦ 🗳️ Dem don count your vote — thank you!
+Cast my vote ¦ Dìbò mi ¦ Jefa ƙuri'ata ¦ Tụọ vootu m ¦ Cast my vote
+Voting open ¦ Ìdìbò ṣí sílẹ̀ ¦ Zaɓe a buɗe ¦ Ntuli aka meghere ¦ Voting open
+Voting closed ¦ Ìdìbò ti tìpa ¦ An rufe zaɓe ¦ Ntuli aka emechiela ¦ Voting don close

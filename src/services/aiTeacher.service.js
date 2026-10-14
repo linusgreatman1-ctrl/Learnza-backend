@@ -1,4 +1,5 @@
 const ai = require('./aiProvider.service');
+const { directive } = require('../utils/language');
 
 // Very small allowlist-by-removal SVG sanitizer -- strips script tags, event-handler
 // attributes, and javascript: URIs before board content is ever trusted with
@@ -64,9 +65,10 @@ const GRADE_SYSTEM = `You are grading a student's short spoken/typed answer to a
 { "correct": boolean, "feedback": string }
 "feedback" is one short encouraging sentence explaining what was right or what was missed. Be lenient with phrasing -- judge understanding, not exact wording. Return JSON only.`;
 
-async function generateLessonPlan({ courseTitle, topic }) {
+async function generateLessonPlan({ courseTitle, topic, language }) {
   const userPrompt = `Course: ${courseTitle}\nTopic to teach: ${topic}`;
-  const plan = await ai.askForJson(LESSON_PLAN_SYSTEM, userPrompt);
+  const plan = await ai.askForJson(LESSON_PLAN_SYSTEM + directive(language), userPrompt);
+  plan.language = language || 'en';
   plan.sections = (plan.sections || []).map((s) => ({
     ...s,
     boardActions: sanitizeBoardActions(s.boardActions).length ? sanitizeBoardActions(s.boardActions) : [{ type: 'TEXT', content: s.boardText || '' }],
@@ -74,18 +76,18 @@ async function generateLessonPlan({ courseTitle, topic }) {
   return plan;
 }
 
-async function answerInterrupt({ courseTitle, topic, sectionTitle, question }) {
+async function answerInterrupt({ courseTitle, topic, sectionTitle, question, language }) {
   const userPrompt = `Course: ${courseTitle}\nLesson topic: ${topic}\nCurrent section: ${sectionTitle}\nStudent's question: ${question}`;
-  const result = await ai.askForJson(INTERRUPT_SYSTEM, userPrompt);
+  const result = await ai.askForJson(INTERRUPT_SYSTEM + directive(language), userPrompt);
   const boardActions = sanitizeBoardActions(result.boardActions);
   // Every answer must land on the board, not just the chat log underneath it -- fall
   // back to the plain-text answer itself if the model returned no usable board content.
   return { ...result, boardActions: boardActions.length ? boardActions : [{ type: 'TEXT', content: result.answer || '' }] };
 }
 
-async function gradeCheckAnswer({ checkQuestion, studentAnswer }) {
+async function gradeCheckAnswer({ checkQuestion, studentAnswer, language }) {
   const userPrompt = `Question: ${checkQuestion}\nStudent's answer: ${studentAnswer}`;
-  return ai.askForJson(GRADE_SYSTEM, userPrompt);
+  return ai.askForJson(GRADE_SYSTEM + directive(language), userPrompt);
 }
 
 module.exports = { isConfigured: ai.isConfigured, generateLessonPlan, answerInterrupt, gradeCheckAnswer, synthesizeSpeech: ai.synthesizeSpeech, resamplePcm16: ai.resamplePcm16 };

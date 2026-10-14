@@ -316,6 +316,20 @@ router.patch('/me/notifications', requireAuth, async (req, res) => {
   res.json({ user: publicUser(user) });
 });
 
+// Settings > Language: the screens, the AI teacher and the voice can each be set on their own.
+router.patch('/me/language', requireAuth, async (req, res) => {
+  const { LANGS, isLang } = require('../utils/language');
+  const data = {};
+  for (const [field, key] of [['ui', 'uiLanguage'], ['ai', 'aiLanguage'], ['voice', 'voiceLanguage']]) {
+    if (req.body[field] === undefined) continue;
+    if (!isLang(req.body[field])) return res.status(400).json({ error: `Choose one of: ${Object.values(LANGS).map((l) => l.name).join(', ')}.` });
+    data[key] = req.body[field];
+  }
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'Nothing to change.' });
+  const user = await prisma.user.update({ where: { id: req.user.id }, data });
+  res.json({ user: publicUser(user) });
+});
+
 module.exports = router;
 module.exports.publicUser = publicUser;
 module.exports.publicSchool = publicSchool;
