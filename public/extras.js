@@ -224,7 +224,10 @@
       </div>
       <div class="card"><h3 style="margin-bottom:6px;">History</h3>
         ${w.ledger.map((e) => `<div class="list-row"><div><div style="font-weight:600;">${esc(e.reason === 'PURCHASE' ? 'Coins bought' : e.reason === 'AI_USAGE' ? 'Live AI Lecturer' : e.reason === 'GRANT' ? 'Added by Learnza' : 'Adjustment')}</div><div class="meta">${esc(e.note || '')} · ${esc(fmt(e.createdAt))}</div></div><div style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} 🪙</div></div>`).join('') || '<p class="muted" style="padding:10px;">Nothing yet.</p>'}
-      </div>`;
+      </div>
+      ${(w.usage || []).length ? `<div class="card" style="margin-top:16px;"><h3 style="margin-bottom:6px;">Live teaching used</h3>
+        ${w.usage.map((u) => `<div class="list-row"><div><div style="font-weight:600;">${esc(u.title || (u.kind === 'PRACTICAL' ? 'Practical' : 'Lecture'))}</div><div class="meta">${u.kind === 'PRACTICAL' ? 'Digital Lab' : 'AI Lecturer'} · ${esc(new Date(u.createdAt).toLocaleDateString())}</div></div><b>${u.minutes} min</b></div>`).join('')}
+      </div>` : ''}`;
     view.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
       const pack = w.packs.find((p) => p.id === b.dataset.buy);
       pay(ctx, { kind: 'coins', packId: pack.id, title: pack.label, amountNaira: pack.amountKobo / 100, onDone: () => wallet(view, ctx) });

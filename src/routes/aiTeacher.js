@@ -63,6 +63,34 @@ router.post('/individual-courses/:id/ai-teacher/sessions', requireAuth, requireR
   await startSession(req, res, { individualCourseId: course.id, courseTitle: course.title });
 });
 
+// Which way a student's next lecture goes: LIVE with the AI Lecturer, or RECORDED because the live minutes (the plan's and any coins)
+// are finished. RECORDED always has a reason: SUBSCRIPTION (no plan at all) or CREDITS (minutes used up: the free pre-recorded
+// lectures are where they carry on).
+router.get('/ai-teacher/route', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  if (!isEnforced()) return res.json({ route: 'LIVE', reason: null });
+  const sub = await getSubscriptionStatus(req.user.id);
+  if (!sub.active) return res.json({ route: 'RECORDED', reason: 'SUBSCRIPTION' });
+  const credits = await getAiCreditStatus(req.user.id);
+  if (credits.tracked && credits.exhausted) return res.json({ route: 'RECORDED', reason: 'CREDITS', minutesLeft: 0 });
+  res.json({ route: 'LIVE', reason: null, minutesLeft: credits.tracked ? Math.floor(credits.secondsRemaining / 60) : null });
+});
+
+// A lecture the student stopped before the end, for the course they are starting one in: "continue where you stopped"
+// or "start a new lecture".
+router.get('/ai-teacher/unfinished', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const where = { studentId: req.user.id, status: 'ACTIVE' };
+  if (req.query.individualCourseId) where.individualCourseId = String(req.query.individualCourseId);
+  else if (req.query.courseId) where.courseId = String(req.query.courseId);
+  else return res.json({ session: null });
+  const row = await prisma.aiTeacherSession.findFirst({ where, orderBy: { updatedAt: 'desc' } });
+  if (!row) return res.json({ session: null });
+  let plan = {};
+  try { plan = JSON.parse(row.planJson); } catch { plan = {}; }
+  const total = (plan.sections || []).length;
+  if (!total) return res.json({ session: null });
+  res.json({ session: { id: row.id, topic: row.topic, title: plan.title || row.topic, sectionIdx: row.sectionIdx, total, isIndividual: !!row.individualCourseId } });
+});
+
 // The pre-recorded lectures the system's AI Lecturer made for a student's courses (the ones listed inside each course): the
 // place a student falls back to when their live AI minutes or coins have run out.
 router.get('/ai-teacher/prerecorded', requireAuth, requireRole('STUDENT'), async (req, res) => {
@@ -246,7 +274,7 @@ router.post('/ai-teacher/tts', requireAuth, requireRole('STUDENT'), aiGuard, req
     const audio = await aiTeacher.synthesizeSpeech(text);
     const resampled = aiTeacher.resamplePcm16(Buffer.from(audio.data, 'base64'), audio.sampleRate || 24000, 16000);
     const seconds = resampled.length / (16000 * 2);
-    await recordAiUsage(req.user.id, seconds);
+    await recordAiUsage(req.user.id, seconds, { kind: req.body.kind, title: req.body.title });
     res.json({ data: resampled.toString('base64'), mimeType: audio.mimeType, sampleRate: 16000 });
   } catch (err) {
     handleAiError(res, err);

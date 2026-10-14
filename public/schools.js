@@ -1420,7 +1420,48 @@
     });
   }
 
+  // A short question with two or three buttons ("continue or start a new lecture", "live minutes finished").
+  function aiChoice(title, text, buttons) {
+    return new Promise((resolve) => {
+      const bg = document.createElement('div');
+      bg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      bg.innerHTML = `<div class="card" style="max-width:440px;width:100%;padding:24px;"><h3 style="margin-bottom:8px;">${esc(title)}</h3><p class="muted" style="margin-bottom:16px;line-height:1.6;">${esc(text)}</p>${buttons.map((b, i) => `<button class="btn ${b.primary ? 'btn-accent' : 'btn-ghost'}" data-i="${i}" style="width:100%;margin-bottom:8px;">${esc(b.label)}</button>`).join('')}</div>`;
+      document.body.appendChild(bg);
+      bg.querySelectorAll('button').forEach((el) => el.addEventListener('click', () => { bg.remove(); resolve(buttons[Number(el.dataset.i)].value); }));
+    });
+  }
+
+  // Before a live lecture is made: are there live minutes left, and was a lecture left unfinished? Resolves true when a
+  // brand-new lecture should be created, false when the student was sent somewhere else.
+  async function aiStartGate(courseId, isIndividual) {
+    let route = null;
+    try { route = await api('/ai-teacher/route'); } catch { route = null; }
+    if (route && route.route === 'RECORDED') {
+      if (route.reason === 'SUBSCRIPTION') { renderUpgradePrompt('The AI Lecturer is part of the paid plan.'); return false; }
+      const pick = await aiChoice('Your live AI minutes are finished', 'No problem: you can carry on with the pre-recorded lectures for your courses. They are free and never cost extra. Or add coins to keep learning live.', [
+        { label: 'Watch the pre-recorded lectures', value: 'recorded', primary: true },
+        { label: 'Buy coins (live minutes)', value: 'coins' },
+        { label: 'Not now', value: 'no' },
+      ]);
+      if (pick === 'recorded') navigate('my-ai-lectures');
+      else if (pick === 'coins') navigate('wallet');
+      return false;
+    }
+    try {
+      const { session } = await api(`/ai-teacher/unfinished?${isIndividual ? 'individualCourseId' : 'courseId'}=${encodeURIComponent(courseId)}`);
+      if (session) {
+        const pick = await aiChoice('Continue your lecture?', `You stopped "${session.title}" at part ${session.sectionIdx + 1} of ${session.total}. Continue from there, or start a new lecture?`, [
+          { label: 'Continue where I stopped', value: 'continue', primary: true },
+          { label: 'Start a new lecture', value: 'new' },
+        ]);
+        if (pick === 'continue') { navigate('ai-teacher-session', { sessionId: session.id, isIndividual: session.isIndividual }); return false; }
+      }
+    } catch { /* nothing saved to offer */ }
+    return true;
+  }
+
   async function startAiTeacherSession(courseId, topic, isIndividual) {
+    if (!(await aiStartGate(courseId, isIndividual))) return;
     const path = isIndividual ? `/individual-courses/${courseId}/ai-teacher/sessions` : `/courses/${courseId}/ai-teacher/sessions`;
     // A full-view loading state (not just a toast that can scroll out of sight) so the
     // few real seconds of LLM generation don't read as the app having done nothing.
@@ -1558,7 +1599,7 @@
   function speakServer(text, avatarEl, onDone) {
     const ctrl = { mode: 'browser', ringEl: avatarEl, text, onDone, stop: null };
     speechCtrl = ctrl;
-    api('/ai-teacher/tts', { method: 'POST', body: { text } }).then(({ data, sampleRate }) => {
+    api('/ai-teacher/tts', { method: 'POST', body: { text, ...aiUsageCtx } }).then(({ data, sampleRate }) => {
       if (speechCtrl !== ctrl) return;   // paused or left meanwhile
       if (avatarEl) avatarEl.classList.add('speaking');
       const h = window.LZI18N.playPcm(data, sampleRate);
@@ -1685,6 +1726,8 @@
   // offset into the PCM stream fed to Simli; `mode: 'browser'` defers to the
   // SpeechSynthesis API's own native pause/resume.
   let speechCtrl = null;
+  // What the live minutes are being spent on right now (sent with each spoken line so the wallet can list it).
+  let aiUsageCtx = { kind: 'LECTURE', title: '' };
 
   function avatarPlaybackTick() {
     const ctrl = speechCtrl;
@@ -1725,7 +1768,7 @@
     speechCtrl = null;
     if (!simliAvatarClient) return speak(text, ringEl, onDone);
     try {
-      const { data, sampleRate } = await api(`/ai-teacher/tts`, { method: 'POST', body: { text } });
+      const { data, sampleRate } = await api(`/ai-teacher/tts`, { method: 'POST', body: { text, ...aiUsageCtx } });
       const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
       if (ringEl) ringEl.classList.add('speaking');
       const chunkSize = Math.round((sampleRate || 16000) * 0.02) * 2;
@@ -2006,6 +2049,7 @@
     speechCtrl = null;
     const { session } = await api(`/ai-teacher/sessions/${state.view.sessionId}`);
     const plan = session.plan;
+    aiUsageCtx = { kind: 'LECTURE', title: String(plan.title || session.topic || '').slice(0, 120) };
     let sectionIdx = session.sectionIdx;
     const { avatarConfigured, aiCredits } = await api('/config').catch(() => ({ avatarConfigured: false, aiCredits: null }));
     let stopped = false;
@@ -2047,6 +2091,7 @@
         </div>
 
         <div class="controls">
+          <button class="btn btn-ghost" id="pause-lesson-btn">⏸ Pause</button>
           <button class="btn btn-ghost" id="ask-voice-btn" disabled>🎤 Ask a question</button>
         </div>
 
@@ -2075,6 +2120,24 @@
     const sectionMeta = document.getElementById('section-meta');
     const sectionTitleEl = document.getElementById('section-title');
     const askVoiceBtn = document.getElementById('ask-voice-btn');
+    // Pause / Resume: the teacher stops where they are and carries on from the same place (the same hold a question uses).
+    let manualPause = null;
+    let isPaused = false;
+    const pauseLessonBtn = document.getElementById('pause-lesson-btn');
+    pauseLessonBtn.addEventListener('click', () => {
+      if (!teachingStarted) return;
+      if (isPaused) {
+        isPaused = false;
+        pauseLessonBtn.textContent = '⏸ Pause';
+        const snap = manualPause; manualPause = null;
+        if (snap) resumePausedSpeech(snap);
+        return;
+      }
+      isPaused = true;
+      pauseLessonBtn.textContent = '▶ Resume';
+      manualPause = pauseSpeechForQuestion();
+    });
+    async function holdIfPaused() { while (isPaused && !stopped) await new Promise((r) => setTimeout(r, 300)); }
 
     document.getElementById('lesson-expand-btn').addEventListener('click', () => {
       const stage = document.getElementById('lesson-stage');
@@ -2088,6 +2151,7 @@
     document.getElementById('back-btn').addEventListener('click', () => {
       stopped = true;
       aiRecStop();
+      toast('Lecture stopped. You can continue it from My AI Live Classes.');
       if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
       else navigate('course-detail', { courseId: session.courseId });
     });
@@ -2253,9 +2317,13 @@
       }
       aiRecStart(session, plan.title, initials(plan.title || 'AI'));
       while (!stopped) {
+        await holdIfPaused();
+        if (stopped) return;
         const section = renderSection(sectionIdx);
         markTeachingStarted();
         await speakAsync(section.speechText, avatarRing);
+        if (stopped) return;
+        await holdIfPaused();
         if (stopped) return;
 
         // The lesson plan already spaces checkQuestions across roughly half the
@@ -4440,6 +4508,9 @@
     ]);
     const demo = demonstrations.find((d) => d.id === demoId);
     if (!demo) { view.innerHTML = '<p>Practical not found.</p>'; return; }
+    const labRoute = state.user.role === 'STUDENT' ? await api('/ai-teacher/route').catch(() => null) : null;
+    const recordedMode = !!(labRoute && labRoute.route === 'RECORDED' && labRoute.reason === 'CREDITS');
+    aiUsageCtx = { kind: 'PRACTICAL', title: String(demo.title || '').slice(0, 120) };
     let stepIdx = 0;
     let stopped = false;
     // "Got a question" only becomes usable once the teacher has actually started
@@ -4448,7 +4519,7 @@
 
     view.innerHTML = `
       <div class="page-head">
-        <div><span class="pill pill-accent">Digital Lab — guided practical</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(demo.title)}</h1></div>
+        <div><span class="pill pill-accent">Digital Lab — guided practical</span>${recordedMode ? ' <span class="pill pill-muted">Pre-recorded practical — free</span>' : ''}${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(demo.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← End practical</button>
       </div>
       <div class="card lesson-player">
@@ -4470,6 +4541,7 @@
         <h3 style="margin:8px 0 12px;" id="step-title"></h3>
 
         <div class="controls">
+          <button class="btn btn-ghost" id="pause-lesson-btn">⏸ Pause</button>
           <button class="btn btn-ghost" id="ask-voice-btn" disabled>🎤 Ask a question</button>
         </div>
 
@@ -4494,6 +4566,24 @@
     const stepMeta = document.getElementById('step-meta');
     const stepTitleEl = document.getElementById('step-title');
     const askVoiceBtn = document.getElementById('ask-voice-btn');
+    // Pause / Resume: the teacher stops where they are and carries on from the same place (the same hold a question uses).
+    let manualPause = null;
+    let isPaused = false;
+    const pauseLessonBtn = document.getElementById('pause-lesson-btn');
+    pauseLessonBtn.addEventListener('click', () => {
+      if (!teachingStarted) return;
+      if (isPaused) {
+        isPaused = false;
+        pauseLessonBtn.textContent = '⏸ Pause';
+        const snap = manualPause; manualPause = null;
+        if (snap) resumePausedSpeech(snap);
+        return;
+      }
+      isPaused = true;
+      pauseLessonBtn.textContent = '▶ Resume';
+      manualPause = pauseSpeechForQuestion();
+    });
+    async function holdIfPaused() { while (isPaused && !stopped) await new Promise((r) => setTimeout(r, 300)); }
 
     document.getElementById('lesson-expand-btn').addEventListener('click', () => {
       const stage = document.getElementById('lesson-stage');
@@ -4595,14 +4685,18 @@
     });
 
     async function runPractical() {
-      if (avatarConfigured) {
+      if (avatarConfigured && !recordedMode) {
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
           .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
       }
       while (!stopped) {
+        await holdIfPaused();
+        if (stopped) return;
         const step = renderStep(stepIdx);
         markTeachingStarted();
         await speakAsync(`${step.title}. ${step.instruction}`, avatarRing);
+        if (stopped) return;
+        await holdIfPaused();
         if (stopped) return;
         if (stepIdx >= demo.steps.length - 1) {
           boardStatus.textContent = 'Practical complete';

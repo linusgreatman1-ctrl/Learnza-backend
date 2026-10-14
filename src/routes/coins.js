@@ -25,9 +25,10 @@ const payerEmail = (u) => (u.email && !INTERNAL.test(u.email) ? u.email : proces
 
 router.get('/', async (req, res) => {
   const wallet = await coins.getWallet(req.user.id);
-  const [ledger, pending] = await Promise.all([
+  const [ledger, pending, usage] = await Promise.all([
     prisma.coinLedger.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 30 }),
     prisma.coinPurchase.findMany({ where: { userId: req.user.id, status: 'PENDING', provider: 'MANUAL_TRANSFER' }, orderBy: { createdAt: 'desc' }, take: 3 }),
+    prisma.aiUsageLog.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 40 }),
   ]);
   res.json({
     balance: wallet.balance,
@@ -36,6 +37,8 @@ router.get('/', async (req, res) => {
     secondsPerCoin: coins.SECONDS_PER_COIN,
     pending,
     ledger,
+    // what the live minutes were spent on (a lecture or a practical), newest first
+    usage: usage.map((u) => ({ id: u.id, kind: u.kind, title: u.title, minutes: Math.round((u.seconds / 60) * 10) / 10, createdAt: u.createdAt })),
   });
 });
 

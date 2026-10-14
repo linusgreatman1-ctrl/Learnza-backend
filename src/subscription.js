@@ -69,9 +69,12 @@ async function requireAiCredits(req, res, next) {
 // audio duration rather than request count -- a 5-second answer costs less than a
 // 2-minute lesson section. No-ops when there's no subscription row to track against.
 // The cycle's included minutes are spent first; whatever is left over comes out of coins.
-async function recordAiUsage(userId, seconds) {
+async function recordAiUsage(userId, seconds, meta = {}) {
   if (!seconds || seconds <= 0) return;
   const total = Math.round(seconds);
+  // The usage list ("what my minutes were spent on") is kept whether or not there is a plan to count against.
+  prisma.aiUsageLog.create({ data: { userId, seconds: total, kind: meta.kind === 'PRACTICAL' ? 'PRACTICAL' : 'LECTURE', title: meta.title ? String(meta.title).slice(0, 120) : null } })
+    .catch((e) => console.error('Could not log AI usage:', e.message));
   try {
     const sub = await prisma.subscription.findUnique({ where: { userId } });
     if (!sub) return; // free/testing user -- nothing to track against

@@ -1259,3 +1259,15 @@ model FeePayment {
   @@index([studentId])
   @@index([reference])
 }
+
+// What each stretch of live AI teaching was spent on (a lecture or a practical), so a student can see where their minutes went.
+model AiUsageLog {
+  id        String   @id @default(cuid())
+  userId    String
+  seconds   Int
+  kind      String   @default("LECTURE") // LECTURE | PRACTICAL
+  title     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
