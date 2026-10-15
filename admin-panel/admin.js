@@ -228,8 +228,7 @@
     const d = await api('/dashboard');
     const stat = (n, l) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`;
     view.innerHTML = `
-      <div class="view-head"><div><h1>Dashboard</h1><div class="muted">Everything across the Learnza platform.</div></div>
-        <button class="btn-gold" id="goto-onboard">+ Onboard a school</button></div>
+      <div class="view-head"><div><h1>Dashboard</h1><div class="muted">Everything across the Learnza platform.</div></div></div>
       <h3>Schools</h3>
       <div class="cards">${stat(d.schools.total, 'Schools onboarded')}${stat(d.schools.active, 'Active licences')}${stat(d.schools.expired, 'Expired licences')}${stat(d.schools.suspended, 'Suspended')}</div>
       <h3>People</h3>
@@ -242,7 +241,6 @@
       <div class="table-wrap"><table><thead><tr><th>School</th><th>State</th><th>Onboarded</th></tr></thead><tbody>
         ${d.recentSchools.map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.state || '—')}</td><td>${fmtDate(s.createdAt)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No schools yet — onboard your first one.</td></tr>'}
       </tbody></table></div>`;
-    $('goto-onboard').addEventListener('click', () => go('schools'));
   }
 
   // ---------------- schools ----------------
