@@ -2673,7 +2673,7 @@
     } else if (other) {
       body = `<div class="meta" style="opacity:.6;">🎤 ${esc(other.name)} is ${other.kind === 'answer' ? 'answering' : 'asking a question'}…</div>`;
     } else {
-      body = `<div style="display:flex; flex-direction:column; gap:8px;"><button class="btn btn-accent" style="width:100%;" data-hand="raise" data-kind="answer">✋ Raise your hand to answer</button><button class="btn" style="width:100%; background:#E8590C; color:#fff;" data-hand="raise" data-kind="question">✋ Raise your hand to ask</button></div>`;
+      body = `<div style="display:flex; flex-direction:column; gap:8px;"><button class="btn" style="width:100%; background:#2563d6; color:#fff;" data-hand="raise" data-kind="question">✋ Raise your hand to ask</button><button class="btn" style="width:100%; background:#1f8a5b; color:#fff;" data-hand="raise" data-kind="answer">✋ Raise your hand to answer</button></div>`;
     }
     zone.innerHTML = body;
     zone.querySelectorAll('[data-hand]').forEach((btn) => btn.addEventListener('click', () => handAction(btn.dataset.hand, btn.dataset.kind)));
