@@ -1271,3 +1271,15 @@ model AiUsageLog {
 
   @@index([userId, createdAt])
 }
+
+// A question (its text, options, model answer and explanation) translated once into a language, and shared by every student who
+// needs it in that language. The hash is of the English fields, so an edited question is translated afresh.
+model QuestionTranslation {
+  id        String   @id @default(cuid())
+  hash      String
+  language  String
+  payload   String   // JSON: { text, options, modelAnswer, explanation }
+  createdAt DateTime @default(now())
+
+  @@unique([hash, language])
+}

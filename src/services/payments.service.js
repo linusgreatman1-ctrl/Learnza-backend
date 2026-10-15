@@ -45,7 +45,7 @@ async function settle(reference, paidKobo) {
     if (purchase.status === 'SUCCESS') return { ok: true, kind: 'coins', already: true, coins: purchase.coins };
     if (!amountCovers(purchase.amountKobo, paidKobo)) return { ok: false, reason: 'amount_mismatch' };
     const credited = await coins.completePurchase(purchase);
-    if (credited) await notify(purchase.userId, 'Coins added', `${purchase.coins} coins (${purchase.coins} minutes of live AI Lecturer) were added to your wallet.`, 'wallet');
+    if (credited) await notify(purchase.userId, 'Coins added', `${purchase.coins} coins (${purchase.coins} minutes of live Learnza Lecturer) were added to your wallet.`, 'wallet');
     return { ok: true, kind: 'coins', coins: purchase.coins };
   }
   return { ok: false, reason: 'not_found' };

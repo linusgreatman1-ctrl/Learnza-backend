@@ -98,7 +98,7 @@ async function callAnthropic(systemPrompt, userPrompt) {
 // the video avatar. Reference: https://ai.google.dev/gemini-api/docs/generate-content/speech-generation
 async function synthesizeSpeech(text) {
   if (!process.env.GEMINI_API_KEY) {
-    const err = new Error('AI Lecturer voice synthesis needs GEMINI_API_KEY (Anthropic has no TTS endpoint).');
+    const err = new Error('Learnza Lecturer voice synthesis needs GEMINI_API_KEY (Anthropic has no TTS endpoint).');
     err.code = 'AI_NOT_CONFIGURED';
     throw err;
   }
@@ -148,7 +148,7 @@ function resamplePcm16(buffer, fromRate, toRate) {
 function requireProvider() {
   const provider = activeProvider();
   if (!provider) {
-    const err = new Error('This AI feature is not configured yet (no GEMINI_API_KEY or ANTHROPIC_API_KEY set).');
+    const err = new Error('This Learnza feature is not configured yet (no GEMINI_API_KEY or ANTHROPIC_API_KEY set).');
     err.code = 'AI_NOT_CONFIGURED';
     throw err;
   }
@@ -164,14 +164,14 @@ async function askForJson(systemPrompt, userPrompt) {
   try {
     raw = provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: true }) : await callAnthropic(systemPrompt, userPrompt);
   } catch (e) {
-    syslog.warn('ai', 'AI provider call failed: ' + e.message, { detail: provider });
+    syslog.warn('ai', 'Learnza provider call failed: ' + e.message, { detail: provider });
     throw e;
   }
   const jsonText = extractJson(raw);
   try {
     return JSON.parse(jsonText);
   } catch {
-    throw new Error('AI response was not valid JSON');
+    throw new Error('Learnza response was not valid JSON');
   }
 }
 
@@ -184,7 +184,7 @@ async function askForText(systemPrompt, userPrompt) {
   try {
     return provider === 'gemini' ? await callGemini(systemPrompt, userPrompt, { json: false }) : await callAnthropic(systemPrompt, userPrompt);
   } catch (e) {
-    syslog.warn('ai', 'AI provider call failed: ' + e.message, { detail: provider });
+    syslog.warn('ai', 'Learnza provider call failed: ' + e.message, { detail: provider });
     throw e;
   }
 }

@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../db');
 const { requireAuth } = require('../auth');
 const gamification = require('../services/gamification.service');
+const questionLocalize = require('../services/questionLocalize.service');
 
 // Practice from the platform's question bank (curated in the admin panel). Open to every
 // signed-in person; the correct answers stay on the server until a set is submitted.
@@ -57,7 +58,7 @@ router.get('/practice', async (req, res) => {
   picked.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   res.json({
     subject: heading,
-    questions: picked.map((q) => ({ id: q.id, text: q.text, options: JSON.parse(q.options), topic: q.topic, year: q.year, source: q.source })),
+    questions: await questionLocalize.localize(picked.map((q) => ({ id: q.id, text: q.text, options: JSON.parse(q.options), topic: q.topic, year: q.year, source: q.source })), questionLocalize.contentLanguage(req.user)),
   });
 });
 
@@ -91,7 +92,7 @@ router.post('/check', async (req, res) => {
       await prisma.activityLog.create({ data: { userId: req.user.id, action: 'DAILY_CHALLENGE', detail: JSON.stringify({ title: String(req.body.label || 'Daily Challenge').slice(0, 120), score, total: review.length }) } });
     } catch { /* the result still shows */ }
   }
-  res.json({ score, total: review.length, review, points });
+  res.json({ score, total: review.length, review: await questionLocalize.localize(review, questionLocalize.contentLanguage(req.user)), points });
 });
 
 // The Daily Challenge: a short timed set from the question bank, one course at a time, every day. This says what is

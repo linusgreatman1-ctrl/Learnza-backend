@@ -68,7 +68,7 @@ async function askWithRetry(system, userPrompt) {
     try {
       const out = await ai.askForJson(system, userPrompt);
       if (out && Array.isArray(out.questions) && out.questions.length) return out;
-      throw new Error('AI returned no questions');
+      throw new Error('Learnza returned no questions');
     } catch (err) {
       lastErr = err;
       if (err.code === 'AI_NOT_CONFIGURED') throw err;
@@ -124,7 +124,7 @@ async function write(ctx, kind, setNumber) {
       ].filter(Boolean).join('\n');
       questions.push(...cleanObjective(await askWithRetry(SYSTEM_OBJECTIVE, prompt), PRACTICE_CHUNK));
     }
-    if (questions.length < 10) throw new Error('AI returned too few usable questions');
+    if (questions.length < 10) throw new Error('Learnza returned too few usable questions');
     await prisma.platformQuestion.createMany({
       data: questions.map((q) => ({
         subject: label, level: ctx.level || null, source: 'Generated for your course',
@@ -173,7 +173,7 @@ async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, ge
     objective.push(...got);
     if (got.length < want) break;
   }
-  if (objective.length < Math.min(10, objectiveCount)) throw new Error('AI returned too few usable objective questions');
+  if (objective.length < Math.min(10, objectiveCount)) throw new Error('Learnza returned too few usable objective questions');
   const theory = cleanTheory(await askWithRetry(SYSTEM_THEORY, [
     ...common,
     `Set as for ${profile.guide}`,
@@ -182,7 +182,7 @@ async function createPaper(ctx, { style, name, assessmentType, setNumber = 1, ge
     `Marks per question: ${profile.theoryMarks}`,
     earlier,
   ].filter(Boolean).join('\n')), THEORY_PER_PAPER, profile.theoryMarks);
-  if (theory.length < 3) throw new Error('AI returned too few usable theory questions');
+  if (theory.length < 3) throw new Error('Learnza returned too few usable theory questions');
 
   const paperId = crypto.randomUUID();
   const base = { ...where(ctx), authorId: ctx.authorId, type: assessmentType, generated, paperId, sentAt: new Date(), semesterId: ctx.semesterId || null };

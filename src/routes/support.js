@@ -116,7 +116,7 @@ router.post('/chat', async (req, res) => {
   res.json({ message });
 
   // The assistant answers until a person from the team steps in.
-  if (!thread.adminTookOver) answerWithAi(thread.id).catch((e) => console.error('Support chat AI reply failed:', e.message));
+  if (!thread.adminTookOver) answerWithAi(thread.id).catch((e) => console.error('Support chat Learnza reply failed:', e.message));
 });
 
 async function answerWithAi(threadId) {

@@ -5,7 +5,7 @@ const settings = require('./settings');
 // the master kill switch, and a per-student daily cap on research/lab questions.
 function aiGuard(req, res, next) {
   if (!settings.get('aiEnabled')) {
-    return res.status(503).json({ error: 'AI features are switched off for now. Please try again later.', code: 'AI_DISABLED' });
+    return res.status(503).json({ error: 'Learnza features are switched off for now. Please try again later.', code: 'AI_DISABLED' });
   }
   next();
 }
@@ -18,7 +18,7 @@ async function aiDailyLimit(req, res, next) {
   startOfDay.setHours(0, 0, 0, 0);
   const used = await prisma.aiConversationLog.count({ where: { userId: req.user.id, createdAt: { gte: startOfDay } } });
   if (used >= limit) {
-    return res.status(429).json({ error: `You've reached today's limit of ${limit} AI questions. It resets tomorrow.`, code: 'AI_DAILY_LIMIT' });
+    return res.status(429).json({ error: `You've reached today's limit of ${limit} Learnza questions. It resets tomorrow.`, code: 'AI_DAILY_LIMIT' });
   }
   next();
 }
@@ -31,7 +31,7 @@ async function logAiConversation(userId, kind, question, answer) {
       data: { userId, kind, question: String(question).slice(0, 4000), answer: String(answer).slice(0, 8000) },
     });
   } catch (e) {
-    console.error('Could not log AI conversation:', e.message);
+    console.error('Could not log Learnza conversation:', e.message);
   }
 }
 

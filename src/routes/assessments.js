@@ -6,6 +6,7 @@ const { getCurrentSemesterId } = require('../semester');
 const { notify, notifyMany, notifySchoolAdmins } = require('../services/notification.service');
 const { loadCourse, loadAssessment, plainCourse, loadSubmission, mayModify } = require('../scope');
 
+const questionLocalize = require('../services/questionLocalize.service');
 const router = express.Router();
 
 // A lecturer's test/exam gets 1 minute per question -- not the lecturer-set durationMin field, which
@@ -147,13 +148,13 @@ router.get('/assessments/:id', requireAuth, loadAssessment({ include: { question
     const mySubmission = await prisma.submission.findUnique({
       where: { assessmentId_studentId: { assessmentId: assessment.id, studentId: req.user.id } },
     });
-    const questions = assessment.questions.map((q) => ({
+    const questions = await questionLocalize.localize(assessment.questions.map((q) => ({
       id: q.id,
       questionType: q.questionType,
       text: q.text,
       options: q.options ? JSON.parse(q.options) : null,
       order: q.order,
-    }));
+    })), questionLocalize.contentLanguage(req.user));
     return res.json({ assessment: { ...assessment, questions, minutes: timingFor(assessment, assessment.questions) }, mySubmission });
   }
   res.json({ assessment });
@@ -239,7 +240,7 @@ router.get('/assessments/:id/my-review', requireAuth, requireRole('STUDENT'), lo
   if (!submission || !submission.submittedAt) return res.status(404).json({ error: 'No submitted attempt to review.' });
 
   const answerMap = new Map((JSON.parse(submission.answers || '[]')).map((a) => [a.questionId, a]));
-  const review = assessment.questions.map((q) => {
+  const reviewEnglish = assessment.questions.map((q) => {
     const mine = answerMap.get(q.id);
     if (q.questionType === 'THEORY') {
       return { questionId: q.id, questionType: 'THEORY', text: q.text, myAnswer: mine ? mine.text : null, modelAnswer: q.modelAnswer };
@@ -250,6 +251,7 @@ router.get('/assessments/:id/my-review', requireAuth, requireRole('STUDENT'), lo
       correctIndex: q.correctIndex, chosen, correct: chosen === q.correctIndex, explanation: q.explanation,
     };
   });
+  const review = await questionLocalize.localize(reviewEnglish, questionLocalize.contentLanguage(req.user));
   res.json({ review, score: submission.score, total: submission.total });
 });
 
@@ -275,7 +277,7 @@ router.post('/assessments/:id/practice-submit', requireAuth, requireRole('STUDEN
     if (correct) score += 1;
     return { questionId: q.id, questionType: 'OBJECTIVE', correctIndex: q.correctIndex, chosen: chosen ?? null, correct, explanation: q.explanation };
   });
-  res.json({ score, total: objectiveCount, corrections });
+  res.json({ score, total: objectiveCount, corrections: await questionLocalize.localize(corrections, questionLocalize.contentLanguage(req.user)) });
 });
 
 // Every submitted attempt with at least one theory question that hasn't been reviewed

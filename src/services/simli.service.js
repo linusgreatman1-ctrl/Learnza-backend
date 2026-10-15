@@ -13,7 +13,7 @@ function isConfigured() {
 
 async function createSessionToken() {
   if (!isConfigured()) {
-    const err = new Error('The AI video avatar is not configured yet (missing SIMLI_API_KEY / SIMLI_FACE_ID).');
+    const err = new Error('The Learnza video avatar is not configured yet (missing SIMLI_API_KEY / SIMLI_FACE_ID).');
     err.code = 'SIMLI_NOT_CONFIGURED';
     throw err;
   }

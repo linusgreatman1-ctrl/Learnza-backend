@@ -16,7 +16,7 @@ function handleAiError(res, err) {
   if (err.code === 'AI_NOT_CONFIGURED' || err.code === 'SIMLI_NOT_CONFIGURED') {
     return res.status(503).json({ error: err.message, code: err.code });
   }
-  return res.status(502).json({ error: err.message || 'The AI Lecturer had trouble responding. Please try again.' });
+  return res.status(502).json({ error: err.message || 'The Learnza Lecturer had trouble responding. Please try again.' });
 }
 
 function courseTitleOf(session) {
@@ -30,7 +30,7 @@ router.get('/config', requireAuth, async (req, res) => {
 
 async function startSession(req, res, { courseId, individualCourseId, courseTitle }) {
   const { topic } = req.body;
-  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Tell the AI Lecturer what topic to cover.' });
+  if (!topic || !topic.trim()) return res.status(400).json({ error: 'Tell the Learnza Lecturer what topic to cover.' });
 
   try {
     const plan = await aiTeacher.generateLessonPlan({ courseTitle, topic, language: req.user.aiLanguage });

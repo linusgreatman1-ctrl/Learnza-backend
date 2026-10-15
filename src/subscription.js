@@ -58,7 +58,7 @@ async function requireAiCredits(req, res, next) {
   const { tracked, exhausted } = await getAiCreditStatus(req.user.id);
   if (tracked && exhausted) {
     return res.status(402).json({
-      error: "You've used up this cycle's live AI Lecturer minutes. Subscribe again to top up your credit.",
+      error: "You've used up this cycle's live Learnza Lecturer minutes. Subscribe again to top up your credit.",
       code: 'AI_CREDITS_EXHAUSTED',
     });
   }
@@ -74,7 +74,7 @@ async function recordAiUsage(userId, seconds, meta = {}) {
   const total = Math.round(seconds);
   // The usage list ("what my minutes were spent on") is kept whether or not there is a plan to count against.
   prisma.aiUsageLog.create({ data: { userId, seconds: total, kind: meta.kind === 'PRACTICAL' ? 'PRACTICAL' : 'LECTURE', title: meta.title ? String(meta.title).slice(0, 120) : null } })
-    .catch((e) => console.error('Could not log AI usage:', e.message));
+    .catch((e) => console.error('Could not log Learnza usage:', e.message));
   try {
     const sub = await prisma.subscription.findUnique({ where: { userId } });
     if (!sub) return; // free/testing user -- nothing to track against
@@ -82,7 +82,7 @@ async function recordAiUsage(userId, seconds, meta = {}) {
     if (fromPlan > 0) await prisma.subscription.update({ where: { userId }, data: { aiSecondsUsed: { increment: fromPlan } } });
     if (total > fromPlan) await coins.spendSeconds(userId, total - fromPlan);
   } catch (e) {
-    console.error('Could not record AI usage:', e.message);
+    console.error('Could not record Learnza usage:', e.message);
   }
 }
 
