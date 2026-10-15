@@ -127,6 +127,24 @@ router.post('/lab/:id/attempt', requireAuth, requireRole('STUDENT'), loadDemo(),
   res.json({ ok: true });
 });
 
+// A student's live practical is recorded like a live class: this makes the record the video is attached to. It is kept as a
+// finished class (so it appears under AI Live Recorded Lectures to watch again or download, with the steps as notes) and is
+// never offered as a lecture to continue.
+router.post('/lab/:id/record', requireAuth, requireRole('STUDENT'), loadDemo(), async (req, res) => {
+  const demo = req.demo;
+  let steps = [];
+  try { steps = JSON.parse(demo.stepsJson); } catch { steps = []; }
+  const title = 'Practical: ' + demo.title;
+  const plan = {
+    title, kind: 'PRACTICAL', recordings: [],
+    sections: steps.map((st) => ({ title: st.title, boardText: st.expectedResult ? 'Expected result: ' + st.expectedResult : '', speechText: st.instruction })),
+  };
+  const session = await prisma.aiTeacherSession.create({
+    data: { studentId: req.user.id, courseId: demo.courseId || null, individualCourseId: demo.individualCourseId || null, topic: title, planJson: JSON.stringify(plan), sectionIdx: 0, status: 'COMPLETED' },
+  });
+  res.status(201).json({ session: { id: session.id } });
+});
+
 // Read-only records of all lab activity for the school -- there's no approval step
 // to action here any more, just visibility into what's been curated vs AI-generated,
 // plus which students actually did each practical.

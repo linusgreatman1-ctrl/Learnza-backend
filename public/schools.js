@@ -4596,6 +4596,7 @@
 
     document.getElementById('back-btn').addEventListener('click', () => {
       stopped = true;
+      aiRecStop();
       // renderLab (single course view) only understands school Courses -- individual
       // learners always came from the cross-course Lab Hub, so send them back there.
       if (isIndividual) navigate('lab-hub');
@@ -4685,6 +4686,10 @@
     });
 
     async function runPractical() {
+      // a live practical is recorded like a live class, so it can be watched again or downloaded from AI Live Recorded Lectures
+      if (state.user.role === 'STUDENT' && !recordedMode) {
+        api(`/lab/${demo.id}/record`, { method: 'POST' }).then(({ session: recSession }) => { if (!stopped) aiRecStart(recSession, `Practical: ${demo.title}`, initials(demo.title || 'AI')); }).catch(() => {});
+      }
       if (avatarConfigured && !recordedMode) {
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
           .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
@@ -4702,6 +4707,7 @@
           boardStatus.textContent = 'Practical complete';
           toast('Practical complete — nice work!');
           askVoiceBtn.disabled = true;
+          setTimeout(aiRecStop, 2500);
           return;
         }
         stepIdx++;
