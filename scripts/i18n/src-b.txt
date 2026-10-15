@@ -14,7 +14,7 @@ No courses yet. ¦ Kò sí kóòsì síbẹ̀. ¦ Babu kwas tukuna. ¦ Enwebegh�
 Your classes ¦ Àwọn kíláàsì rẹ ¦ Azuzuwanka ¦ Klaasị gị ¦ Your classes
 Your own courses ¦ Àwọn kóòsì tìrẹ ¦ Darussanka na kanka ¦ Usoro ọmụmụ nke gị ¦ Your own courses
 Open My Courses to enrol. ¦ Ṣí Àwọn kóòsì mi láti forúkọ sílẹ̀. ¦ Buɗe Darussana don yin rajista. ¦ Mepee Usoro ọmụmụ m iji debanye aha. ¦ Open My Courses to enrol.
-Create a course and your AI lecturer prepares the lectures. ¦ Ṣẹ̀dá kóòsì, AI olùkọ́ rẹ yóò sì pèsè àwọn ẹ̀kọ́. ¦ Ƙirƙiri kwas, malamin AI ɗinka zai shirya laccocin. ¦ Mepụta usoro ọmụmụ, onye nkụzi AI gị ga-edozi ihe ọmụmụ. ¦ Create course, your AI lecturer go prepare the lectures.
+Create a course and your Learnza lecturer prepares the lectures. ¦ Ṣẹ̀dá kóòsì, Learnza olùkọ́ rẹ yóò sì pèsè àwọn ẹ̀kọ́. ¦ Ƙirƙiri kwas, malamin Learnza ɗinka zai shirya laccocin. ¦ Mepụta usoro ọmụmụ, onye nkụzi Learnza gị ga-edozi ihe ọmụmụ. ¦ Create course, your Learnza lecturer go prepare the lectures.
 Practise a little every day ¦ Ṣe àṣetúnṣe díẹ̀ lójoojúmọ́ ¦ Yi ɗan atisaye kowace rana ¦ Mee ntakịrị omume kwa ụbọchị ¦ Practise small every day
 Practise questions from your courses every day ¦ Ṣe àṣetúnṣe àwọn ìbéèrè látinú àwọn kóòsì rẹ lójoojúmọ́ ¦ Yi atisayen tambayoyi daga darussanka kowace rana ¦ Mee ajụjụ sitere n'usoro ọmụmụ gị kwa ụbọchị ¦ Practise questions from your courses every day
 Start now ¦ Bẹ̀rẹ̀ báyìí ¦ Fara yanzu ¦ Malite ugbu a ¦ Start now
@@ -62,16 +62,16 @@ Delete this course ¦ Pa kóòsì yìí rẹ́ ¦ Share wannan kwas ɗin ¦ Hich
 Course deleted ¦ A ti pa kóòsì rẹ́ ¦ An share kwas ɗin ¦ Ehichapụla usoro ọmụmụ ¦ Course don delete
 Pre-recorded lectures ¦ Àwọn ẹ̀kọ́ tí a ti gbà sílẹ̀ ¦ Laccocin da aka riga aka naɗa ¦ Ihe ọmụmụ edeburu ¦ Pre-recorded lectures
 Lecture notes ¦ Àkọsílẹ̀ ẹ̀kọ́ ¦ Bayanan laccoci ¦ Ndetu ihe ọmụmụ ¦ Lecture notes
-Start AI Lectures ¦ Bẹ̀rẹ̀ àwọn ẹ̀kọ́ AI ¦ Fara laccocin AI ¦ Malite ihe ọmụmụ AI ¦ Start AI Lectures
-AI Lecturer ¦ AI olùkọ́ ¦ Malamin AI ¦ Onye nkụzi AI ¦ AI Lecturer
-Tell the AI Lecturer what to cover in this course. ¦ Sọ fún AI olùkọ́ ohun tí yóò kọ́ nínú kóòsì yìí. ¦ Gaya wa malamin AI abin da zai koyar a wannan kwas. ¦ Gwa onye nkụzi AI ihe ọ ga-akụzi n'usoro ọmụmụ a. ¦ Tell the AI Lecturer wetin e go teach for this course.
+Start Learnza Lectures ¦ Bẹ̀rẹ̀ àwọn ẹ̀kọ́ Learnza ¦ Fara laccocin Learnza ¦ Malite ihe ọmụmụ Learnza ¦ Start Learnza Lectures
+Learnza Lecturer ¦ Learnza olùkọ́ ¦ Malamin Learnza ¦ Onye nkụzi Learnza ¦ Learnza Lecturer
+Tell the Learnza Lecturer what to cover in this course. ¦ Sọ fún Learnza olùkọ́ ohun tí yóò kọ́ nínú kóòsì yìí. ¦ Gaya wa malamin Learnza abin da zai koyar a wannan kwas. ¦ Gwa onye nkụzi Learnza ihe ọ ga-akụzi n'usoro ọmụmụ a. ¦ Tell the Learnza Lecturer wetin e go teach for this course.
 Open course ¦ Ṣí kóòsì ¦ Buɗe kwas ¦ Mepee usoro ọmụmụ ¦ Open course
 Subscribers only ¦ Fún àwọn tó forúkọ sílẹ̀ nìkan ¦ Don masu biyan kuɗi kawai ¦ Maka ndị debanyere aha naanị ¦ Subscribers only
-AI Lecturer · narrated lecture ¦ AI olùkọ́ · ẹ̀kọ́ tí a sọ ¦ Malamin AI · laccar da aka karanta ¦ Onye nkụzi AI · ihe ọmụmụ a gwara ¦ AI Lecturer · lecture wey dem narrate
+Learnza Lecturer · narrated lecture ¦ Learnza olùkọ́ · ẹ̀kọ́ tí a sọ ¦ Malamin Learnza · laccar da aka karanta ¦ Onye nkụzi Learnza · ihe ọmụmụ a gwara ¦ Learnza Lecturer · lecture wey dem narrate
 Nothing yet — check back shortly. ¦ Kò sí nǹkan síbẹ̀ — padà wá láìpẹ́. ¦ Babu komai tukuna — a dawo ba da jimawa ba. ¦ Ọ dịghị ihe ugbu a — lọghachi n'oge na-adịghị anya. ¦ Nothing yet — come back small time.
 No pre-recorded lectures in your courses yet. They appear here, and inside each course, as the system records them. ¦ Kò sí ẹ̀kọ́ tí a ti gbà sílẹ̀ nínú àwọn kóòsì rẹ síbẹ̀. Wọ́n máa hàn níbí, àti nínú kóòsì kọ̀ọ̀kan, bí ètò ṣe ń gbà wọ́n sílẹ̀. ¦ Babu laccocin da aka riga aka naɗa a kwasa-kwasanka tukuna. Za su bayyana a nan, da cikin kowane kwas, yayin da tsarin ke naɗa su. ¦ Enwebeghị ihe ọmụmụ edeburu n'usoro ọmụmụ gị. Ha ga-apụta ebe a, na n'ime usoro ọmụmụ ọ bụla, ka sistemụ na-edekọ ha. ¦ No pre-recorded lectures for your courses yet. Dem go show here, and inside each course, as the system dey record dem.
-The pre-recorded lectures the system's AI Lecturer made for each of your courses: the same ones listed inside the course. This is where you carry on learning when your live AI minutes or coins run out. Classes you took live are under AI Live Recorded Lectures. ¦ Àwọn ẹ̀kọ́ tí AI olùkọ́ ètò ti gbà sílẹ̀ fún kóòsì rẹ kọ̀ọ̀kan: àwọn kan náà tí a tò sínú kóòsì náà. Níbí ni o ti lè tẹ̀síwájú láti kẹ́kọ̀ọ́ tí ìṣẹ́jú AI àyè tàbí owó ẹyọ rẹ bá tán. Àwọn kíláàsì tí o kọ́ ní àyè wà lábẹ́ Àwọn ẹ̀kọ́ AI àyè tí a gbà sílẹ̀. ¦ Laccocin da malamin AI na tsarin ya naɗa wa kowane kwasarka: iri ɗaya da waɗanda aka lissafa a cikin kwas ɗin. Nan ne za ka ci gaba da koyo idan mintunan AI ko tsabar kuɗinka suka ƙare. Azuzuwan da ka ɗauka kai tsaye suna ƙarƙashin Laccocin AI kai tsaye da aka naɗa. ¦ Ihe ọmụmụ onye nkụzi AI nke sistemụ dere maka usoro ọmụmụ gị ọ bụla: otu ihe ahụ edepụtara n'ime usoro ọmụmụ ahụ. Ebe a ka ị ga-aga n'ihu na-amụ mgbe nkeji AI ma ọ bụ mkpụrụ ego gị gwụrụ. Klaasị ị gara n'ụzọ ndụ nọ n'okpuru Ihe ọmụmụ AI ndụ edeburu. ¦ The pre-recorded lectures wey the system AI Lecturer make for each of your courses: the same ones wey dey inside the course. Na here you go continue to learn when your live AI minutes or coins finish. Classes wey you take live dey under AI Live Recorded Lectures.
-The live classes the AI Lecturer taught you, recorded as they happened. Watch a class again, pick it up where you stopped, or download its notes. Lectures the system recorded in advance are under AI Pre-recorded Lectures. ¦ Àwọn kíláàsì àyè tí AI olùkọ́ kọ́ ọ, tí a gbà sílẹ̀ bí wọ́n ṣe ń ṣẹlẹ̀. Wo kíláàsì lẹ́ẹ̀kan sí i, tẹ̀síwájú níbi tí o dúró, tàbí ṣe ìgbàsílẹ̀ àkọsílẹ̀ rẹ̀. Àwọn ẹ̀kọ́ tí ètò gbà sílẹ̀ ṣáájú wà lábẹ́ Àwọn ẹ̀kọ́ AI tí a ti gbà sílẹ̀. ¦ Azuzuwan kai tsaye da malamin AI ya koyar da kai, an naɗa su yayin da suke faruwa. Kalli aji kuma, ci gaba daga inda ka tsaya, ko ka sauke bayanansa. Laccocin da tsarin ya naɗa tun da farko suna ƙarƙashin Laccocin AI da aka riga aka naɗa. ¦ Klaasị ndụ onye nkụzi AI kụziri gị, edeburu ka ha na-eme. Lee klaasị ọzọ, gaa n'ihu ebe ị kwụsịrị, ma ọ bụ budata ndetu ya. Ihe ọmụmụ sistemụ dere na mbụ nọ n'okpuru Ihe ọmụmụ AI edeburu. ¦ The live classes wey AI Lecturer teach you, wey dem record as e dey happen. Watch class again, continue from where you stop, or download di notes. Lectures wey the system record before dey under AI Pre-recorded Lectures.
+The pre-recorded lectures the system's Learnza Lecturer made for each of your courses: the same ones listed inside the course. This is where you carry on learning when your live Learnza minutes or coins run out. Classes you took live are under Learnza Live Recorded Lectures. ¦ Àwọn ẹ̀kọ́ tí Learnza olùkọ́ ètò ti gbà sílẹ̀ fún kóòsì rẹ kọ̀ọ̀kan: àwọn kan náà tí a tò sínú kóòsì náà. Níbí ni o ti lè tẹ̀síwájú láti kẹ́kọ̀ọ́ tí ìṣẹ́jú Learnza àyè tàbí owó ẹyọ rẹ bá tán. Àwọn kíláàsì tí o kọ́ ní àyè wà lábẹ́ Àwọn ẹ̀kọ́ Learnza àyè tí a gbà sílẹ̀. ¦ Laccocin da malamin Learnza na tsarin ya naɗa wa kowane kwasarka: iri ɗaya da waɗanda aka lissafa a cikin kwas ɗin. Nan ne za ka ci gaba da koyo idan mintunan Learnza ko tsabar kuɗinka suka ƙare. Azuzuwan da ka ɗauka kai tsaye suna ƙarƙashin Laccocin Learnza kai tsaye da aka naɗa. ¦ Ihe ọmụmụ onye nkụzi Learnza nke sistemụ dere maka usoro ọmụmụ gị ọ bụla: otu ihe ahụ edepụtara n'ime usoro ọmụmụ ahụ. Ebe a ka ị ga-aga n'ihu na-amụ mgbe nkeji Learnza ma ọ bụ mkpụrụ ego gị gwụrụ. Klaasị ị gara n'ụzọ ndụ nọ n'okpuru Ihe ọmụmụ Learnza ndụ edeburu. ¦ The pre-recorded lectures wey the system Learnza Lecturer make for each of your courses: the same ones wey dey inside the course. Na here you go continue to learn when your live Learnza minutes or coins finish. Classes wey you take live dey under Learnza Live Recorded Lectures.
+The live classes the Learnza Lecturer taught you, recorded as they happened. Watch a class again, pick it up where you stopped, or download its notes. Lectures the system recorded in advance are under Learnza Pre-recorded Lectures. ¦ Àwọn kíláàsì àyè tí Learnza olùkọ́ kọ́ ọ, tí a gbà sílẹ̀ bí wọ́n ṣe ń ṣẹlẹ̀. Wo kíláàsì lẹ́ẹ̀kan sí i, tẹ̀síwájú níbi tí o dúró, tàbí ṣe ìgbàsílẹ̀ àkọsílẹ̀ rẹ̀. Àwọn ẹ̀kọ́ tí ètò gbà sílẹ̀ ṣáájú wà lábẹ́ Àwọn ẹ̀kọ́ Learnza tí a ti gbà sílẹ̀. ¦ Azuzuwan kai tsaye da malamin Learnza ya koyar da kai, an naɗa su yayin da suke faruwa. Kalli aji kuma, ci gaba daga inda ka tsaya, ko ka sauke bayanansa. Laccocin da tsarin ya naɗa tun da farko suna ƙarƙashin Laccocin Learnza da aka riga aka naɗa. ¦ Klaasị ndụ onye nkụzi Learnza kụziri gị, edeburu ka ha na-eme. Lee klaasị ọzọ, gaa n'ihu ebe ị kwụsịrị, ma ọ bụ budata ndetu ya. Ihe ọmụmụ sistemụ dere na mbụ nọ n'okpuru Ihe ọmụmụ Learnza edeburu. ¦ The live classes wey Learnza Lecturer teach you, wey dem record as e dey happen. Watch class again, continue from where you stop, or download di notes. Lectures wey the system record before dey under Learnza Pre-recorded Lectures.
 No attendance recorded yet. ¦ A kò tíì kọ ìkópa sílẹ̀. ¦ Ba a yi rikodin halarta ba tukuna. ¦ Edekọbeghị ọbịbịa. ¦ Dem never record attendance.
 No assignments posted yet. ¦ A kò tíì fi iṣẹ́ àṣetiléwá sílẹ̀. ¦ Ba a saka ayyuka ba tukuna. ¦ Ekwuputabeghị ọrụ ụlọ. ¦ Dem never post assignments.
 No lecturer-uploaded lectures yet. ¦ Olùkọ́ kò tíì gbé ẹ̀kọ́ kankan sórí. ¦ Malami bai ɗora laccoci ba tukuna. ¦ Onye nkụzi etinyebeghị ihe ọmụmụ. ¦ Lecturer never upload any lecture yet.
@@ -125,20 +125,20 @@ Exam practice ¦ Àṣetúnṣe ìdánwò ¦ Atisayen jarrabawa ¦ Omume ule ¦ 
 Your study helper ¦ Olùrànlọ́wọ́ ìkẹ́kọ̀ọ́ rẹ ¦ Mataimakin karatunka ¦ Onye enyemaka ọmụmụ gị ¦ Your study helper
 Textbooks ¦ Àwọn ìwé ẹ̀kọ́ ¦ Littattafai ¦ Akwụkwọ ọmụmụ ¦ Textbooks
 Pending admin review ¦ Ń dúró fún àyẹ̀wò alákòóso ¦ Yana jiran duba na admin ¦ Na-echere nyocha onye isi ¦ Dey wait for admin review
-# --- AI lecturer sessions ---
-AI Lecturer — thinking… ¦ AI olùkọ́ — ń ronú… ¦ Malamin AI — yana tunani… ¦ Onye nkụzi AI — na-eche echiche… ¦ AI Lecturer — dey think…
-AI Lecturer — explaining ¦ AI olùkọ́ — ń ṣàlàyé ¦ Malamin AI — yana bayani ¦ Onye nkụzi AI — na-akọwa ¦ AI Lecturer — dey explain
-AI Lecturer — answering your question ¦ AI olùkọ́ — ń dáhùn ìbéèrè rẹ ¦ Malamin AI — yana amsa tambayarka ¦ Onye nkụzi AI — na-aza ajụjụ gị ¦ AI Lecturer — dey answer your question
-AI Lecturer — checking your understanding ¦ AI olùkọ́ — ń ṣàyẹ̀wò òye rẹ ¦ Malamin AI — yana duba fahimtarka ¦ Onye nkụzi AI — na-enyocha nghọta gị ¦ AI Lecturer — dey check if you understand
-AI Lecturer — well done! ¦ AI olùkọ́ — ṣé o ṣe é dáadáa! ¦ Malamin AI — ka yi kyau! ¦ Onye nkụzi AI — ọ dị mma! ¦ AI Lecturer — well done!
-AI Lecturer — writing on the board ¦ AI olùkọ́ — ń kọ̀wé lórí pátákó ¦ Malamin AI — yana rubutu a allo ¦ Onye nkụzi AI — na-ede na bọọdụ ¦ AI Lecturer — dey write for board
-AI Lecturer — live session ¦ AI olùkọ́ — ìpàdé àyè ¦ Malamin AI — zaman kai tsaye ¦ Onye nkụzi AI — nzukọ ndụ ¦ AI Lecturer — live session
-AI Lecturer — video avatar connected ¦ AI olùkọ́ — avatar fídíò ti sopọ̀ ¦ Malamin AI — avatar na bidiyo ya haɗu ¦ Onye nkụzi AI — avatar vidiyo jikọtara ¦ AI Lecturer — video avatar don connect
-AI Lecturer — video avatar available ¦ AI olùkọ́ — avatar fídíò wà ¦ Malamin AI — avatar na bidiyo yana nan ¦ Onye nkụzi AI — avatar vidiyo dị ¦ AI Lecturer — video avatar dey
+# --- Learnza lecturer sessions ---
+Learnza Lecturer — thinking… ¦ Learnza olùkọ́ — ń ronú… ¦ Malamin Learnza — yana tunani… ¦ Onye nkụzi Learnza — na-eche echiche… ¦ Learnza Lecturer — dey think…
+Learnza Lecturer — explaining ¦ Learnza olùkọ́ — ń ṣàlàyé ¦ Malamin Learnza — yana bayani ¦ Onye nkụzi Learnza — na-akọwa ¦ Learnza Lecturer — dey explain
+Learnza Lecturer — answering your question ¦ Learnza olùkọ́ — ń dáhùn ìbéèrè rẹ ¦ Malamin Learnza — yana amsa tambayarka ¦ Onye nkụzi Learnza — na-aza ajụjụ gị ¦ Learnza Lecturer — dey answer your question
+Learnza Lecturer — checking your understanding ¦ Learnza olùkọ́ — ń ṣàyẹ̀wò òye rẹ ¦ Malamin Learnza — yana duba fahimtarka ¦ Onye nkụzi Learnza — na-enyocha nghọta gị ¦ Learnza Lecturer — dey check if you understand
+Learnza Lecturer — well done! ¦ Learnza olùkọ́ — ṣé o ṣe é dáadáa! ¦ Malamin Learnza — ka yi kyau! ¦ Onye nkụzi Learnza — ọ dị mma! ¦ Learnza Lecturer — well done!
+Learnza Lecturer — writing on the board ¦ Learnza olùkọ́ — ń kọ̀wé lórí pátákó ¦ Malamin Learnza — yana rubutu a allo ¦ Onye nkụzi Learnza — na-ede na bọọdụ ¦ Learnza Lecturer — dey write for board
+Learnza Lecturer — live session ¦ Learnza olùkọ́ — ìpàdé àyè ¦ Malamin Learnza — zaman kai tsaye ¦ Onye nkụzi Learnza — nzukọ ndụ ¦ Learnza Lecturer — live session
+Learnza Lecturer — video avatar connected ¦ Learnza olùkọ́ — avatar fídíò ti sopọ̀ ¦ Malamin Learnza — avatar na bidiyo ya haɗu ¦ Onye nkụzi Learnza — avatar vidiyo jikọtara ¦ Learnza Lecturer — video avatar don connect
+Learnza Lecturer — video avatar available ¦ Learnza olùkọ́ — avatar fídíò wà ¦ Malamin Learnza — avatar na bidiyo yana nan ¦ Onye nkụzi Learnza — avatar vidiyo dị ¦ Learnza Lecturer — video avatar dey
 🎥 Connect video avatar ¦ 🎥 Sopọ̀ avatar fídíò ¦ 🎥 Haɗa avatar na bidiyo ¦ 🎥 Jikọọ avatar vidiyo ¦ 🎥 Connect video avatar
 Connecting video avatar… ¦ À ń so avatar fídíò pọ̀… ¦ Ana haɗa avatar na bidiyo… ¦ Na-ejikọ avatar vidiyo… ¦ Dey connect video avatar…
 Connecting… ¦ À ń sopọ̀… ¦ Ana haɗawa… ¦ Na-ejikọ… ¦ Dey connect…
-Wait for the AI Lecturer to start… ¦ Dúró kí AI olùkọ́ bẹ̀rẹ̀… ¦ Jira malamin AI ya fara… ¦ Chere ka onye nkụzi AI malite… ¦ Wait make AI Lecturer start…
+Wait for the Learnza Lecturer to start… ¦ Dúró kí Learnza olùkọ́ bẹ̀rẹ̀… ¦ Jira malamin Learnza ya fara… ¦ Chere ka onye nkụzi Learnza malite… ¦ Wait make Learnza Lecturer start…
 Listening… ¦ Ń gbọ́… ¦ Ana saurara… ¦ Na-ege ntị… ¦ Dey listen…
 🛑 Listening… tap to cancel ¦ 🛑 Ń gbọ́… tẹ láti fagilé ¦ 🛑 Ana saurara… danna don soke ¦ 🛑 Na-ege ntị… pịa ka kagbuo ¦ 🛑 Dey listen… tap to cancel
 🛑 Listening… tap to stop ¦ 🛑 Ń gbọ́… tẹ láti dúró ¦ 🛑 Ana saurara… danna don tsayawa ¦ 🛑 Na-ege ntị… pịa ka kwụsị ¦ 🛑 Dey listen… tap to stop
@@ -149,7 +149,7 @@ Listening… ¦ Ń gbọ́… ¦ Ana saurara… ¦ Na-ege ntị… ¦ Dey listen
 🔊 Read aloud ¦ 🔊 Kà á sókè ¦ 🔊 Karanta da ƙarfi ¦ 🔊 Gụọ ya n'olu dara ụda ¦ 🔊 Read am loud
 Stop ¦ Dúró ¦ Tsaya ¦ Kwụsị ¦ Stop
 Pause ¦ Dúró díẹ̀ ¦ Dakata ¦ Kwụsị nwa oge ¦ Pause
-▶ Play AI narration ¦ ▶ Ṣe ìsọ́rọ̀ AI ¦ ▶ Kunna labarin AI ¦ ▶ Kpọọ ịkọ AI ¦ ▶ Play AI narration
+▶ Play Learnza narration ¦ ▶ Ṣe ìsọ́rọ̀ Learnza ¦ ▶ Kunna labarin Learnza ¦ ▶ Kpọọ ịkọ Learnza ¦ ▶ Play Learnza narration
 Ask ¦ Béèrè ¦ Tambaya ¦ Jụọ ¦ Ask
 Your topic or question ¦ Kókó ọ̀rọ̀ tàbí ìbéèrè rẹ ¦ Batunka ko tambayarka ¦ Isiokwu ma ọ bụ ajụjụ gị ¦ Your topic or question
 Voice needs Chrome or Edge on this device — type instead. ¦ Ohùn nílò Chrome tàbí Edge lórí ẹ̀rọ yìí — kọ̀wé dípò rẹ̀. ¦ Murya na buƙatar Chrome ko Edge a wannan na'ura — rubuta maimakon haka. ¦ Olu chọrọ Chrome ma ọ bụ Edge na ngwaọrụ a — dee kama. ¦ Voice need Chrome or Edge for this device — type instead.
@@ -185,7 +185,7 @@ Coin balance ¦ Ìyókù owó ẹyọ ¦ Ragowar tsabar kuɗi ¦ Ego mkpụrụ 
 Buy coins ¦ Ra owó ẹyọ ¦ Sayi tsabar kuɗi ¦ Zụta mkpụrụ ego ¦ Buy coins
 Buy ¦ Ra ¦ Saya ¦ Zụta ¦ Buy
 History ¦ Ìtàn ¦ Tarihi ¦ Akụkọ ihe mere ¦ History
-Top up live AI Lecturer time ¦ Fi ìgbà AI olùkọ́ àyè kún ¦ Ƙara lokacin malamin AI kai tsaye ¦ Tinye oge onye nkụzi AI ndụ ¦ Top up live AI Lecturer time
+Top up live Learnza Lecturer time ¦ Fi ìgbà Learnza olùkọ́ àyè kún ¦ Ƙara lokacin malamin Learnza kai tsaye ¦ Tinye oge onye nkụzi Learnza ndụ ¦ Top up live Learnza Lecturer time
 Choose payment method ¦ Yan ọ̀nà ìsanwó ¦ Zaɓi hanyar biyan kuɗi ¦ Họrọ ụzọ ịkwụ ụgwọ ¦ Choose how you wan pay
 🏦 Bank transfer ¦ 🏦 Ìgbéwọ́ bánkì ¦ 🏦 Canja wurin banki ¦ 🏦 Ibufe ego ụlọ akụ ¦ 🏦 Bank transfer
 Pay with Flutterwave ¦ Sanwó pẹ̀lú Flutterwave ¦ Biya da Flutterwave ¦ Kwụọ ụgwọ site na Flutterwave ¦ Pay with Flutterwave

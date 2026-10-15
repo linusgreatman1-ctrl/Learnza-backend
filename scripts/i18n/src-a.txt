@@ -98,11 +98,11 @@ Semester Exam ¦ Ìdánwò ìparí semesta ¦ Jarrabawar semisti ¦ Ule njedebe 
 CBT Mock Exam Practice ¦ Ìdánwò àṣetúnṣe CBT ¦ Atisayen jarrabawar CBT ¦ Omume ule CBT ¦ CBT Mock Exam Practice
 CBT Mock Exam ¦ Ìdánwò àṣetúnṣe CBT ¦ Jarrabawar gwaji ta CBT ¦ Ule ịkwadebe CBT ¦ CBT Mock Exam
 CBT Mock ¦ Àṣetúnṣe CBT ¦ Gwajin CBT ¦ Ịkwadebe CBT ¦ CBT Mock
-AI Pre-recorded Lectures ¦ Àwọn ẹ̀kọ́ AI tí a ti gbà sílẹ̀ ¦ Laccocin AI da aka riga aka naɗa ¦ Ihe ọmụmụ AI edeburu ¦ AI Lectures wey dem don record
-AI Live Recorded Lectures ¦ Àwọn ẹ̀kọ́ AI àyè tí a gbà sílẹ̀ ¦ Laccocin AI kai tsaye da aka naɗa ¦ Ihe ọmụmụ AI ndụ edeburu ¦ AI Live Lectures wey dem record
-AI Pre-recorded ¦ AI tí a ti gbà sílẹ̀ ¦ AI da aka riga aka naɗa ¦ AI edeburu ¦ AI Pre-recorded
-AI Live Recorded ¦ AI àyè tí a gbà sílẹ̀ ¦ AI kai tsaye da aka naɗa ¦ AI ndụ edeburu ¦ AI Live Recorded
-AI Research Assistant ¦ Olùrànlọ́wọ́ ìwádìí AI ¦ Mataimakin bincike na AI ¦ Onye enyemaka nyocha AI ¦ AI Research Assistant
+Learnza Pre-recorded Lectures ¦ Àwọn ẹ̀kọ́ Learnza tí a ti gbà sílẹ̀ ¦ Laccocin Learnza da aka riga aka naɗa ¦ Ihe ọmụmụ Learnza edeburu ¦ Learnza Lectures wey dem don record
+Learnza Live Recorded Lectures ¦ Àwọn ẹ̀kọ́ Learnza àyè tí a gbà sílẹ̀ ¦ Laccocin Learnza kai tsaye da aka naɗa ¦ Ihe ọmụmụ Learnza ndụ edeburu ¦ Learnza Live Lectures wey dem record
+Learnza Pre-recorded ¦ Learnza tí a ti gbà sílẹ̀ ¦ Learnza da aka riga aka naɗa ¦ Learnza edeburu ¦ Learnza Pre-recorded
+Learnza Live Recorded ¦ Learnza àyè tí a gbà sílẹ̀ ¦ Learnza kai tsaye da aka naɗa ¦ Learnza ndụ edeburu ¦ Learnza Live Recorded
+Learnza Research Assistant ¦ Olùrànlọ́wọ́ ìwádìí Learnza ¦ Mataimakin bincike na Learnza ¦ Onye enyemaka nyocha Learnza ¦ Learnza Research Assistant
 My Progress ¦ Ìlọsíwájú mi ¦ Ci gabana ¦ Ọganihu m ¦ My Progress
 Leaderboard ¦ Pẹpẹ àwọn aṣíwájú ¦ Allon jagorori ¦ Tebụl ndị na-eduga ¦ Leaderboard
 Study Plan ¦ Ètò ìkẹ́kọ̀ọ́ ¦ Tsarin karatu ¦ Atụmatụ ọmụmụ ¦ Study Plan
@@ -114,7 +114,7 @@ Digital ID ¦ Káàdì ìdánimọ̀ oníkẹ̀ẹ́ ¦ Shaidar dijital ¦ Njiri
 Digital ID & Profile ¦ Káàdì ìdánimọ̀ àti àkọọ́lẹ̀ ¦ Shaidar dijital da bayanin kai ¦ Njirimara dijitalụ na profaịlụ ¦ Digital ID & Profile
 Your Digital ID ¦ Káàdì ìdánimọ̀ oníkẹ̀ẹ́ rẹ ¦ Shaidar dijital ɗinka ¦ Njirimara dijitalụ gị ¦ Your Digital ID
 Subscription ¦ Ìforúkọsílẹ̀ oṣooṣù ¦ Biyan kuɗin shiga ¦ Ndebanye aha ịkwụ ụgwọ ¦ Subscription
-AI Minutes & Coins ¦ Ìṣẹ́jú AI àti àwọn owó ẹyọ ¦ Mintunan AI da tsabar kuɗi ¦ Nkeji AI na mkpụrụ ego ¦ AI Minutes & Coins
+Learnza Minutes & Coins ¦ Ìṣẹ́jú Learnza àti àwọn owó ẹyọ ¦ Mintunan Learnza da tsabar kuɗi ¦ Nkeji Learnza na mkpụrụ ego ¦ Learnza Minutes & Coins
 Settings ¦ Ètò ¦ Saituna ¦ Ntọala ¦ Settings
 Results ¦ Àwọn àbájáde ¦ Sakamako ¦ Nsonaazụ ¦ Results
 Class Recordings ¦ Àwọn ẹ̀kọ́ tí a gbà sílẹ̀ ¦ Rikodin azuzuwa ¦ Ndekọ klaasị ¦ Class Recordings
@@ -193,11 +193,11 @@ Language saved ¦ A ti fi èdè pamọ́ ¦ An ajiye harshe ¦ Echekwara asụs�
 Could not save the language. ¦ A kò lè fi èdè pamọ́. ¦ Ba a iya ajiye harshen ba. ¦ Enweghị ike ichekwa asụsụ. ¦ We no fit save the language.
 App language ¦ Èdè ohun-èlò ¦ Harshen manhaja ¦ Asụsụ ngwa ¦ App language
 Menus, buttons, messages and help text. ¦ Àtòjọ, bọ́tìnì, ìfiránṣẹ́ àti ọ̀rọ̀ ìrànlọ́wọ́. ¦ Menu, maɓallai, saƙonni da rubutun taimako. ¦ Menu, bọtịnụ, ozi na ederede enyemaka. ¦ Menus, buttons, messages and help text.
-Use this language for the AI and voice too ¦ Lo èdè yìí fún AI àti ohùn pẹ̀lú ¦ Yi amfani da wannan harshe don AI da murya ma ¦ Jiri asụsụ a maka AI na olu nke ọma ¦ Use this language for AI and voice too
-AI teaching language ¦ Èdè ìkọ́ni AI ¦ Harshen koyarwar AI ¦ Asụsụ nkuzi AI ¦ AI teaching language
-What the AI Lecturer and the research assistant write and say. Formulas, units and official exam terms stay as they are. ¦ Ohun tí AI olùkọ́ àti olùrànlọ́wọ́ ìwádìí kọ tí wọ́n sì sọ. Àwọn ìlànà ìṣirò, ìwọ̀n àti ọ̀rọ̀ ìdánwò àṣẹ kò ní yípadà. ¦ Abin da malamin AI da mataimakin bincike ke rubutawa da faɗa. Ka'idojin lissafi, ma'auni da kalmomin jarrabawa na hukuma ba za su canza ba. ¦ Ihe onye nkụzi AI na onye enyemaka nyocha na-ede ma na-ekwu. Usoro mgbakọ, nke ọtụtụ na okwu ule gọọmentị agaghị agbanwe. ¦ Wetin AI Lecturer and research assistant go write and talk. Formulas, units and official exam words no go change.
+Use this language for the Learnza and voice too ¦ Lo èdè yìí fún Learnza àti ohùn pẹ̀lú ¦ Yi amfani da wannan harshe don Learnza da murya ma ¦ Jiri asụsụ a maka Learnza na olu nke ọma ¦ Use this language for Learnza and voice too
+Learnza teaching language ¦ Èdè ìkọ́ni Learnza ¦ Harshen koyarwar Learnza ¦ Asụsụ nkuzi Learnza ¦ Learnza teaching language
+What the Learnza Lecturer and the research assistant write and say. Formulas, units and official exam terms stay as they are. ¦ Ohun tí Learnza olùkọ́ àti olùrànlọ́wọ́ ìwádìí kọ tí wọ́n sì sọ. Àwọn ìlànà ìṣirò, ìwọ̀n àti ọ̀rọ̀ ìdánwò àṣẹ kò ní yípadà. ¦ Abin da malamin Learnza da mataimakin bincike ke rubutawa da faɗa. Ka'idojin lissafi, ma'auni da kalmomin jarrabawa na hukuma ba za su canza ba. ¦ Ihe onye nkụzi Learnza na onye enyemaka nyocha na-ede ma na-ekwu. Usoro mgbakọ, nke ọtụtụ na okwu ule gọọmentị agaghị agbanwe. ¦ Wetin Learnza Lecturer and research assistant go write and talk. Formulas, units and official exam words no go change.
 Voice language ¦ Èdè ohùn ¦ Harshen murya ¦ Asụsụ olu ¦ Voice language
-The language you speak in and the AI speaks back in. If your device has no voice for it, the AI shows the words and speaks in English or Pidgin. ¦ Èdè tí ò ń sọ àti èyí tí AI fi ń dáhùn. Tí ẹ̀rọ rẹ kò bá ní ohùn fún un, AI yóò fi àwọn ọ̀rọ̀ hàn, yóò sì sọ̀rọ̀ ní Gẹ̀ẹ́sì tàbí Pidgin. ¦ Harshen da kake magana da shi da kuma da AI ke amsawa. Idan na'urarka ba ta da murya a ciki, AI zai nuna kalmomin kuma ya yi magana da Turanci ko Pidgin. ¦ Asụsụ ị na-asụ na nke AI na-aza. Ọ bụrụ na ngwaọrụ gị enweghị olu maka ya, AI ga-egosi okwu ma kwuo n'Bekee ma ọ bụ Pidgin. ¦ The language wey you dey talk and wey AI go answer for. If your device no get voice for am, AI go show the words and talk for English or Pidgin.
+The language you speak in and the Learnza speaks back in. If your device has no voice for it, the Learnza shows the words and speaks in English or Pidgin. ¦ Èdè tí ò ń sọ àti èyí tí Learnza fi ń dáhùn. Tí ẹ̀rọ rẹ kò bá ní ohùn fún un, Learnza yóò fi àwọn ọ̀rọ̀ hàn, yóò sì sọ̀rọ̀ ní Gẹ̀ẹ́sì tàbí Pidgin. ¦ Harshen da kake magana da shi da kuma da Learnza ke amsawa. Idan na'urarka ba ta da murya a ciki, Learnza zai nuna kalmomin kuma ya yi magana da Turanci ko Pidgin. ¦ Asụsụ ị na-asụ na nke Learnza na-aza. Ọ bụrụ na ngwaọrụ gị enweghị olu maka ya, Learnza ga-egosi okwu ma kwuo n'Bekee ma ọ bụ Pidgin. ¦ The language wey you dey talk and wey Learnza go answer for. If your device no get voice for am, Learnza go show the words and talk for English or Pidgin.
 Appearance ¦ Ìrísí ¦ Kamanni ¦ Ọdịdị ¦ Appearance
 Dark Mode ¦ Ipò òkùnkùn ¦ Yanayin duhu ¦ Ọnọdụ ọchịchịrị ¦ Dark Mode
 Easier on the eyes at night ¦ Ó rọrùn fún ojú ní alẹ́ ¦ Ya fi sauƙi ga idanu da dare ¦ Ọ dị mfe n'anya n'abalị ¦ E soft for eye for night

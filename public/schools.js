@@ -245,10 +245,10 @@
   function aiErrorMessage(err) {
     const msg = (err && err.message) || '';
     if (/quota|rate.?limit|resource.?exhausted|too many requests/i.test(msg)) {
-      return "The AI Lecturer is getting a lot of use right now and has hit its provider limit — please try again in a few minutes.";
+      return "The Learnza Lecturer is getting a lot of use right now and has hit its provider limit — please try again in a few minutes.";
     }
     if (/high demand|overloaded|unavailable|\b503\b|\b502\b/i.test(msg)) {
-      return "The AI Lecturer's provider is temporarily overloaded — please try again in a few minutes.";
+      return "The Learnza Lecturer's provider is temporarily overloaded — please try again in a few minutes.";
     }
     return msg || 'Something went wrong. Please try again.';
   }
@@ -455,16 +455,12 @@
       ['courses', 'My Courses'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
-      ['my-lectures', 'Lectures'],
-      ['class-recordings', 'Class Recordings'],
       ['lab-hub', 'Digital Lab'],
       ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
       ['student-results', 'Results'],
-      ['my-ai-lectures', 'AI Pre-recorded Lectures'],
-      ['my-ai-live', 'AI Live Recorded Lectures'],
-      ['research', 'AI Research Assistant'],
+      ['research', 'Learnza Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['academic-record', 'Academic Record'],
@@ -478,7 +474,7 @@
       ['student-dashboard', 'My Dashboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
-      ['wallet', 'AI Minutes & Coins'],
+      ['wallet', 'Learnza Minutes & Coins'],
       ['settings', 'Settings'],
     ],
     STUDENT_INDIVIDUAL: [
@@ -490,16 +486,14 @@
       ['tests-hub', 'Tests'],
       ['cbt-mock', 'CBT Mock Exam Practice'],
       ['semester-exam-hub', 'Semester Exam'],
-      ['my-ai-lectures', 'AI Pre-recorded Lectures'],
-      ['my-ai-live', 'AI Live Recorded Lectures'],
-      ['research', 'AI Research Assistant'],
+      ['research', 'Learnza Research Assistant'],
       ['progress', 'My Progress'],
       ['leaderboard', 'Leaderboard'],
       ['study-plan', 'Study Plan'],
       ['student-dashboard', 'My Dashboard'],
       ['digital-id', 'Digital ID'],
       ['billing', 'Subscription'],
-      ['wallet', 'AI Minutes & Coins'],
+      ['wallet', 'Learnza Minutes & Coins'],
       ['settings', 'Settings'],
     ],
     LECTURER: [
@@ -513,7 +507,7 @@
       ['lect-semester-exam', 'Semester Exam'],
       ['lect-assignments-hub', 'Assignments'],
       ['lect-results-hub', 'Student Results'],
-      ['research', 'AI Research Assistant'],
+      ['research', 'Learnza Research Assistant'],
       ['staff-profile', 'My Staff Profile'],
       ['class-vote', 'Class Rep Voting'],
       ['elections', 'Elections'],
@@ -661,7 +655,7 @@
   const HOME_SCREENS = ['my-dashboard', 'lect-dashboard', 'admin-dashboard', 'staff-dashboard'];
   function addBackArrow() {
     const v = document.getElementById('view');
-    if (!v || !state.user || !state.view || !state.view.screen || HOME_SCREENS.includes(state.view.screen) || state.view.screen === 'live-class' || v.querySelector('#exit-exam-btn')) return;
+    if (!v || !state.user || !state.view || !state.view.screen || HOME_SCREENS.includes(state.view.screen) || state.view.screen === 'live-class' || v.querySelector('#exit-exam-btn, #dc-exit')) return;
     let head = v.querySelector(':scope > .page-head');
     if (!head) {
       if (!v.children.length) return;
@@ -716,7 +710,7 @@
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
     const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
       ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
-      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your AI lecturer prepares the lectures.' : 'Open My Courses to enrol.' }]));
+      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your Learnza lecturer prepares the lectures.' : 'Open My Courses to enrol.' }]));
     const pm = planModel(daily, courses, results);
     const glance = `<div class="sec"><div class="sh"><div class="st">📋 Study Plan — Today</div></div><div class="plan-wrap"><div class="plan-card"><div class="plan-n"><b>${pm.daysLeft}</b><span>days to exam</span></div><div class="plan-n"><b>${pm.hours} hrs</b><span>study/day</span></div><div class="plan-n"><b style="color:#E02020;">${pm.weak.length}</b><span>weak areas</span></div></div><div class="plan-goal">🎯 Goal: <b>${isIndividual ? 'My exams' : 'Semester exam'}</b></div><button class="btn btn-primary" data-jump-nav="study-plan" style="width:100%;">See Full Plan →</button></div></div>`;
     const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
@@ -974,6 +968,7 @@
         case 'student-dashboard': return renderStudentHub();
         case 'my-ai-lectures': return renderMyAiLectures();
         case 'my-ai-live': return renderMyAiLive();
+        case 'my-lab-live': return renderMyAiLive();
         case 'ai-live-replay': return renderAiLiveReplay();
         case 'study-plan': return renderStudyPlan();
         case 'daily-challenge': return LZX.dailyChallenge(view, { api, esc, toast, navigate });
@@ -1066,7 +1061,7 @@
       <div class="card" style="padding:32px; max-width:480px; margin:40px auto; text-align:center;">
         <span class="pill pill-accent">Learnza subscription</span>
         <h2 style="margin:14px 0 8px;">This needs an active subscription</h2>
-        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock AI Lecturer lectures, recorded lectures and live classes.')}</p>
+        <p class="muted" style="margin-bottom:20px;">${esc(message || 'Subscribe to unlock Learnza Lecturer lectures, recorded lectures and live classes.')}</p>
         <button class="btn btn-accent" id="go-upgrade-btn">See plans — ₦10,000/month</button>
       </div>
     `;
@@ -1082,7 +1077,7 @@
         <h1>My Courses</h1>
         <button class="btn btn-accent" id="new-individual-course-btn">+ New course</button>
       </div>
-      <p class="muted" style="margin-bottom:20px;">Create a course on anything you want to learn — the AI Lecturer covers it.</p>
+      <p class="muted" style="margin-bottom:20px;">Create a course on anything you want to learn — the Learnza Lecturer covers it.</p>
       <div class="grid-cards">
         ${courses.map((c) => `
           <div class="card course-card" data-open="${c.id}">
@@ -1128,8 +1123,8 @@
     const groups = new Map();
     lessons.forEach((l) => { const k = l.individualCourseId || l.courseId; if (!groups.has(k)) groups.set(k, { title: l.courseTitle, courseId: k, isIndividual: !!l.individualCourseId, items: [] }); groups.get(k).items.push(l); });
     view.innerHTML = `
-      <div class="page-head"><h1>AI Pre-recorded Lectures</h1></div>
-      <p class="muted" style="margin-bottom:16px;">The pre-recorded lectures the system's AI Lecturer made for each of your courses: the same ones listed inside the course. This is where you carry on learning when your live AI minutes or coins run out. Classes you took live are under <b>AI Live Recorded Lectures</b>.</p>
+      <div class="page-head"><h1>Learnza Pre-recorded Lectures</h1></div>
+      <p class="muted" style="margin-bottom:16px;">The pre-recorded lectures the system's Learnza Lecturer made for each of your courses: the same ones listed inside the course. This is where you carry on learning when your live Learnza minutes or coins run out. Classes you took live are under <b>Learnza Live Recorded Lectures</b>.</p>
       ${[...groups.values()].map((g) => `
         <div style="margin-bottom:22px;">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
@@ -1138,7 +1133,7 @@
           </div>
           <div class="card">${g.items.map((l) => `
             <div class="list-row" data-open-lesson="${l.id}" data-course="${g.courseId}" data-individual="${g.isIndividual}" style="cursor:pointer;">
-              <div><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div><div class="meta">AI Lecturer · narrated lecture</div></div>
+              <div><div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div><div class="meta">Learnza Lecturer · narrated lecture</div></div>
               <span class="pill pill-accent">Lecture ${l.order}</span>
             </div>`).join('')}</div>
         </div>`).join('') || '<div class="card"><p class="muted" style="padding:16px;">No pre-recorded lectures in your courses yet. They appear here, and inside each course, as the system records them.</p></div>'}`;
@@ -1147,10 +1142,13 @@
   }
 
   async function renderMyAiLive() {
-    const { sessions } = await api('/ai-teacher/my-sessions');
+    const lab = state.view.screen === 'my-lab-live';
+    const { sessions: everything } = await api('/ai-teacher/my-sessions');
+    const sessions = everything.filter((x) => (lab ? x.kind === 'PRACTICAL' : x.kind !== 'PRACTICAL'));
     view.innerHTML = `
-      <div class="page-head"><h1>AI Live Recorded Lectures</h1></div>
-      <p class="muted" style="margin-bottom:16px;">The live classes the AI Lecturer taught you, recorded as they happened. Watch a class again, pick it up where you stopped, or download its notes. Lectures the system recorded in advance are under <b>AI Pre-recorded Lectures</b>.</p>
+      <div class="page-head"><h1>${lab ? 'Learnza Digital Lab Live Recordings' : 'Learnza Live Recorded Lectures'}</h1></div>
+      ${lab ? '<p class="muted" style="margin-bottom:16px;">Every live practical you did in the Digital Lab, recorded as it happened. Watch it again or download the video and the steps. Practicals the system recorded in advance are under <b>Lab Pre-recorded</b> on My Dashboard.</p>' : ''}
+      ${lab ? '' : '<p class="muted" style="margin-bottom:16px;">The live classes the Learnza Lecturer taught you, recorded as they happened. Watch a class again, pick it up where you stopped, or download its notes. Lectures the system recorded in advance are under <b>Learnza Pre-recorded Lectures</b>.</p>'}
       <div class="card">${sessions.map((x) => `
         <div class="list-row" style="gap:10px; flex-wrap:wrap;">
           <div style="min-width:0; flex:1;"><div style="font-weight:600;">${esc(x.title)}</div>
@@ -1160,7 +1158,7 @@
             ${x.status === 'COMPLETED' ? '' : `<button class="btn btn-ghost btn-sm" data-live-continue="${x.id}">Continue class</button>`}
             <button class="btn btn-ghost btn-sm" data-live-notes="${x.id}">⬇ Download notes</button>
           </div>
-        </div>`).join('') || '<p class="muted" style="padding:16px;">You have not taken a live class with the AI Lecturer yet. Open a course and tap <b>Start AI Lectures</b>.</p>'}</div>`;
+        </div>`).join('') || (lab ? '<p class="muted" style="padding:16px;">You have not done a live practical yet. Open the Digital Lab and tap a practical to start one; it is recorded here.</p>' : '<p class="muted" style="padding:16px;">You have not taken a live class with the Learnza Lecturer yet. Open a course and tap <b>Start Learnza Lectures</b>.</p>')}</div>`;
     const find = (id) => sessions.find((y) => y.id === id);
     view.querySelectorAll('[data-live-replay]').forEach((b) => b.addEventListener('click', () => navigate('ai-live-replay', { sessionId: b.dataset.liveReplay })));
     view.querySelectorAll('[data-live-continue]').forEach((b) => b.addEventListener('click', () => navigate('ai-teacher-session', { sessionId: b.dataset.liveContinue, isIndividual: !!find(b.dataset.liveContinue).isIndividual })));
@@ -1175,7 +1173,7 @@
   async function renderAiLiveReplay() {
     const { sessions } = await api('/ai-teacher/my-sessions');
     const x = sessions.find((y) => y.id === state.view.sessionId);
-    if (!x) { view.innerHTML = '<div class="page-head"><h1>AI Live Recorded Lectures</h1></div><p class="muted">That class was not found.</p>'; return; }
+    if (!x) { view.innerHTML = '<div class="page-head"><h1>Learnza Live Recorded Lectures</h1></div><p class="muted">That class was not found.</p>'; return; }
     view.innerHTML = `
       <div class="page-head"><div><div class="muted">${esc(x.course)}</div><h1>${esc(x.title)}</h1></div></div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
@@ -1235,19 +1233,19 @@
       ${course.description ? `<p class="muted" style="margin-bottom:20px;">${esc(course.description)}</p>` : ''}
       <div class="card" style="padding:24px; text-align:center; margin-bottom:22px;">
         ${subBadge}
-        <h3 style="margin:14px 0 8px;">Start AI Lectures</h3>
-        <p class="muted" style="margin-bottom:18px;">Tell the AI Lecturer what to cover in this course.</p>
-        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lectures</button>
+        <h3 style="margin:14px 0 8px;">Start Learnza Lectures</h3>
+        <p class="muted" style="margin-bottom:18px;">Tell the Learnza Lecturer what to cover in this course.</p>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start Learnza Lectures</button>
       </div>
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Pre-recorded lectures</h3>
-      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated AI Lecturer lectures for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
+      <p class="muted" style="margin-bottom:12px;">The app automatically generates narrated Learnza Lecturer lectures for this course. Your assignments, tests and semester exams are on your dashboard and sidebar.</p>
       <div class="card" style="margin-bottom:22px;">
         ${lessons.map((l) => `
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
             <div>
               <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-              <div class="meta">AI Lecturer · narrated lecture</div>
+              <div class="meta">Learnza Lecturer · narrated lecture</div>
             </div>
             <span class="pill pill-accent">Lecture ${l.order}</span>
           </div>
@@ -1258,7 +1256,7 @@
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('individual-courses'));
     document.getElementById('start-ai-teacher-btn').addEventListener('click', () => {
-      const topic = prompt(`What topic in ${course.title} should the AI Lecturer cover?`);
+      const topic = prompt(`What topic in ${course.title} should the Learnza Lecturer cover?`);
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim(), true);
     });
@@ -1323,7 +1321,7 @@
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await api(`/courses/${btn.dataset.enroll}/enroll`, { method: 'POST' });
-        toast('Enrolled. Open the course, and start the AI Lecturer class, whenever you are ready.');
+        toast('Enrolled. Open the course, and start the Learnza Lecturer class, whenever you are ready.');
         renderStudentCourses();
       });
     });
@@ -1380,10 +1378,10 @@
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
           ${subBadge}
-          <div style="font-weight:600; margin-top:8px;">AI Lecturer — ask about any topic in this course</div>
-          <div class="meta">A real AI lecturer builds a live lecture on the spot, section by section, and answers your questions.</div>
+          <div style="font-weight:600; margin-top:8px;">Learnza Lecturer — ask about any topic in this course</div>
+          <div class="meta">A real Learnza lecturer builds a live lecture on the spot, section by section, and answers your questions.</div>
         </div>
-        <button class="btn btn-accent" id="start-ai-teacher-btn">Start AI Lectures</button>
+        <button class="btn btn-accent" id="start-ai-teacher-btn">Start Learnza Lectures</button>
       </div>
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
@@ -1397,7 +1395,7 @@
           <div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;">
             <div>
               <div style="font-weight:600;">${esc(l.title)} ${l.locked ? '<span class="pill pill-muted" style="margin-left:6px;">Subscribers only</span>' : ''}</div>
-              <div class="meta">${l.isAiTeacher ? 'AI Lecturer · narrated lecture' : 'Lecture'}${l.videoUrl ? (isDocUrl(l.videoUrl) ? ' · document' : ' · video') : (!l.locked && l.isAiTeacher ? ' · video available' : '')}</div>
+              <div class="meta">${l.isAiTeacher ? 'Learnza Lecturer · narrated lecture' : 'Lecture'}${l.videoUrl ? (isDocUrl(l.videoUrl) ? ' · document' : ' · video') : (!l.locked && l.isAiTeacher ? ' · video available' : '')}</div>
             </div>
             <span class="pill pill-accent">Lecture ${l.order}</span>
           </div>
@@ -1409,7 +1407,7 @@
       el.addEventListener('click', () => navigate('lesson-player', { courseId: course.id, lessonId: el.dataset.openLesson }));
     });
     document.getElementById('start-ai-teacher-btn').addEventListener('click', () => {
-      const topic = prompt(`What topic in ${course.title} should the AI Lecturer cover?`);
+      const topic = prompt(`What topic in ${course.title} should the Learnza Lecturer cover?`);
       if (!topic || !topic.trim()) return;
       startAiTeacherSession(course.id, topic.trim());
     });
@@ -1437,8 +1435,8 @@
     let route = null;
     try { route = await api('/ai-teacher/route'); } catch { route = null; }
     if (route && route.route === 'RECORDED') {
-      if (route.reason === 'SUBSCRIPTION') { renderUpgradePrompt('The AI Lecturer is part of the paid plan.'); return false; }
-      const pick = await aiChoice('Your live AI minutes are finished', 'No problem: you can carry on with the pre-recorded lectures for your courses. They are free and never cost extra. Or add coins to keep learning live.', [
+      if (route.reason === 'SUBSCRIPTION') { renderUpgradePrompt('The Learnza Lecturer is part of the paid plan.'); return false; }
+      const pick = await aiChoice('Your live Learnza minutes are finished', 'No problem: you can carry on with the pre-recorded lectures for your courses. They are free and never cost extra. Or add coins to keep learning live.', [
         { label: 'Watch the pre-recorded lectures', value: 'recorded', primary: true },
         { label: 'Buy coins (live minutes)', value: 'coins' },
         { label: 'Not now', value: 'no' },
@@ -1470,7 +1468,7 @@
       <div class="card" style="padding:48px 24px; text-align:center;">
         <div class="ai-avatar-ring" style="margin:0 auto 18px; animation: avatar-pulse 1.4s ease-in-out infinite;">✨</div>
         <h3 style="margin-bottom:8px;">Preparing your lecture on "${esc(topic)}"…</h3>
-        <p class="muted">The AI Lecturer is drafting a full, comprehensive lecture — this takes a little while.</p>
+        <p class="muted">The Learnza Lecturer is drafting a full, comprehensive lecture — this takes a little while.</p>
       </div>
     `;
     try {
@@ -1497,7 +1495,7 @@
         <div class="card" style="padding:32px; text-align:center;">
           <span class="pill pill-accent">Subscription feature</span>
           <h2 style="margin:14px 0 8px;">This lecture needs an active subscription</h2>
-          <p class="muted" style="margin-bottom:20px;">AI Lecturer narration and recorded lectures are part of Learnza's paid plan — ₦10,000/month or ₦105,000/year.</p>
+          <p class="muted" style="margin-bottom:20px;">Learnza Lecturer narration and recorded lectures are part of Learnza's paid plan — ₦10,000/month or ₦105,000/year.</p>
           <button class="btn btn-accent" id="go-upgrade-btn">See plans</button>
         </div>
       `;
@@ -1524,17 +1522,17 @@
             : `<div style="margin-top:14px;"><video class="lecture-video" src="${esc(lesson.videoUrl)}" controls playsinline preload="metadata"></video></div><div style="margin-top:10px;"><a class="btn btn-ghost btn-sm" href="${esc(lesson.videoUrl)}" download target="_blank" rel="noopener">⬇ Download</a></div>`}
           ${lesson.script ? `<h3 style="margin:18px 0 8px; font-size:0.95rem;">Lecture notes</h3><p style="white-space:pre-wrap;">${esc(lesson.script)}</p>` : ''}
         ` : `
-          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">AI Lecturer — ${subscriptionEnforced ? 'subscriber lecture' : 'free during testing'}</span>
+          <span class="pill ${subscriptionEnforced ? 'pill-accent' : 'pill-pass'}">Learnza Lecturer — ${subscriptionEnforced ? 'subscriber lecture' : 'free during testing'}</span>
           ${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}
           <div class="ai-avatar-box" style="margin-top:14px;">
-            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'AI'))}</div>
+            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(lesson.title || 'LZ'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
             <audio id="avatar-audio" autoplay hidden></audio>
-            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'AI Lecturer — video avatar available' : 'AI Lecturer'}</div>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Learnza Lecturer — video avatar available' : 'Learnza Lecturer'}</div>
             ${avatarConfigured ? `<button class="btn btn-ghost btn-sm" id="start-avatar-btn" style="margin-top:10px;">🎥 Connect video avatar</button>` : ''}
           </div>
           <div class="controls">
-            <button class="btn btn-primary" id="play-btn">▶ Play AI narration</button>
+            <button class="btn btn-primary" id="play-btn">▶ Play Learnza narration</button>
             <button class="btn btn-ghost" id="pause-btn">Pause</button>
             <button class="btn btn-ghost" id="stop-btn">Stop</button>
           </div>
@@ -1710,7 +1708,7 @@
       videoEl.play?.().catch(() => {});
       audioEl.play?.().catch(() => {});
       ringEl.style.display = 'none';
-      if (labelEl) labelEl.textContent = 'AI Lecturer — video avatar connected';
+      if (labelEl) labelEl.textContent = 'Learnza Lecturer — video avatar connected';
       return client;
     } catch (err) {
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') { renderUpgradePrompt(err.message); return null; }
@@ -1779,7 +1777,7 @@
       // `await speakAsync(...)` would hang forever waiting for a callback that will
       // never come, which looks exactly like the teacher freezing mid-lesson.
       if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'AI_CREDITS_EXHAUSTED') renderUpgradePrompt(err.message);
-      else toast(err.message || 'The AI Lecturer had trouble speaking that.');
+      else toast(err.message || 'The Learnza Lecturer had trouble speaking that.');
       if (onDone) onDone();
     }
   }
@@ -1869,7 +1867,7 @@
       if (ringEl) ringEl.classList.remove('listening');
       if (labelEl) {
         labelEl.classList.remove('listening-label');
-        labelEl.textContent = simliAvatarClient ? 'AI Lecturer — video avatar connected' : originalLabelText;
+        labelEl.textContent = simliAvatarClient ? 'Learnza Lecturer — video avatar connected' : originalLabelText;
       }
       if (!heardSomething && onCancelled) onCancelled();
     };
@@ -1910,7 +1908,7 @@
     bg.addColorStop(0, '#0b1423'); bg.addColorStop(1, '#16294a');
     g.fillStyle = bg; g.fillRect(0, 0, AI_REC_W, AI_REC_H);
     g.fillStyle = '#e3ac4c'; g.font = '700 26px Sora, sans-serif'; g.textBaseline = 'alphabetic';
-    g.fillText('Learnza · AI Lecturer — live class', 40, 50);
+    g.fillText('Learnza · Lecturer — live class', 40, 50);
     g.fillStyle = 'rgba(255,255,255,.75)'; g.font = '500 20px sans-serif';
     g.fillText(String(rec.title || '').slice(0, 70), 40, 80);
     const meta = document.getElementById('section-meta');
@@ -1931,7 +1929,7 @@
       const pulse = document.getElementById('ai-avatar-ring') && document.getElementById('ai-avatar-ring').classList.contains('speaking') ? 8 * Math.sin(Date.now() / 160) : 0;
       g.fillStyle = '#e3ac4c'; g.beginPath(); g.arc(ax + aw / 2, ay + ah / 2, 120 + pulse, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#142033'; g.font = '800 96px Sora, sans-serif'; g.textAlign = 'center';
-      g.fillText(String(rec.initials || 'AI'), ax + aw / 2, ay + ah / 2 + 32); g.textAlign = 'left';
+      g.fillText(String(rec.initials || 'LZ'), ax + aw / 2, ay + ah / 2 + 32); g.textAlign = 'left';
     }
     g.restore();
 
@@ -2060,20 +2058,20 @@
 
     view.innerHTML = `
       <div class="page-head">
-        <div><span class="pill pill-accent">AI Lecturer — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(plan.title)}</h1></div>
+        <div><span class="pill pill-accent">Learnza Lecturer — live session</span>${aiCredits && aiCredits.tracked ? ` <span class="pill ${aiCredits.exhausted ? 'pill-danger' : 'pill-muted'}">${Math.floor(aiCredits.secondsRemaining / 60)} min left this cycle</span>` : ''}<h1 style="margin-top:8px;">${esc(plan.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← End session</button>
       </div>
       <div class="card lesson-player">
         <div class="lesson-stage" id="lesson-stage">
           <button class="lesson-stage-expand-btn" id="lesson-expand-btn" title="Expand">⛶</button>
           <div class="ai-avatar-box">
-            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(plan.title || 'AI'))}</div>
+            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(plan.title || 'LZ'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
             <audio id="avatar-audio" autoplay hidden></audio>
-            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Lecturer'}</div>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'Learnza Lecturer'}</div>
           </div>
           <div class="smart-board-wrap">
-            <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">AI Lecturer — writing on the board</div></div>
+            <div class="smart-board-head"><div class="dot">👩🏾‍🏫</div><div class="label" id="board-status">Learnza Lecturer — writing on the board</div></div>
             <div class="smart-board" id="smart-board"></div>
             <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
           </div>
@@ -2096,7 +2094,7 @@
         </div>
 
         <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the AI Lecturer to start…</div></div>
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the Learnza Lecturer to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -2151,7 +2149,7 @@
     document.getElementById('back-btn').addEventListener('click', () => {
       stopped = true;
       aiRecStop();
-      toast('Lecture stopped. You can continue it from My AI Live Classes.');
+      toast('Lecture stopped. You can continue it from My Learnza Live Classes.');
       if (session.individualCourseId) navigate('individual-course-detail', { courseId: session.individualCourseId });
       else navigate('course-detail', { courseId: session.courseId });
     });
@@ -2161,7 +2159,7 @@
       sectionMeta.textContent = `Section ${idx + 1} of ${plan.sections.length}`;
       sectionTitleEl.textContent = section.title;
       setBoardContent(board, section.boardActions);
-      boardStatus.textContent = 'AI Lecturer — writing on the board';
+      boardStatus.textContent = 'Learnza Lecturer — writing on the board';
       return section;
     }
 
@@ -2194,7 +2192,7 @@
       const panel = document.getElementById('got-question-panel');
       panel.hidden = false;
       document.getElementById('gq-arrow').textContent = '▲';
-      boardStatus.textContent = 'AI Lecturer — thinking…';
+      boardStatus.textContent = 'Learnza Lecturer — thinking…';
       try {
         const { answer, boardActions } = await api(`/ai-teacher/sessions/${session.id}/interrupt`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
@@ -2206,7 +2204,7 @@
         // Every answer lands on the board itself, not just the chat log underneath it.
         const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
         setBoardContent(board, answerBoardActions);
-        boardStatus.textContent = 'AI Lecturer — answering your question';
+        boardStatus.textContent = 'Learnza Lecturer — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         });
@@ -2243,7 +2241,7 @@
     // check-answer endpoint (graded against whatever section is still current
     // server-side); either way the explanation is spoken before the lesson resumes.
     async function runCheckQuestion(question) {
-      boardStatus.textContent = 'AI Lecturer — checking your understanding';
+      boardStatus.textContent = 'Learnza Lecturer — checking your understanding';
       setBoardContent(board, [{ type: 'TEXT', content: question }]);
       await speakAsync(`Quick question to check you're following: ${question}`, avatarRing);
       if (stopped) return;
@@ -2288,10 +2286,10 @@
 
       box.hidden = true;
       askVoiceBtn.disabled = false;
-      boardStatus.textContent = 'AI Lecturer — thinking…';
+      boardStatus.textContent = 'Learnza Lecturer — thinking…';
       try {
         const result = await api(`/ai-teacher/sessions/${session.id}/check-answer`, { method: 'POST', body: { answer } });
-        boardStatus.textContent = result.correct ? 'AI Lecturer — well done!' : 'AI Lecturer — explaining';
+        boardStatus.textContent = result.correct ? 'Learnza Lecturer — well done!' : 'Learnza Lecturer — explaining';
         setBoardContent(board, [{ type: 'TEXT', content: `${result.correct ? "Correct! " : 'Not quite — '}${result.feedback}` }]);
         await speakAsync(`${result.correct ? "That's correct! " : 'Not quite. '}${result.feedback}`, avatarRing);
       } catch (err) {
@@ -2313,9 +2311,9 @@
       // avatar for whatever it says next as soon as simliAvatarClient gets set.
       if (avatarConfigured) {
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
-          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
+          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'Learnza Lecturer'; });
       }
-      aiRecStart(session, plan.title, initials(plan.title || 'AI'));
+      aiRecStart(session, plan.title, initials(plan.title || 'LZ'));
       while (!stopped) {
         await holdIfPaused();
         if (stopped) return;
@@ -3711,7 +3709,7 @@
       <div class="settings-section">
         <div class="settings-section-label">Help</div>
         <div class="card">
-          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'AI Minutes & Coins', sub: 'Top up live AI Lecturer time', action: 'nav:wallet' }) : ''}
+          ${u.role === 'STUDENT' ? settingsArrowRowHtml({ icon: '🪙', label: 'Learnza Minutes & Coins', sub: 'Top up live Learnza Lecturer time', action: 'nav:wallet' }) : ''}
           ${settingsArrowRowHtml({ icon: '🎧', label: 'Help & Support', sub: 'Tickets and live chat', action: 'nav:support' })}
           ${settingsArrowRowHtml({ icon: '⭐', label: 'Rate Learnza', action: 'nav:support-review' })}
         </div>
@@ -4101,8 +4099,10 @@
     view.innerHTML = `
       <div class="page-head"><h1>My Dashboard</h1></div>
       <div class="dh-band">${numbers.map(([v, l, c]) => `<div><div class="dh-n" style="color:${c}">${v}</div><div class="dh-nl">${l}</div></div>`).join('')}</div>
+      <div class="dh-title">🎬 Lectures &amp; Recordings</div>
+      <div class="dh-grid">${isIndividual ? `${dhTile('my-ai-lectures', '🎓', 'Learnza Pre-recorded', 2)}${dhTile('my-ai-live', '🎙️', 'Learnza Live Recorded', 3)}${dhTile('my-lab-live', '🧪', 'Lab Live Recordings', 4)}${dhTile('lab-hub', '📼', 'Lab Pre-recorded', 5)}` : `${dhTile('my-lectures', '🎬', 'Lectures', 0)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 1)}${dhTile('my-ai-lectures', '🎓', 'Learnza Pre-recorded', 2)}${dhTile('my-ai-live', '🎙️', 'Learnza Live Recorded', 3)}${dhTile('my-lab-live', '🧪', 'Lab Live Recordings', 4)}${dhTile('lab-hub', '📼', 'Lab Pre-recorded', 5)}`}</div>
       <div class="dh-title">📋 My Activities</div>
-      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-lectures', '🎬', 'Lectures', 2)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 3)}${dhTile('my-ai-lectures', '🎓', 'AI Pre-recorded', 1)}${dhTile('my-ai-live', '🎙️', 'AI Live Recorded', 2)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
+      <div class="dh-grid">${isIndividual ? `${dhTile('my-assessments', '📋', 'Assignments & Tests', 0)}${dhTile('my-activity', '📝', 'Test Results', 2)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 3)}${dhTile('study-plan', '🗓️', 'Study Plan', 4)}${dhTile('tests-hub', '✅', 'Tests', 4)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 5)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 1)}${dhTile('lab-hub', '🧪', 'Digital Lab', 3)}` : `${dhTile('my-assignments', '📋', 'Assignments', 0)}${dhTile('my-attendance', '🗓️', 'Attendance', 1)}${dhTile('my-activity', '📝', 'Test Results', 4)}${dhTile('daily-challenge', '⚡', 'Daily Challenge', 5)}${dhTile('study-plan', '🗓️', 'Study Plan', 0)}${dhTile('tests-hub', '✅', 'Tests', 0)}${dhTile('cbt-mock', '🎯', 'CBT Mock', 1)}${dhTile('semester-exam-hub', '🏁', 'Semester Exam', 3)}${dhTile('lab-hub', '🧪', 'Digital Lab', 5)}`}</div>
       <div class="dh-row" data-jump-nav="my-activity"><span>🔔</span><span class="dh-rt">Notifications</span><span class="dh-go">›</span></div>
       ${isIndividual ? '' : `<div class="dh-title">🏫 School Services</div>
       <div class="dh-grid">${dhTile('course-registration', '📝', 'Course Registration', 0)}${dhTile('hostel', '🏠', 'Hostel', 1)}${dhTile('clearance', '✅', 'Clearance', 2)}${dhTile('transcript-hub', '🎓', 'Transcript', 3)}${dhTile('my-lectures', '🎬', 'Lectures', 4)}${dhTile('class-recordings', '🎞️', 'Class Recordings', 5)}</div>`}
@@ -4262,7 +4262,7 @@
         ${dashSection('notifications', notifications, notificationRowHtml, 'No notifications yet.')}`,
     };
     const pendingCount = isIndividual ? (individualAssessments || []).filter((a) => !a.mySubmission || !a.mySubmission.submittedAt).length : assignments.filter((a) => !a.mySubmission).length;
-    const homeTiles = isIndividual ? `${homeTile('individual-courses', '📚', 'My Courses', 'Your own courses')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}` : `${homeTile('courses', '📚', 'My Courses', 'Your classes')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'AI Research Assistant', 'Your study helper')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}`;
+    const homeTiles = isIndividual ? `${homeTile('individual-courses', '📚', 'My Courses', 'Your own courses')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'Learnza Research Assistant', 'Your study helper')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}` : `${homeTile('courses', '📚', 'My Courses', 'Your classes')}${homeTile('tests-hub', '📝', 'Tests', 'Practice anytime')}${homeTile('cbt-mock', '🎯', 'CBT Mock Exam', 'Exam practice')}${homeTile('research', '🤖', 'Learnza Research Assistant', 'Your study helper')}${homeTile('lab-hub', '🧪', 'Digital Lab', 'Practicals')}${homeTile('library', '📖', 'e-Library', 'Textbooks')}`;
     const showHome = !(only && sectionHtml[only]);
     const daily = showHome ? dailyRes : null;
     const takenCount = recentResults.length;
@@ -4430,7 +4430,7 @@
           <div style="font-weight:600;">${esc(d.title)}</div>
           <div class="meta">${esc(d.description)}</div>
         </div>
-        <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
+        <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'Learnza-generated' : 'Curated'}</span>
       </div>
       ${opts.courseId ? `<button class="btn btn-accent btn-sm" data-teach-lab="${d.id}" data-teach-course="${opts.courseId}" data-teach-individual="${opts.isIndividual ? 'true' : 'false'}" style="margin-top:12px;">▶ Start guided practical</button>` : ''}
       <ol style="margin:14px 0 0; padding-left: 20px; display:flex; flex-direction:column; gap:8px;">
@@ -4526,13 +4526,13 @@
         <div class="lesson-stage" id="lesson-stage">
           <button class="lesson-stage-expand-btn" id="lesson-expand-btn" title="Expand">⛶</button>
           <div class="ai-avatar-box">
-            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(demo.title || 'AI'))}</div>
+            <div class="ai-avatar-ring" id="ai-avatar-ring">${esc(initials(demo.title || 'LZ'))}</div>
             <video id="avatar-video" class="ai-avatar-video" autoplay playsinline hidden></video>
             <audio id="avatar-audio" autoplay hidden></audio>
-            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'AI Lecturer'}</div>
+            <div class="ai-avatar-label" id="ai-avatar-label">${avatarConfigured ? 'Connecting video avatar…' : 'Learnza Lecturer'}</div>
           </div>
           <div class="smart-board-wrap">
-            <div class="smart-board-head"><div class="dot">🧪</div><div class="label" id="board-status">AI Lecturer — writing on the board</div></div>
+            <div class="smart-board-head"><div class="dot">🧪</div><div class="label" id="board-status">Learnza Lecturer — writing on the board</div></div>
             <div class="smart-board" id="smart-board"></div>
             <div class="smart-board-tray"><span class="marker red"></span><span class="marker blue"></span><span class="marker black"></span><span class="tag">LEARNZA SMART BOARD</span></div>
           </div>
@@ -4546,7 +4546,7 @@
         </div>
 
         <div class="got-question-toggle" id="got-question-toggle" style="opacity:0.5; cursor:default;">
-          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the AI Lecturer to start…</div></div>
+          <div><div style="font-weight:600;">✋ Got a question? Raise your hand</div><div class="gq-sub" id="gq-sub">Wait for the Learnza Lecturer to start…</div></div>
           <span id="gq-arrow">▼</span>
         </div>
         <div class="got-question-panel" id="got-question-panel" hidden>
@@ -4609,7 +4609,7 @@
       stepTitleEl.textContent = step.title;
       const actions = labStepBoardActions(step);
       setBoardContent(board, actions);
-      boardStatus.textContent = 'AI Lecturer — writing on the board';
+      boardStatus.textContent = 'Learnza Lecturer — writing on the board';
       return step;
     }
 
@@ -4641,7 +4641,7 @@
       const panel = document.getElementById('got-question-panel');
       panel.hidden = false;
       document.getElementById('gq-arrow').textContent = '▲';
-      boardStatus.textContent = 'AI Lecturer — thinking…';
+      boardStatus.textContent = 'Learnza Lecturer — thinking…';
       try {
         const { answer, boardActions } = await api(`/lab/${demo.id}/ask`, { method: 'POST', body: { question } });
         const log = document.getElementById('interrupt-log');
@@ -4653,7 +4653,7 @@
         // Every answer lands on the board itself, not just the chat log underneath it.
         const answerBoardActions = boardActions && boardActions.length ? boardActions : [{ type: 'TEXT', content: answer }];
         setBoardContent(board, answerBoardActions);
-        boardStatus.textContent = 'AI Lecturer — answering your question';
+        boardStatus.textContent = 'Learnza Lecturer — answering your question';
         speakThroughAvatarOrTts(answer, avatarRing, () => {
           if (pausedSnapshot) resumePausedSpeech(pausedSnapshot);
         });
@@ -4688,11 +4688,11 @@
     async function runPractical() {
       // a live practical is recorded like a live class, so it can be watched again or downloaded from AI Live Recorded Lectures
       if (state.user.role === 'STUDENT' && !recordedMode) {
-        api(`/lab/${demo.id}/record`, { method: 'POST' }).then(({ session: recSession }) => { if (!stopped) aiRecStart(recSession, `Practical: ${demo.title}`, initials(demo.title || 'AI')); }).catch(() => {});
+        api(`/lab/${demo.id}/record`, { method: 'POST' }).then(({ session: recSession }) => { if (!stopped) aiRecStart(recSession, `Practical: ${demo.title}`, initials(demo.title || 'LZ')); }).catch(() => {});
       }
       if (avatarConfigured && !recordedMode) {
         connectAvatar(document.getElementById('avatar-video'), document.getElementById('avatar-audio'), avatarRing, avatarLabel)
-          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'AI Lecturer'; });
+          .then((client) => { if (!stopped && client) simliAvatarClient = client; else if (!stopped) avatarLabel.textContent = 'Learnza Lecturer'; });
       }
       while (!stopped) {
         await holdIfPaused();
@@ -4744,7 +4744,7 @@
       ` : `
         <div class="card" style="padding:20px; margin-bottom:22px;">
           <div style="font-weight:600;">Don't see the practical you need?</div>
-          <div class="meta" style="margin-bottom:12px;">Type a topic and the AI Lecturer drafts it instantly — no admin review, included with your subscription.</div>
+          <div class="meta" style="margin-bottom:12px;">Type a topic and the Learnza Lecturer drafts it instantly — no admin review, included with your subscription.</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <input type="text" id="gen-demo-topic" placeholder="e.g. Titration of acid and base" style="flex:1; min-width:220px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
             <button class="btn btn-accent" id="request-demo-btn">Generate practical</button>
@@ -4810,7 +4810,7 @@
     ]);
     view.innerHTML = `
       <div class="page-head"><h1>Digital Lab</h1></div>
-      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking AI Lecturer and a smart board — pick a course to see what's available.</p>
+      <p class="muted" style="margin-bottom:20px;">Guided practicals with a talking Learnza Lecturer and a smart board — pick a course to see what's available.</p>
       ${rows.map(({ course, isIndividual, demonstrations }) => `
         <div style="margin-bottom:22px;">
           <div class="muted" style="font-weight:700; margin-bottom:8px;">${course.code ? `${esc(course.code)} — ` : ''}${esc(course.title)}</div>
@@ -4856,16 +4856,16 @@
     const { demonstrations } = await api('/admin/lab');
     view.innerHTML = `
       <div class="page-head"><h1>Digital Lab</h1></div>
-      <p class="muted" style="margin-bottom:18px;">Records of every practical — lecturer-curated and AI-generated alike. Student access to AI-generated practicals is based on their subscription, not admin approval.</p>
+      <p class="muted" style="margin-bottom:18px;">Records of every practical — lecturer-curated and Learnza-generated alike. Student access to Learnza-generated practicals is based on their subscription, not admin approval.</p>
       ${demonstrations.map((d) => `
         <div class="card" style="padding:20px; margin-bottom:14px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
             <div>
-              <div class="muted tabular">${esc(d.course.code)} · ${d.source === 'AI_GENERATED' ? `AI-generated, requested by ${esc(d.author ? d.author.fullName : 'a student')}` : 'Lecturer-curated'}</div>
+              <div class="muted tabular">${esc(d.course.code)} · ${d.source === 'AI_GENERATED' ? `Learnza-generated, requested by ${esc(d.author ? d.author.fullName : 'a student')}` : 'Lecturer-curated'}</div>
               <div style="font-weight:600; margin-top:4px;">${esc(d.title)}</div>
               <div class="meta">${esc(d.description)}</div>
             </div>
-            <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'AI-generated' : 'Curated'}</span>
+            <span class="pill ${d.source === 'AI_GENERATED' ? 'pill-accent' : 'pill-pass'}">${d.source === 'AI_GENERATED' ? 'Learnza-generated' : 'Curated'}</span>
           </div>
           <ol style="margin:14px 0 0; padding-left:20px; display:flex; flex-direction:column; gap:6px;">
             ${d.steps.map((s) => `<li><strong>${esc(s.title)}</strong> — ${esc(s.instruction)}<br><span class="meta">Expected: ${esc(s.expectedResult)}</span></li>`).join('')}
@@ -4888,7 +4888,7 @@
   async function renderResearchAssistant() {
     const L = window.LZI18N;
     view.innerHTML = `
-      <div class="page-head"><h1>AI Research Assistant</h1></div>
+      <div class="page-head"><h1>Learnza Research Assistant</h1></div>
       <p class="muted" style="margin-bottom:18px;">Ask it to explain a concept, help structure a project or lecture, or suggest what to search for. It can't browse the web, so it won't invent fake citations — always verify sources with your ${state.user.role === 'STUDENT' ? 'lecturer or library' : 'own research'}.</p>
       <div class="card" style="padding:20px;">
         <div class="field">
@@ -4979,15 +4979,15 @@
           <span class="pill pill-pass">Active</span>
           <p style="margin-top:10px;">Your ${esc(subscription.plan === 'YEARLY' ? 'yearly' : 'monthly')} plan is active until <strong>${new Date(subscription.expiresAt).toLocaleDateString()}</strong>.</p>
           <div style="margin-top:14px;">
-            <div class="meta" style="margin-bottom:4px;">Live AI Lecturer minutes this cycle</div>
+            <div class="meta" style="margin-bottom:4px;">Live Learnza Lecturer minutes this cycle</div>
             <div class="tabular" style="font-weight:600;">${Math.max(0, Math.floor((subscription.aiSecondsGranted - subscription.aiSecondsUsed) / 60))} / ${Math.floor(subscription.aiSecondsGranted / 60)} min left</div>
-            ${subscription.aiSecondsUsed >= subscription.aiSecondsGranted ? '<p class="muted" style="margin-top:6px;">You have used up this cycle\'s AI credit — subscribe again to top up.</p>' : ''}
+            ${subscription.aiSecondsUsed >= subscription.aiSecondsGranted ? '<p class="muted" style="margin-top:6px;">You have used up this cycle\'s Learnza credit — subscribe again to top up.</p>' : ''}
           </div>
         </div>
       ` : `
         <div class="card" style="padding:20px; margin-bottom:20px;">
           <span class="pill pill-muted">No active plan</span>
-          <p class="muted" style="margin-top:10px;">Subscribe to unlock AI Lecturer lectures, recorded lectures and live classes — each plan includes a bank of live AI Lecturer minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
+          <p class="muted" style="margin-top:10px;">Subscribe to unlock Learnza Lecturer lectures, recorded lectures and live classes — each plan includes a bank of live Learnza Lecturer minutes (300/month, or 3,600 for the year) that refills every time you subscribe. e-Library, study groups and CBT practice stay free either way.</p>
         </div>
       `}
       ${noProvider ? `<div class="hint-box" style="background:var(--danger-soft); color:var(--danger);">Payments aren't configured on this server yet — checkout will be available once a payment provider is connected.</div>` : ''}
@@ -5853,7 +5853,7 @@
       <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
         <div>
           <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
-          <div class="meta">Add curated practicals for this course. Students can also ask the AI Lecturer to draft one.</div>
+          <div class="meta">Add curated practicals for this course. Students can also ask the Learnza Lecturer to draft one.</div>
         </div>
         <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
       </div>

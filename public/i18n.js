@@ -2,7 +2,7 @@
  *
  * Three choices are kept apart (Settings > Language):
  *   ui    - the language of the app's screens, menus, buttons, messages
- *   ai    - the language the AI Lecturer and the research assistant teach and answer in (the server does that part)
+ *   ai    - the language Learnza and the research assistant teach and answer in (the server does that part)
  *   voice - the language used to listen to the student and to speak back
  *
  * The screens are translated from the catalogue files in /i18n/<code>.json (English text -> translation). Only text that
@@ -281,10 +281,10 @@
     var same = prefs.ui === prefs.ai && prefs.ai === prefs.voice;
     return '<div class="settings-card" id="lz-lang-card" style="padding:14px 16px;">' +
       '<div class="field" style="margin-bottom:12px;"><label>App language</label><select id="lz-lang-ui">' + optionsHtml(prefs.ui) + '</select><div class="meta" style="margin-top:4px;">Menus, buttons, messages and help text.</div></div>' +
-      '<label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;font-weight:600;cursor:pointer;"><input type="checkbox" id="lz-lang-same"' + (same ? ' checked' : '') + '> Use this language for the AI and voice too</label>' +
+      '<label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;font-weight:600;cursor:pointer;"><input type="checkbox" id="lz-lang-same"' + (same ? ' checked' : '') + '> Use this language for the Learnza and voice too</label>' +
       '<div id="lz-lang-more"' + (same ? ' hidden' : '') + '>' +
-      '<div class="field" style="margin-bottom:12px;"><label>AI teaching language</label><select id="lz-lang-ai">' + optionsHtml(prefs.ai) + '</select><div class="meta" style="margin-top:4px;">What the AI Lecturer and the research assistant write and say. Formulas, units and official exam terms stay as they are.</div></div>' +
-      '<div class="field" style="margin-bottom:4px;"><label>Voice language</label><select id="lz-lang-voice">' + optionsHtml(prefs.voice) + '</select><div class="meta" style="margin-top:4px;">The language you speak in and the AI speaks back in. If your device has no voice for it, the AI shows the words and speaks in English or Pidgin.</div></div>' +
+      '<div class="field" style="margin-bottom:12px;"><label>Learnza teaching language</label><select id="lz-lang-ai">' + optionsHtml(prefs.ai) + '</select><div class="meta" style="margin-top:4px;">What the Learnza Lecturer and the research assistant write and say. Formulas, units and official exam terms stay as they are.</div></div>' +
+      '<div class="field" style="margin-bottom:4px;"><label>Voice language</label><select id="lz-lang-voice">' + optionsHtml(prefs.voice) + '</select><div class="meta" style="margin-top:4px;">The language you speak in and the Learnza speaks back in. If your device has no voice for it, the Learnza shows the words and speaks in English or Pidgin.</div></div>' +
       '</div></div>';
   }
   function wireSettings(root, ctx) {

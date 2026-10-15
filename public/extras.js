@@ -1,5 +1,5 @@
 /* Screens shared by the Student app (/app) and the Schools app (/schools): Help & Support
-   (tickets, live chat, rate the app), the AI-minutes coin wallet, and study-group polls.
+   (tickets, live chat, rate the app), the Learnza-minutes coin wallet, and study-group polls.
    Each app hands in its own api(), esc() and toast() so sessions, token refresh and error
    handling stay exactly as the rest of that app does them. */
 (function () {
@@ -208,12 +208,12 @@
     const { api, esc, toast } = ctx;
     const [w, sub] = await Promise.all([api('/coins'), api('/billing/status').catch(() => null)]);
     view.innerHTML = `
-      <div class="page-head"><h1>AI Minutes &amp; Coins</h1></div>
+      <div class="page-head"><h1>Learnza Minutes &amp; Coins</h1></div>
       <div class="card" style="margin-bottom:16px;">
         <div class="meta">Coin balance</div>
         <div style="font-size:2.2rem;font-weight:800;">🪙 ${w.balance}</div>
-        <div class="meta">${w.minutesLeft} minute${w.minutesLeft === 1 ? '' : 's'} of live AI Lecturer time in your wallet (1 coin = 1 minute)</div>
-        <p class="muted" style="margin-top:10px;font-size:.85rem;">Your subscription already includes AI Lecturer minutes each cycle. Coins are used only after those run out, so nothing is wasted.${sub && sub.enforced === false ? ' (The subscription paywall is currently off.)' : ''}</p>
+        <div class="meta">${w.minutesLeft} minute${w.minutesLeft === 1 ? '' : 's'} of live Learnza Lecturer time in your wallet (1 coin = 1 minute)</div>
+        <p class="muted" style="margin-top:10px;font-size:.85rem;">Your subscription already includes Learnza Lecturer minutes each cycle. Coins are used only after those run out, so nothing is wasted.${sub && sub.enforced === false ? ' (The subscription paywall is currently off.)' : ''}</p>
       </div>
       ${w.pending.length ? `<div class="hint-box" style="margin-bottom:16px;">⏳ ${w.pending.length} bank-transfer purchase${w.pending.length === 1 ? ' is' : 's are'} waiting to be confirmed (${w.pending.map((p) => p.coins + ' coins').join(', ')}). Your coins appear as soon as it is.</div>` : ''}
       <div class="card" style="margin-bottom:16px;">
@@ -223,10 +223,10 @@
           <button class="btn btn-primary btn-sm" data-buy="${p.id}">Buy</button></div>`).join('')}
       </div>
       <div class="card"><h3 style="margin-bottom:6px;">History</h3>
-        ${w.ledger.map((e) => `<div class="list-row"><div><div style="font-weight:600;">${esc(e.reason === 'PURCHASE' ? 'Coins bought' : e.reason === 'AI_USAGE' ? 'Live AI Lecturer' : e.reason === 'GRANT' ? 'Added by Learnza' : 'Adjustment')}</div><div class="meta">${esc(e.note || '')} · ${esc(fmt(e.createdAt))}</div></div><div style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} 🪙</div></div>`).join('') || '<p class="muted" style="padding:10px;">Nothing yet.</p>'}
+        ${w.ledger.map((e) => `<div class="list-row"><div><div style="font-weight:600;">${esc(e.reason === 'PURCHASE' ? 'Coins bought' : e.reason === 'AI_USAGE' ? 'Live Learnza Lecturer' : e.reason === 'GRANT' ? 'Added by Learnza' : 'Adjustment')}</div><div class="meta">${esc(e.note || '')} · ${esc(fmt(e.createdAt))}</div></div><div style="font-weight:700;">${e.delta > 0 ? '+' : ''}${e.delta} 🪙</div></div>`).join('') || '<p class="muted" style="padding:10px;">Nothing yet.</p>'}
       </div>
       ${(w.usage || []).length ? `<div class="card" style="margin-top:16px;"><h3 style="margin-bottom:6px;">Live teaching used</h3>
-        ${w.usage.map((u) => `<div class="list-row"><div><div style="font-weight:600;">${esc(u.title || (u.kind === 'PRACTICAL' ? 'Practical' : 'Lecture'))}</div><div class="meta">${u.kind === 'PRACTICAL' ? 'Digital Lab' : 'AI Lecturer'} · ${esc(new Date(u.createdAt).toLocaleDateString())}</div></div><b>${u.minutes} min</b></div>`).join('')}
+        ${w.usage.map((u) => `<div class="list-row"><div><div style="font-weight:600;">${esc(u.title || (u.kind === 'PRACTICAL' ? 'Practical' : 'Lecture'))}</div><div class="meta">${u.kind === 'PRACTICAL' ? 'Digital Lab' : 'Learnza Lecturer'} · ${esc(new Date(u.createdAt).toLocaleDateString())}</div></div><b>${u.minutes} min</b></div>`).join('')}
       </div>` : ''}`;
     view.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
       const pack = w.packs.find((p) => p.id === b.dataset.buy);
@@ -537,6 +537,24 @@
     }
   }
 
+  // Leaving a set of questions asks first, the way PassNow does: Stay or Exit. The answers given so far are not kept.
+  function confirmExit(word, onExit) {
+    if (document.getElementById('exit-overlay')) return;
+    const t = (m) => (window.LZI18N ? window.LZI18N.t(m) : m);
+    const box = document.createElement('div');
+    box.id = 'exit-overlay';
+    box.className = 'exit-overlay';
+    box.innerHTML = `<div class="exit-box" role="dialog" aria-modal="true">
+      <h3>Exit now?</h3>
+      <p>Your progress on this ${word} will be lost.</p>
+      <div class="exit-actions"><button type="button" class="btn btn-ghost" id="exit-stay">Stay</button><button type="button" class="btn btn-danger" id="exit-go">Exit</button></div>
+    </div>`;
+    document.body.appendChild(box);
+    box.addEventListener('click', (e) => { if (e.target === box) box.remove(); });
+    box.querySelector('#exit-stay').addEventListener('click', () => box.remove());
+    box.querySelector('#exit-go').addEventListener('click', () => { box.remove(); onExit(); });
+  }
+
   // ---------------------------------------------------------------- Daily Challenge
   // A short timed set from the question bank, one course at a time, every day. Answers are not shown until the set is
   // submitted; every right answer earns points and keeps the streak going.
@@ -586,7 +604,7 @@
       function paint() {
         const q = questions[i];
         view.innerHTML = `
-          <div class="page-head"><h1>${esc(c.title)}</h1><span class="pill pill-accent tabular" id="dc-clock">--:--</span></div>
+          <div class="page-head"><h1>${esc(c.title)}</h1><div style="display:flex;align-items:center;gap:10px;"><span class="pill pill-accent tabular" id="dc-clock">--:--</span><button class="btn btn-ghost btn-sm exit-exam-btn" id="dc-exit" type="button">✕ Exit</button></div></div>
           <div class="pn-progress"><div style="width:${((i + 1) / questions.length) * 100}%"></div></div>
           <div class="meta" style="margin:8px 0;">Question ${i + 1} of ${questions.length}</div>
           <div class="card" style="padding:18px;margin-bottom:14px;"><div style="font:700 16px Sora,sans-serif;white-space:pre-wrap;line-height:1.5;">${esc(q.text)}</div></div>
@@ -596,6 +614,7 @@
           chosen[i] = Number(o.dataset.k);
           view.querySelectorAll('.dc-opt').forEach((x) => x.classList.toggle('sel', x === o));
         }));
+        view.querySelector('#dc-exit').addEventListener('click', () => confirmExit('challenge', () => { stop(); home(); }));
         view.querySelector('#dc-prev').addEventListener('click', () => { i -= 1; paint(); });
         view.querySelector('#dc-next').addEventListener('click', () => { if (i < last) { i += 1; paint(); } else submit(false); });
         tick();

@@ -157,6 +157,7 @@ router.get('/ai-teacher/my-sessions', requireAuth, requireRole('STUDENT'), async
         recordings: Array.isArray(plan.recordings) ? plan.recordings : [],
         course: r.course ? `${r.course.code} — ${r.course.title}` : (r.individualCourse ? r.individualCourse.title : ''),
         title: plan.title || r.topic,
+        kind: plan.kind || 'LECTURE',
         sections: (plan.sections || []).map((x) => ({ title: x.title, boardText: x.boardText, speechText: x.speechText })),
       };
     }),
