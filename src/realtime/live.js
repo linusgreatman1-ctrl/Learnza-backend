@@ -149,10 +149,8 @@ function attachLiveNamespace(io) {
       if (!teacherSocketId) return;
       const floor = floorByLiveClass.get(liveClassId);
       if (floor && floor.socketId === socket.id) return;
-      // Answering is only offered while there is a question and this student has not answered it yet; after that the hand
-      // goes up for a question of their own, without waiting for the lecturer to clear anything.
-      const answered = answeredByLiveClass.get(liveClassId);
-      const kind = classQuestionByLiveClass.get(liveClassId) && wanted !== 'question' && !(answered && answered.has(socket.user.id)) ? 'answer' : 'question';
+      // The lecturer just asks out loud; any student may raise a hand either to answer or with a question of their own.
+      const kind = wanted === 'answer' ? 'answer' : 'question';
       if (kind === 'answer' && floor && floor.kind === 'answer') return; // someone is already answering
       if (!handsByLiveClass.has(liveClassId)) handsByLiveClass.set(liveClassId, new Map());
       handsByLiveClass.get(liveClassId).set(socket.id, { studentName: socket.user.fullName, kind });

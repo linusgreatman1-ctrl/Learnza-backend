@@ -252,7 +252,6 @@
   // ---------- Auth screen ----------
   const authScreen = document.getElementById('auth-screen');
   const appScreen = document.getElementById('app-screen');
-  if (window.LZI18N) LZI18N.mountPicker(authScreen);
 
   // The sign-in screens are a stack of panels (#lg-*), one visible at a time. Any element
   // inside #auth-screen with a data-go="panel-id" attribute switches to that panel.
