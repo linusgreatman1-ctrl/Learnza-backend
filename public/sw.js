@@ -4,7 +4,7 @@
      - /api, /socket.io, /uploads and anything cross-origin are NEVER cached or touched, so
        data, sign-in state and payments are always live;
      - pages and scripts are served from the saved copy at once and refreshed in the background (a deploy shows up on the next visit). */
-const CACHE = 'learnza-shell-v3';
+const CACHE = 'learnza-shell-v4';
 const PAGES = ['/app', '/schools'];
 const SHELL = ['/app', '/schools', '/style.css', '/auth.css', '/ui.css', '/i18n.js', '/extras.js', '/app.js', '/schools.js', '/icon.svg'];
 

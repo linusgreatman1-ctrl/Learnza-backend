@@ -1538,7 +1538,19 @@
     setInterval(checkVersion, 5 * 60 * 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) {
+      // A new version of the app was installed in the background: open it once, so nobody keeps using the old one (saved files are
+      // served first for speed, which meant a deploy only showed on the second visit).
+      const hadController = !!navigator.serviceWorker.controller;
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || reloaded) return;
+        reloaded = true;
+        const busy = document.querySelector('#exit-exam-btn, #dc-exit, .live-layout');   // never in the middle of an exam or a live class
+        if (!busy) location.reload();
+      });
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
