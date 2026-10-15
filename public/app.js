@@ -305,7 +305,42 @@
         },
       });
       rememberLogin(document.getElementById('lg-login-email').value.trim(), document.getElementById('lg-login-pw').value);
+      if (user.role === 'LECTURER') return goToLecturerApp(token, user, refreshToken);
       onAuthed(token, user, refreshToken);
+    });
+  });
+
+  // An independent lecturer works in the lecturer screens (the Schools app): hand the signed-in session over and open it.
+  function goToLecturerApp(token, user, refreshToken) {
+    try {
+      sessionStorage.setItem('lz_schools_token', token);
+      sessionStorage.setItem('lz_schools_user', JSON.stringify(user));
+      if (refreshToken) sessionStorage.setItem('lz_schools_refresh', refreshToken);
+      if (window.LZI18N) LZI18N.sync(user);
+    } catch { /* the sign-in page will ask again */ }
+    window.location.href = '/schools';
+  }
+
+  document.getElementById('lg-lect-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (document.getElementById('lg-lreg-pw').value !== document.getElementById('lg-lreg-pw2').value) {
+      toast('Your two passwords do not match.');
+      return;
+    }
+    submitting('lg-lreg-submit', async () => {
+      const { token, user, refreshToken } = await api('/auth/register-lecturer', {
+        method: 'POST',
+        body: {
+          fullName: document.getElementById('lg-lreg-name').value.trim(),
+          email: document.getElementById('lg-lreg-email').value.trim(),
+          phone: document.getElementById('lg-lreg-phone').value.trim(),
+          className: document.getElementById('lg-lreg-class').value.trim(),
+          subject: document.getElementById('lg-lreg-subject').value.trim(),
+          password: document.getElementById('lg-lreg-pw').value,
+        },
+      });
+      rememberLogin(document.getElementById('lg-lreg-email').value.trim(), document.getElementById('lg-lreg-pw').value);
+      goToLecturerApp(token, user, refreshToken);
     });
   });
 

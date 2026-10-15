@@ -34,7 +34,7 @@ function returnUrl(req) {
 }
 const payerEmail = (u) => (u.email && !INTERNAL.test(u.email) ? u.email : process.env.PAY_FALLBACK_EMAIL || 'payments@learnza.app');
 
-router.get('/status', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.get('/status', requireAuth, requireRole('STUDENT', 'LECTURER'), async (req, res) => {
   const status = await getSubscriptionStatus(req.user.id);
   res.json({ ...status, enforced: isEnforced() });
 });
@@ -47,16 +47,16 @@ router.get('/config', requireAuth, (req, res) => {
     paystack: paystack.isConfigured(),
     bank: { bankName, accountName, accountNumber },
     ussdTemplate: '*966*{amount}*' + accountNumber + '#',
-    plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, amountNaira: p.amountNaira, days: p.days, aiMinutes: p.aiMinutes })),
+    plans: Object.entries(PLANS).filter(([, p]) => !!p.lecturer === (req.user.role === 'LECTURER')).map(([id, p]) => ({ id, label: p.label, amountNaira: p.amountNaira, days: p.days, aiMinutes: p.aiMinutes })),
     packs: coins.PACKS,
   });
 });
 
 // Starts an online payment: records a PENDING payment at the server's price. For Flutterwave the
 // browser gets the reference to open the popup with; for Paystack it gets the checkout page to go to.
-router.post('/initiate', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.post('/initiate', requireAuth, requireRole('STUDENT', 'LECTURER'), async (req, res) => {
   let plan;
-  try { plan = getPlan(req.body.plan); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
+  try { plan = getPlan(req.body.plan); if (!!plan.lecturer !== (req.user.role === 'LECTURER')) throw new Error('wrong plan'); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
   const provider = req.body.provider === 'PAYSTACK' ? 'PAYSTACK' : 'FLUTTERWAVE';
   const testing = paymentsMode.autoApprove();           // while testing no money moves, so no provider is needed
   if (!testing && provider === 'PAYSTACK' && !paystack.isConfigured()) return res.status(503).json({ error: 'Paystack is not set up yet. Please choose another way to pay.' });
@@ -76,9 +76,9 @@ router.post('/initiate', requireAuth, requireRole('STUDENT'), async (req, res) =
 });
 
 // Bank transfer / USSD: nothing to verify against, so it is recorded PENDING for an admin to confirm.
-router.post('/manual', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.post('/manual', requireAuth, requireRole('STUDENT', 'LECTURER'), async (req, res) => {
   let plan;
-  try { plan = getPlan(req.body.plan); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
+  try { plan = getPlan(req.body.plan); if (!!plan.lecturer !== (req.user.role === 'LECTURER')) throw new Error('wrong plan'); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
   const reference = `LZ-MANUAL-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
   await prisma.payment.create({
     data: { userId: req.user.id, provider: 'MANUAL_TRANSFER', reference, plan: req.body.plan, amountKobo: plan.amountKobo, status: 'PENDING' },
@@ -90,7 +90,7 @@ router.post('/manual', requireAuth, requireRole('STUDENT'), async (req, res) => 
 // The browser calls this right after the popup reports success — a quick confirmation so the
 // student is not left looking at "pending". The webhook remains the source of truth. Works for
 // subscription payments and coin purchases alike.
-router.get('/verify/:reference', requireAuth, requireRole('STUDENT'), async (req, res) => {
+router.get('/verify/:reference', requireAuth, requireRole('STUDENT', 'LECTURER'), async (req, res) => {
   const { reference } = req.params;
   const payment = await prisma.payment.findUnique({ where: { reference } });
   const purchase = payment ? null : await prisma.coinPurchase.findUnique({ where: { reference } });

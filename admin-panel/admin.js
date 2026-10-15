@@ -115,7 +115,9 @@
     $('app-screen').classList.remove('hidden');
     $('nav-user-name').textContent = me ? me.fullName : '';
     setTimeout(startBell, 0);
-    go(location.hash.replace('#', '') || 'dashboard');
+    // the backend always opens on the Dashboard, after signing in and after a refresh (a tab left open on another page does not matter)
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+    go('dashboard');
   }
   function logout() {
     if (refreshToken) {

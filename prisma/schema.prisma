@@ -21,6 +21,7 @@ model School {
   contactPhone          String?
   joinCode              String       @unique
   status                String       @default("ACTIVE") // ACTIVE | SUSPENDED
+  independent           Boolean      @default(false) // true = one lecturer's own class (an independent lecturer), not an onboarded school
   subscriptionExpiresAt DateTime?
   institutionType       String? // UNIVERSITY | POLYTECHNIC | MONOTECHNIC | COLLEGE_OF_EDUCATION | OTHER -- decides how generated exam papers are set
   createdAt             DateTime     @default(now())

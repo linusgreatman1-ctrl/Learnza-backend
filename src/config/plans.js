@@ -7,6 +7,9 @@
 const PLANS = {
   MONTHLY: { label: 'Monthly', amountNaira: 10000, amountKobo: 1000000, days: 30, aiMinutes: 300 },
   YEARLY: { label: 'Yearly', amountNaira: 105000, amountKobo: 10500000, days: 365, aiMinutes: 3600 },
+  // an independent lecturer's own plans (students keep the two above)
+  LECTURER_MONTHLY: { label: 'Monthly', amountNaira: 5000, amountKobo: 500000, days: 30, aiMinutes: 0, lecturer: true },
+  LECTURER_YEARLY: { label: 'Yearly', amountNaira: 55000, amountKobo: 5500000, days: 365, aiMinutes: 0, lecturer: true },
 };
 
 function getPlan(plan) {

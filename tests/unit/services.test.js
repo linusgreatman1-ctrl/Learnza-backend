@@ -33,8 +33,13 @@ test('plans: prices live on the server and agree with each other', () => {
   const { getPlan, PLANS } = require('../../src/config/plans');
   for (const [name, p] of Object.entries(PLANS)) {
     assert.equal(p.amountKobo, p.amountNaira * 100, name);
-    assert.ok(p.days > 0 && p.aiMinutes > 0);
+    assert.ok(p.days > 0 && (p.lecturer ? p.aiMinutes === 0 : p.aiMinutes > 0));
   }
+  // an independent lecturer's own plans: 5,000 a month, 55,000 a year; the students' plans are untouched
+  assert.equal(PLANS.LECTURER_MONTHLY.amountNaira, 5000);
+  assert.equal(PLANS.LECTURER_YEARLY.amountNaira, 55000);
+  assert.equal(PLANS.MONTHLY.amountNaira, 10000);
+  assert.equal(PLANS.YEARLY.amountNaira, 105000);
   assert.throws(() => getPlan('WEEKLY'));
 });
 

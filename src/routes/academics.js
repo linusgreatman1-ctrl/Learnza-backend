@@ -292,7 +292,12 @@ router.post('/courses', requireAuth, requireRole('LECTURER', 'ADMIN'), async (re
   const course = await prisma.course.create({
     data: { departmentId, code, title, level: level || '100L', semester: semester || 'First', semesterId },
   });
-  if (req.user.role === 'LECTURER') await logActivity(req.user.id, 'CREATE_COURSE', `${code} — ${title}`);
+  if (req.user.role === 'LECTURER') {
+    await logActivity(req.user.id, 'CREATE_COURSE', `${code} — ${title}`);
+    // An independent lecturer has no school admin to assign them to a course: the course they add is theirs to teach.
+    const own = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } });
+    if (own && own.independent) await prisma.courseLecturer.create({ data: { courseId: course.id, lecturerId: req.user.id } }).catch(() => {});
+  }
   res.json({ course });
 });
 

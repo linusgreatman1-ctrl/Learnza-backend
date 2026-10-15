@@ -326,15 +326,37 @@
       <div class="lg-pill">🎓 Education At Your Fingertips</div>
     </div>
     <div class="lg-actions">
-      <button class="lg-btn lg-btn-gold" data-go="lg-register" style="font-size:17px;padding:18px">Get Started — It's Free 🚀</button>
-      <button class="lg-btn lg-btn-out" data-go="lg-login">Already have an account? Sign In</button>
+      <button class="lg-btn lg-btn-gold" data-go="lg-roles" style="font-size:17px;padding:18px">Get Started — It's Free 🚀</button>
+      <button class="lg-btn lg-btn-out" data-go="lg-signin">Already have an account? Sign In</button>
       <p class="lg-foot">Learnza Lecturer · e-Library · CBT practice · Digital Lab</p>
+    </div>
+  </div>
+
+  <!-- WHO ARE YOU (Get Started) -->
+  <div class="lg-s lg-dark" id="lg-roles">
+    <div class="lg-inner lg-rolepage">
+      <h2 class="lg-rt">Who are you? 👋</h2>
+      <p class="lg-rs">Select your account type to begin</p>
+      <button type="button" class="lg-role" data-go="lg-register"><span class="lg-role-ic" style="background:linear-gradient(135deg,#f3d58c,#e3ac4c 55%,#c1861f)">👩‍🎓</span><span class="lg-role-tx"><b>Student</b><small>Learn, practise &amp; crush your exams</small></span><span class="lg-role-go">›</span></button>
+      <button type="button" class="lg-role" data-go="lg-lect-register"><span class="lg-role-ic" style="background:linear-gradient(135deg,#5b8def,#2563d6)">👨‍🏫</span><span class="lg-role-tx"><b>Lecturer</b><small>Teach your own students on Learnza</small></span><span class="lg-role-go">›</span></button>
+      <button type="button" class="lg-btn lg-btn-out lg-role-back" data-go="lg-splash">← Back</button>
+    </div>
+  </div>
+
+  <!-- SIGN IN AS (Already have an account?) -->
+  <div class="lg-s lg-dark" id="lg-signin">
+    <div class="lg-inner lg-rolepage">
+      <h2 class="lg-rt">Sign in as? 👋</h2>
+      <p class="lg-rs">Select your account type to continue</p>
+      <button type="button" class="lg-role" data-go="lg-login"><span class="lg-role-ic" style="background:linear-gradient(135deg,#f3d58c,#e3ac4c 55%,#c1861f)">👩‍🎓</span><span class="lg-role-tx"><b>Student</b><small>Sign in with your Email &amp; Password</small></span><span class="lg-role-go">›</span></button>
+      <button type="button" class="lg-role" data-go="lg-login"><span class="lg-role-ic" style="background:linear-gradient(135deg,#5b8def,#2563d6)">👨‍🏫</span><span class="lg-role-tx"><b>Lecturer</b><small>Sign in with your Email &amp; Password</small></span><span class="lg-role-go">›</span></button>
+      <button type="button" class="lg-btn lg-btn-out lg-role-back" data-go="lg-splash">← Back</button>
     </div>
   </div>
 
   <!-- REGISTER -->
   <div class="lg-s lg-light" id="lg-register">
-    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-splash" aria-label="Back">←</button><div class="lg-bar-title">Create Account</div><div style="width:40px"></div></div></div>
+    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-roles" aria-label="Back">←</button><div class="lg-bar-title">Create Account</div><div style="width:40px"></div></div></div>
     <form class="lg-inner lg-form" id="lg-register-form" autocomplete="on">
       <div class="lg-info"><span>🎓</span><span>Learn on your own terms — tell Learnza what you're studying and your Learnza Lecturer builds the lessons.</span></div>
       <div class="lg-fg"><label class="lg-label">Full Name</label><input class="lg-input" id="lg-reg-name" required placeholder="e.g. Chiamaka Okonkwo"></div>
@@ -366,10 +388,28 @@
     </form>
   </div>
 
+  <!-- LECTURER REGISTER -->
+  <div class="lg-s lg-light" id="lg-lect-register">
+    <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-roles" aria-label="Back">←</button><div class="lg-bar-title">Lecturer Account</div><div style="width:40px"></div></div></div>
+    <form class="lg-inner lg-form" id="lg-lect-form" autocomplete="on">
+      <div class="lg-info"><span>👨‍🏫</span><span>Teach on your own: add your students, set work, go live and upload lectures. Your students sign in with your class name and the access code you give them.</span></div>
+      <div class="lg-fg"><label class="lg-label">Full Name</label><input class="lg-input" id="lg-lreg-name" required placeholder="e.g. Dr. Chiamaka Okonkwo"></div>
+      <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-lreg-email" name="username" autocomplete="username" required placeholder="you@example.com"></div>
+      <div class="lg-fg"><label class="lg-label">Phone Number</label><input class="lg-input" type="tel" id="lg-lreg-phone" placeholder="+234 800 000 0000"></div>
+      <div class="lg-fg"><label class="lg-label">Your Class Name</label><input class="lg-input" id="lg-lreg-class" required minlength="3" placeholder="e.g. Okonkwo Maths Class"><div class="lg-hint">Your students type this to sign in, so keep it easy to spell.</div></div>
+      <div class="lg-fg"><label class="lg-label">What You Teach</label><input class="lg-input" id="lg-lreg-subject" placeholder="e.g. Mathematics"></div>
+      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-lreg-pw" name="new-password" autocomplete="new-password" required minlength="6" placeholder="At least 6 characters"></div></div>
+      <div class="lg-fg"><label class="lg-label">Confirm Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-lreg-pw2" required minlength="6" placeholder="Repeat your password"></div></div>
+      <label class="lg-check"><input type="checkbox" id="lg-lreg-terms" required><span>I have read and accept the <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</span></label>
+      <button class="lg-btn lg-btn-gold" type="submit" id="lg-lreg-submit">Create Lecturer Account →</button>
+      <p class="lg-switch">Already have an account? <a data-go="lg-login">Sign in</a></p>
+    </form>
+  </div>
+
   <!-- LOGIN -->
   <div class="lg-s lg-light" id="lg-login">
     <div class="lg-head"><div class="lg-inner">
-      <button class="lg-back" data-go="lg-splash" aria-label="Back" style="margin-right:auto;display:block">←</button>
+      <button class="lg-back" data-go="lg-signin" aria-label="Back" style="margin-right:auto;display:block">←</button>
       <div class="lg-head-icon">🎓</div>
       <h2>Welcome Back!</h2><p>Continue your study journey 🔥</p>
     </div></div>
@@ -379,7 +419,7 @@
       <p class="lg-forgot"><a data-go="lg-forgot">Forgot password?</a></p>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-login-submit" style="margin-top:6px">Sign In →</button>
       <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
-      <p class="lg-switch">New here? <a data-go="lg-register">Create free account</a></p>
+      <p class="lg-switch">New here? <a data-go="lg-roles">Create free account</a></p>
     </form>
   </div>
 

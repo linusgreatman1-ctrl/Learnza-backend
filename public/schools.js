@@ -359,7 +359,7 @@
     }
     clearSession();
     window.speechSynthesis && window.speechSynthesis.cancel();
-    window.location.href = '/schools';
+    window.location.href = state.school && state.school.independent ? '/app' : '/schools';
   });
 
 
@@ -632,7 +632,13 @@
 
     const nav = document.getElementById('nav-items');
     const navKey = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
-    const navItems = NAV[navKey];
+    let navItems = NAV[navKey];
+    // an independent lecturer pays for their own plan: Subscription sits just above Settings
+    if (state.user.role === 'LECTURER' && state.school && state.school.independent) {
+      navItems = navItems.filter(([k]) => k !== 'preview-student-dashboard');
+      const at = navItems.findIndex(([k]) => k === 'settings');
+      navItems = [...navItems.slice(0, at < 0 ? navItems.length : at), ['lect-billing', 'Subscription'], ...navItems.slice(at < 0 ? navItems.length : at)];
+    }
     nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
@@ -984,6 +990,7 @@
         case 'take-assessment': return renderTakeAssessment();
         case 'assessment-review': return renderAssessmentReview();
         case 'billing': return renderBilling();
+        case 'lect-billing': return renderLecturerBilling();
         case 'ai-teacher-session': return renderAiTeacherSession();
         case 'live-class': return renderLiveClass();
         case 'progress': return renderProgress();
@@ -1356,6 +1363,7 @@
   }
 
   async function renderCourseDetail() {
+    if (['LECTURER', 'ADMIN'].includes(state.user.role)) return navigate('lect-lessons', { courseId: state.view.courseId });
     const { course } = await api(`/courses/${state.view.courseId}`);
     const { lessons } = await api(`/courses/${state.view.courseId}/lessons`);
     const { liveClass } = await api(`/courses/${state.view.courseId}/live`);
@@ -2577,7 +2585,7 @@
       // The lecturer goes back to the course they were just teaching (to upload
       // materials, see the recording land, etc). A student instead goes to their own
       // dashboard, not the course page.
-      if (isHost) navigate('course-detail', { courseId });
+      if (isHost) navigate('lect-lessons', { courseId });
       else navigate('my-dashboard');
     });
     if (isHost) {
@@ -2812,7 +2820,7 @@
       // A student lands on their own dashboard once class ends, not the course page.
       // The host doesn't rely on this at all -- their own "End class" click already
       // navigates them straight to the course page before this broadcast even arrives.
-      if (isHost) navigate('course-detail', { courseId });
+      if (isHost) navigate('lect-lessons', { courseId });
       else navigate('my-dashboard');
     });
     socket.on('live:watching-count', ({ count }) => {
@@ -4873,6 +4881,29 @@
 
   // ================= BILLING =================
 
+  // ---- An independent lecturer's own plan: Monthly or Yearly. (Their students' plans are the student ones, unchanged.) ----
+  async function renderLecturerBilling() {
+    const [{ active, subscription }, cfg] = await Promise.all([api('/billing/status'), api('/billing/config')]);
+    const plans = (cfg.plans || []).filter((p) => /^LECTURER_/.test(p.id));
+    const naira = (n) => '₦' + Number(n).toLocaleString('en-NG');
+    view.innerHTML = `
+      <div class="page-head"><h1>Subscription</h1></div>
+      <p class="muted" style="margin-bottom:16px;">Your plan as an independent lecturer. Your students' own plans are separate and do not change.</p>
+      ${active ? `<div class="card" style="padding:18px; margin-bottom:18px;"><span class="pill pill-pass">Active</span><p style="margin-top:10px;">Your ${esc(subscription.plan === 'LECTURER_YEARLY' ? 'yearly' : 'monthly')} plan is active until <strong>${new Date(subscription.expiresAt).toLocaleDateString()}</strong>.</p></div>` : '<div class="card" style="padding:18px; margin-bottom:18px;"><span class="pill pill-muted">No active plan</span><p class="muted" style="margin-top:10px;">Choose a plan below to keep teaching on Learnza.</p></div>'}
+      <div class="grid-cards">
+        ${plans.map((p) => `
+          <div class="card" style="padding:20px;">
+            <h3 style="margin-bottom:4px;">${esc(p.label)}</h3>
+            <div style="font:800 1.7rem Sora,sans-serif; margin:6px 0 4px;">${naira(p.amountNaira)}</div>
+            <div class="meta" style="margin-bottom:14px;">${p.id === 'LECTURER_YEARLY' ? 'for a full year' : 'every month'}</div>
+            <button class="btn btn-accent" data-lplan="${p.id}" data-lamount="${p.amountNaira}" data-llabel="${esc(p.label)}">${active ? 'Renew' : 'Subscribe'} ${esc(p.label.toLowerCase())}</button>
+          </div>`).join('')}
+      </div>`;
+    view.querySelectorAll('[data-lplan]').forEach((btn) => btn.addEventListener('click', () => {
+      LZX.pay({ api, esc, toast }, { kind: 'plan', plan: btn.dataset.lplan, title: 'Learnza Lecturer — ' + btn.dataset.llabel, amountNaira: Number(btn.dataset.lamount), onDone: () => render() });
+    }));
+  }
+
   async function renderBilling() {
     const { active, subscription, enforced } = await api('/billing/status');
     const noProvider = false; // bank transfer is always available; the Flutterwave popup is offered on top when configured
@@ -5756,13 +5787,6 @@
         <div><div class="muted tabular">${esc(course.code)}</div><h1>${esc(course.title)}</h1></div>
         <button class="btn btn-ghost btn-sm" id="back-btn">← Back to courses</button>
       </div>
-      <div class="card" style="padding:20px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div>
-          <div style="font-weight:600;">Digital Lab — practical demonstrations</div>
-          <div class="meta">Add curated practicals for this course. Students can also ask the Learnza Lecturer to draft one.</div>
-        </div>
-        <button class="btn btn-ghost" id="open-lab-btn">Open Digital Lab</button>
-      </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:4px; font-size:1rem;">Upload lectures</h3>
         <p class="meta" style="margin-bottom:12px;">Only the students enrolled in ${esc(course.code)} can see it.</p>
@@ -5789,7 +5813,6 @@
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-courses'));
-    document.getElementById('open-lab-btn').addEventListener('click', () => navigate('lab', { courseId: course.id }));
     document.getElementById('lesson-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData();
@@ -6230,7 +6253,7 @@
       ${row('Expected graduation', d.expectedGraduationYear ? `${d.expectedGraduationYear} <span class="muted" style="font-size:.75rem;">(${d.programmeYears || 4}-year programme)</span>` : '—')}
       ${row('CGPA', d.cgpa != null ? `${d.cgpa}${d.cgpaEntered ? '' : ' <span class="muted" style="font-size:.75rem;">(from published grades)</span>'}` : '—')}
       ${row('Position held', esc(d.classPosition || '—'))}
-      ${d.accessCode ? row('Access code', `<span style="letter-spacing:.12em; font-weight:700;">${esc(d.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(d.accessCode)}">Copy</button><div class="muted" style="font-size:.74rem; font-weight:400; margin-top:2px;">${opts.own ? 'You sign in with your full name and this code. It does not change.' : 'The student signs in with their full name and this code. It does not change.'}</div>`) : ''}
+      ${d.accessCode ? row('Access code', `<span style="letter-spacing:.12em; font-weight:700;">${esc(d.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(d.accessCode)}">Copy</button><div class="muted" style="font-size:.74rem; font-weight:400; margin-top:2px;">${opts.own ? 'You sign in with your full name and this code. It does not change.' : ('The student signs in at the Schools page (Lecturer / Student) with their full name' + (state.school && state.school.independent ? `, your class name “${state.school.name}”` : '') + ' and this code. It does not change.')}</div>`) : ''}
     </div></div>`;
   }
   document.addEventListener('click', (e) => {

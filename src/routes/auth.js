@@ -29,7 +29,7 @@ function publicUser(u) {
 // lecturers whose own /me call also returns their school.
 function publicSchool(school, role) {
   if (!school) return null;
-  const base = { id: school.id, name: school.name, state: school.state, status: school.status, subscriptionExpiresAt: school.subscriptionExpiresAt };
+  const base = { id: school.id, name: school.name, state: school.state, status: school.status, subscriptionExpiresAt: school.subscriptionExpiresAt, independent: !!school.independent };
   if (role !== 'ADMIN') return base;
   return { ...base, address: school.address, contactEmail: school.contactEmail, contactPhone: school.contactPhone, joinCode: school.joinCode };
 }
@@ -101,8 +101,9 @@ router.post('/login', async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const { password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.isIndividual || user.role !== 'STUDENT') {
+  const user = await prisma.user.findUnique({ where: { email }, include: { school: { select: { independent: true, status: true, subscriptionExpiresAt: true } } } });
+  const isIndependentLecturer = !!(user && user.role === 'LECTURER' && user.school && user.school.independent);
+  if (!user || !((user.isIndividual && user.role === 'STUDENT') || isIndependentLecturer)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   const locked = lockedMessage(user);
@@ -114,7 +115,46 @@ router.post('/login', async (req, res) => {
   }
   if (!checkStatus(res, user)) return;
   await clearFailures(user);
-  res.json({ ...(await issueSession(user, 'app')), user: publicUser(user) });
+  const { school, ...plain } = user;
+  // an independent lecturer works in the lecturer screens (the Schools app), so that is the kind of session they get
+  res.json({ ...(await issueSession(plain, isIndependentLecturer ? 'schools' : 'app')), user: publicUser(plain), lecturer: isIndependentLecturer });
+});
+
+// An independent lecturer: teaches on their own, with no school behind them. Behind the scenes they get a class of their own
+// (a small private school with one department), so every lecturer feature works exactly as it does for a school lecturer.
+// The class name is what their students type, with their access code, to sign in.
+router.post('/register-lecturer', async (req, res) => {
+  if (!settings.get('registrationOpen')) return res.status(403).json({ error: 'New sign-ups are closed right now. Please check back soon.', code: 'REGISTRATION_CLOSED' });
+  const fullName = String(req.body.fullName || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const className = String(req.body.className || '').trim();
+  const subject = String(req.body.subject || '').trim() || 'General';
+  const { password, phone } = req.body;
+  if (!fullName || !email || !password || !className) return res.status(400).json({ error: 'Your name, email, password and the name of your class are required.' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  if (className.length < 3) return res.status(400).json({ error: 'Give your class a name of at least 3 letters. Your students use it to sign in.' });
+  if (await prisma.user.findUnique({ where: { email } })) return res.status(409).json({ error: 'An account with that email already exists' });
+  // students sign in by this name, so two classes cannot share one (ignoring case)
+  if (await prisma.school.findFirst({ where: { name: { equals: className, mode: 'insensitive' } } })) return res.status(409).json({ error: 'That class name is already taken. Choose another one.' });
+  const { generateJoinCode } = require('../utils');
+  const year = new Date().getFullYear();
+  const passwordHash = await bcrypt.hash(password, 10);
+  let user = null;
+  for (let attempt = 0; attempt < 5 && !user; attempt++) {
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        const school = await tx.school.create({
+          data: { name: className, independent: true, joinCode: generateJoinCode(), contactEmail: email, contactPhone: phone || null, institutionType: 'OTHER' },
+        });
+        await tx.semester.create({ data: { schoolId: school.id, name: `First Semester ${year}/${year + 1}`, isCurrent: true } });
+        const dept = await tx.department.create({ data: { schoolId: school.id, name: subject, code: 'GEN' } });
+        return tx.user.create({
+          data: { schoolId: school.id, departmentId: dept.id, role: 'LECTURER', staffType: 'ACADEMIC', fullName, email, passwordHash, phone: phone || null },
+        });
+      });
+    } catch (e) { if (e.code !== 'P2002') throw e; if (attempt === 4) return res.status(409).json({ error: 'Could not create your class. Please try again.' }); }
+  }
+  res.json({ ...(await issueSession(user, 'schools')), user: publicUser(user), lecturer: true });
 });
 
 // The Schools app's "School" sign-in: the school's name plus the permanent join code the
@@ -200,7 +240,8 @@ router.post('/password/forgot', async (req, res) => {
   const email = String((req.body && req.body.email) || '').trim().toLowerCase();
   if (email) {
     const user = await prisma.user.findUnique({ where: { email } });
-    if (user && user.isIndividual && user.status === 'ACTIVE') {
+    const ownClass = user && user.role === 'LECTURER' && user.schoolId ? await prisma.school.findUnique({ where: { id: user.schoolId }, select: { independent: true } }) : null;
+    if (user && (user.isIndividual || (ownClass && ownClass.independent)) && user.status === 'ACTIVE') {
       const raw = crypto.randomBytes(32).toString('base64url');
       await prisma.passwordReset.create({
         data: { userId: user.id, tokenHash: sha256(raw), expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
