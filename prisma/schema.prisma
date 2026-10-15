@@ -1283,3 +1283,20 @@ model QuestionTranslation {
 
   @@unique([hash, language])
 }
+
+// Money that has arrived in the company account, as reported by a bank / payment-provider feed (see services/bankCredit.service.js).
+// Each one is matched to a waiting payment request and, when it is clear which one, the request is confirmed by the system.
+model BankCredit {
+  id          String   @id @default(cuid())
+  provider    String   // the feed that reported it: FLUTTERWAVE | PAYSTACK | MONNIFY | GENERIC
+  providerRef String   @unique
+  amountKobo  Int
+  narration   String?
+  payerName   String?
+  status      String   @default("UNMATCHED") // MATCHED | UNMATCHED | AMBIGUOUS
+  matchedRef  String?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([status, createdAt])
+}

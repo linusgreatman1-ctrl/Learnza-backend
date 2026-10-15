@@ -4,6 +4,8 @@ const coins = require('./coins.service');
 const flutterwave = require('./flutterwave.service');
 const paystack = require('./paystack.service');
 const { notify } = require('./notification.service');
+const paymentsMode = require('../config/paymentsMode');
+const { notifyAdmins } = require('./adminNotify.service');
 
 // Everything that turns "a payment exists" into "the student has what they paid for". Shared by
 // the browser's verify call, Flutterwave's webhook and the admin's manual confirmation, so no
@@ -59,4 +61,12 @@ async function verifyAndSettle(reference, provider = 'FLUTTERWAVE') {
   return settle(reference, verified.amountKobo);
 }
 
-module.exports = { settle, verifyAndSettle, activateSubscription, amountCovers };
+// While testing (PAYMENTS_AUTO_APPROVE is not 'false') a payment is accepted the moment it is made; the admins still see it.
+async function maybeAutoApprove(reference, amountKobo, what) {
+  const auto = paymentsMode.autoApprove();
+  if (auto) await settle(reference, amountKobo).catch((e) => console.error('[payments] auto-approve failed:', e && e.message));
+  notifyAdmins(auto ? '✅ Test payment accepted' : '🏦 New payment request', `${what} — ₦${Math.round(amountKobo / 100).toLocaleString('en-NG')}${auto ? ' (accepted automatically while testing)' : ' is waiting for the money. It is confirmed by the system when the money arrives, or by you in Requests.'}`, 'payments');
+  return auto;
+}
+
+module.exports = { settle, verifyAndSettle, activateSubscription, amountCovers, maybeAutoApprove };

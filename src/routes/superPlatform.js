@@ -7,6 +7,7 @@ const bulkMessage = require('../services/bulkMessage.service');
 const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
 const settings = require('../settings');
 const payments = require('../services/payments.service');
+const bank = require('../services/bankCredit.service');
 
 // The rest of the platform owner's API (mounted inside routes/super.js, so every route here
 // is already behind "signed in as SUPER_ADMIN"): announcements, payments & subscriptions,
@@ -120,6 +121,43 @@ router.get('/payments', async (req, res) => {
       pending, failed,
     },
   });
+});
+
+// ---------------------------------------------------------------- the bell and the payment requests
+router.get('/inbox/notifications', async (req, res) => {
+  const [items, unread] = await Promise.all([
+    prisma.notification.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 60 }),
+    prisma.notification.count({ where: { userId: req.user.id, read: false } }),
+  ]);
+  res.json({ items, unread });
+});
+router.post('/inbox/notifications/read', async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) && req.body.ids.length ? { id: { in: req.body.ids.map(String) } } : {};
+  await prisma.notification.updateMany({ where: { userId: req.user.id, read: false, ...ids }, data: { read: true } });
+  res.json({ ok: true });
+});
+router.get('/inbox/requests', async (req, res) => {
+  const [waiting, credits] = await Promise.all([bank.waiting(), prisma.bankCredit.findMany({ where: { status: { in: ['UNMATCHED', 'AMBIGUOUS'] } }, orderBy: { createdAt: 'desc' }, take: 50 })]);
+  res.json({ waiting: waiting.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((r) => ({ kind: r.kind, ref: r.ref, amountKobo: r.amountKobo, holder: r.holder || '', contact: r.contact || '', label: r.label, createdAt: r.createdAt })), credits });
+});
+router.post('/inbox/requests/confirm', async (req, res) => {
+  const ref = String((req.body && req.body.ref) || '');
+  const r = (await bank.waiting()).find((x) => x.ref === ref);
+  if (!r) return res.status(404).json({ error: 'That request is not waiting any more.' });
+  const out = await bank.confirmRequest(r, null);
+  if (!out || !out.ok) return res.status(409).json({ error: 'Could not confirm this payment.' });
+  await logAction(req, 'PAYMENT_CONFIRMED', r.kind === 'PLAN' ? 'Payment' : 'CoinPurchase', r.id, { reference: ref, amountKobo: r.amountKobo });
+  res.json({ ok: true });
+});
+router.post('/inbox/requests/reject', async (req, res) => {
+  const out = await bank.rejectRequest(String((req.body && req.body.ref) || ''));
+  if (!out.ok) return res.status(404).json({ error: 'That request is not waiting any more.' });
+  res.json({ ok: true });
+});
+router.post('/inbox/credits/:id/match', async (req, res) => {
+  const out = await bank.matchByHand(req.params.id, String((req.body && req.body.ref) || ''));
+  if (!out.ok) return res.status(409).json({ error: out.reason === 'request_not_waiting' ? 'That request is not waiting any more.' : 'Could not match it (' + out.reason + ').' });
+  res.json({ ok: true });
 });
 
 // A bank-transfer / USSD payment a student reported: the admin saw the money, so confirm it and

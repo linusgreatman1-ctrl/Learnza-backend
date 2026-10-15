@@ -48,10 +48,11 @@ router.post('/initiate', async (req, res) => {
   const pack = coins.getPack(req.body.packId);
   if (!pack) return res.status(400).json({ error: 'Choose a coin pack.' });
   const provider = req.body.provider === 'PAYSTACK' ? 'PAYSTACK' : 'FLUTTERWAVE';
-  if (provider === 'PAYSTACK' && !paystack.isConfigured()) return res.status(503).json({ error: 'Paystack is not set up yet. Please choose another way to pay.' });
+  const testing = require('../config/paymentsMode').autoApprove();           // while testing no money moves, so no provider is needed
+  if (!testing && provider === 'PAYSTACK' && !paystack.isConfigured()) return res.status(503).json({ error: 'Paystack is not set up yet. Please choose another way to pay.' });
   const reference = `LZ-COIN-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
   let authorizationUrl;
-  if (provider === 'PAYSTACK') {
+  if (provider === 'PAYSTACK' && !testing) {
     try {
       const init = await paystack.initializeTransaction({ email: payerEmail(req.user), amountKobo: pack.amountKobo, reference, callbackUrl: returnUrl(req), metadata: { userId: req.user.id, coins: pack.coins } });
       authorizationUrl = init.authorization_url;
@@ -60,7 +61,8 @@ router.post('/initiate', async (req, res) => {
   await prisma.coinPurchase.create({
     data: { userId: req.user.id, coins: pack.coins, amountKobo: pack.amountKobo, provider, reference, status: 'PENDING' },
   });
-  res.status(201).json({ reference, authorizationUrl, amount: pack.amountKobo / 100, amountKobo: pack.amountKobo, email: payerEmail(req.user), name: req.user.fullName, label: pack.label, coins: pack.coins });
+  const autoApproved = await require('../services/payments.service').maybeAutoApprove(reference, pack.amountKobo, `${req.user.fullName}: ${pack.coins} coins (card)`);
+  res.status(201).json({ reference, authorizationUrl: autoApproved ? undefined : authorizationUrl, autoApproved, amount: pack.amountKobo / 100, amountKobo: pack.amountKobo, email: payerEmail(req.user), name: req.user.fullName, label: pack.label, coins: pack.coins });
 });
 
 // Bank transfer / USSD: recorded PENDING; an admin confirms it and the coins are credited then.
@@ -72,7 +74,8 @@ router.post('/manual', async (req, res) => {
   await prisma.coinPurchase.create({
     data: { userId: req.user.id, coins: pack.coins, amountKobo: pack.amountKobo, provider: 'MANUAL_TRANSFER', reference, status: 'PENDING' },
   });
-  res.status(201).json({ reference, coins: pack.coins, message: 'Thanks! We will add your coins as soon as the payment is confirmed (usually within 24 hours).' });
+  const autoApproved = await require('../services/payments.service').maybeAutoApprove(reference, pack.amountKobo, `${req.user.fullName}: ${pack.coins} coins (bank transfer)`);
+  res.status(201).json({ reference, coins: pack.coins, autoApproved, message: autoApproved ? 'Thanks! Your coins have been added.' : 'Thanks! Your coins are added as soon as the payment arrives (the system confirms it, usually within minutes; at most 24 hours).' });
 });
 
 module.exports = router;

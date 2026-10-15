@@ -38,6 +38,7 @@ router.post('/tickets', async (req, res) => {
   const ticket = await prisma.supportTicket.create({
     data: { userId: req.user.id, subject, category, messages: { create: [{ fromStaff: false, body }] } },
   });
+  require('../services/adminNotify.service').notifyAdmins('🎫 New support ticket', `${category}: ${subject}`, 'tickets');
   res.json({ ticket });
 });
 

@@ -271,7 +271,7 @@
             <div style="font-size:13px;line-height:1.7;">Dial <b>${esc(ussd)}</b> on your phone (${esc(cfg.bank.bankName.split(' ')[0])} EazyBanking) and follow the prompts, then confirm below.</div>
             <button class="btn btn-primary btn-sm" id="lzx-pay-ussd" style="width:100%;margin-top:10px;">✅ I've completed the USSD payment</button>
           </div>
-          <div class="muted" style="font-size:11px;text-align:center;line-height:1.6;">🔒 Payments are processed securely. Bank transfer / USSD payments are confirmed manually, usually within 24 hours.</div>
+          <div class="muted" style="font-size:11px;text-align:center;line-height:1.6;">🔒 Payments are processed securely. Bank transfer / USSD payments are confirmed by the system when the money arrives, usually within minutes (at most 24 hours).</div>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -303,6 +303,7 @@
       try {
         const returnUrl = location.origin + location.pathname;
         const init = await api(opts.kind === 'coins' ? '/coins/initiate' : '/billing/initiate', { method: 'POST', body: Object.assign({ provider: 'PAYSTACK', returnUrl }, opts.kind === 'coins' ? { packId: opts.packId } : { plan: opts.plan }) });
+        if (init.autoApproved) { toast(opts.kind === 'coins' ? '✅ Coins added!' : '✅ Payment successful! Your plan is now active.'); done(); return; }   // while testing a payment is accepted at once
         try { sessionStorage.setItem('lzx_pay', JSON.stringify({ ref: init.reference, kind: opts.kind === 'coins' ? 'coins' : 'plan' })); } catch { /* the return page also carries the reference */ }
         location.href = init.authorizationUrl;
       } catch (err) { psBtn.disabled = false; toast(err.message || 'Could not start the payment. Please try again.'); }
@@ -312,9 +313,10 @@
     if (fwBtn) fwBtn.addEventListener('click', async () => {
       fwBtn.disabled = true;
       try {
-        await lib('flutterwave');
         const init = await api(opts.kind === 'coins' ? '/coins/initiate' : '/billing/initiate', { method: 'POST', body: opts.kind === 'coins' ? { packId: opts.packId } : { plan: opts.plan } });
         fwBtn.disabled = false;
+        if (init.autoApproved) { toast(opts.kind === 'coins' ? '✅ Coins added!' : '✅ Payment successful! Your plan is now active.'); done(); return; }   // while testing a payment is accepted at once
+        await lib('flutterwave');
         window.FlutterwaveCheckout({
           public_key: cfg.flutterwavePublicKey,
           tx_ref: init.reference,

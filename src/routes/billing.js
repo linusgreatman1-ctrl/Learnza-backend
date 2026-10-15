@@ -9,6 +9,8 @@ const flutterwave = require('../services/flutterwave.service');
 const paystack = require('../services/paystack.service');
 const payments = require('../services/payments.service');
 const coins = require('../services/coins.service');
+const paymentsMode = require('../config/paymentsMode');
+const bankCredit = require('../services/bankCredit.service');
 
 // Subscriptions, structured like PassNow's: the browser opens Flutterwave's checkout popup (card,
 // bank transfer, USSD, mobile money) with the PUBLIC key, or goes to Paystack's checkout page; the
@@ -56,10 +58,11 @@ router.post('/initiate', requireAuth, requireRole('STUDENT'), async (req, res) =
   let plan;
   try { plan = getPlan(req.body.plan); } catch { return res.status(400).json({ error: 'Choose a monthly or yearly plan.' }); }
   const provider = req.body.provider === 'PAYSTACK' ? 'PAYSTACK' : 'FLUTTERWAVE';
-  if (provider === 'PAYSTACK' && !paystack.isConfigured()) return res.status(503).json({ error: 'Paystack is not set up yet. Please choose another way to pay.' });
+  const testing = paymentsMode.autoApprove();           // while testing no money moves, so no provider is needed
+  if (!testing && provider === 'PAYSTACK' && !paystack.isConfigured()) return res.status(503).json({ error: 'Paystack is not set up yet. Please choose another way to pay.' });
   const reference = `LZ-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
   let authorizationUrl;
-  if (provider === 'PAYSTACK') {
+  if (provider === 'PAYSTACK' && !testing) {
     try {
       const init = await paystack.initializeTransaction({ email: payerEmail(req.user), amountKobo: plan.amountKobo, reference, callbackUrl: returnUrl(req), metadata: { userId: req.user.id, plan: req.body.plan } });
       authorizationUrl = init.authorization_url;
@@ -68,7 +71,8 @@ router.post('/initiate', requireAuth, requireRole('STUDENT'), async (req, res) =
   await prisma.payment.create({
     data: { userId: req.user.id, provider, reference, plan: req.body.plan, amountKobo: plan.amountKobo, status: 'PENDING' },
   });
-  res.status(201).json({ reference, authorizationUrl, amount: plan.amountNaira, amountKobo: plan.amountKobo, email: payerEmail(req.user), name: req.user.fullName, label: plan.label });
+  const autoApproved = await payments.maybeAutoApprove(reference, plan.amountKobo, `${req.user.fullName}: ${plan.label} plan (card)`);
+  res.status(201).json({ reference, authorizationUrl: autoApproved ? undefined : authorizationUrl, autoApproved, amount: plan.amountNaira, amountKobo: plan.amountKobo, email: payerEmail(req.user), name: req.user.fullName, label: plan.label });
 });
 
 // Bank transfer / USSD: nothing to verify against, so it is recorded PENDING for an admin to confirm.
@@ -79,7 +83,8 @@ router.post('/manual', requireAuth, requireRole('STUDENT'), async (req, res) => 
   await prisma.payment.create({
     data: { userId: req.user.id, provider: 'MANUAL_TRANSFER', reference, plan: req.body.plan, amountKobo: plan.amountKobo, status: 'PENDING' },
   });
-  res.status(201).json({ reference, message: 'Thanks! Your plan will be activated as soon as the payment is confirmed (usually within 24 hours).' });
+  const autoApproved = await payments.maybeAutoApprove(reference, plan.amountKobo, `${req.user.fullName}: ${plan.label} plan (bank transfer)`);
+  res.status(201).json({ reference, autoApproved, message: autoApproved ? 'Thanks! Your plan is now active.' : 'Thanks! Your plan starts as soon as the payment arrives (the system confirms it, usually within minutes; at most 24 hours).' });
 });
 
 // The browser calls this right after the popup reports success — a quick confirmation so the
@@ -110,6 +115,16 @@ router.post('/webhook/flutterwave', async (req, res) => {
     await payments.settle(reference, paidKobo);
   }
   res.status(200).end();
+});
+
+// A bank / payment-provider feed tells us that money arrived in the company account (see services/bankCredit.service.js):
+// POST /api/billing/webhook/bank-credit?provider=flutterwave|paystack|monnify|generic
+router.post('/webhook/bank-credit', async (req, res) => {
+  const provider = String(req.query.provider || 'generic');
+  if (!bankCredit.verifySignature(provider, req)) return res.status(401).json({ error: 'Invalid signature.' });
+  const credit = bankCredit.normalize(provider, req.body);
+  if (!credit) return res.status(200).json({ received: true, ignored: true });
+  res.status(200).json({ received: true, ...(await bankCredit.processCredit(credit)) });
 });
 
 // Paystack tells us a charge succeeded. Public route, authenticated by the HMAC signature of the raw

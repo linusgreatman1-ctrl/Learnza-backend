@@ -114,6 +114,7 @@
     $('login-screen').classList.add('hidden');
     $('app-screen').classList.remove('hidden');
     $('nav-user-name').textContent = me ? me.fullName : '';
+    setTimeout(startBell, 0);
     go(location.hash.replace('#', '') || 'dashboard');
   }
   function logout() {
@@ -176,7 +177,7 @@
     dashboard: renderDashboard, analytics: renderAnalytics, questions: renderQuestions,
     lessons: renderLessons, courses: renderCourses,
     conversations: () => renderAi('logs'), teacher: () => renderAi('sessions'), demonstrations: renderDemonstrations,
-    payments: () => renderPayments('payments'), coins: () => renderPayments('coins'), subscriptions: () => renderPayments('subs'),
+    requests: renderRequests, payments: () => renderPayments('payments'), coins: () => renderPayments('coins'), subscriptions: () => renderPayments('subs'),
     gamification: renderGamification, attendance: renderAttendance, results: renderResults, records: renderRecords,
     users: renderUsers, teachers: renderTeachers, fees: renderFees, elections: renderElections, schools: renderSchools,
     announcements: renderAnnouncements, 'bulk-email': () => renderBulk('EMAIL'), 'bulk-sms': () => renderBulk('SMS'),
@@ -479,6 +480,79 @@
         renderAnnouncements();
       } catch (err) { toast(err.message); $('an-btn').disabled = false; }
     });
+  }
+
+  // ---------------- the bell, and the payment requests waiting for money ----------------
+  let bellTimer = null;
+  function ensureBell() {
+    if ($('admin-bell')) return;
+    const b = document.createElement('button');
+    b.id = 'admin-bell'; b.title = 'Notifications'; b.innerHTML = '🔔<i id="admin-bell-n" style="display:none">0</i>';
+    document.body.appendChild(b);
+    const panel = document.createElement('div');
+    panel.id = 'admin-bell-panel'; panel.className = 'hidden';
+    document.body.appendChild(panel);
+    b.addEventListener('click', async (e) => { e.stopPropagation(); panel.classList.toggle('hidden'); if (!panel.classList.contains('hidden')) await drawBell(); });
+    document.addEventListener('click', (e) => { if (!panel.contains(e.target) && e.target !== b) panel.classList.add('hidden'); });
+  }
+  async function pollBell() {
+    try {
+      const d = await api('/inbox/notifications');
+      const n = $('admin-bell-n');
+      if (n) { n.textContent = d.unread > 99 ? '99+' : d.unread; n.style.display = d.unread ? 'flex' : 'none'; }
+      const waiting = d.items.filter((x) => !x.read && x.link === 'payments').length;
+      const li = document.querySelector('#nav li[data-view="requests"]');
+      if (li) li.dataset.badge = waiting ? String(waiting) : '';
+      return d;
+    } catch { return null; }
+  }
+  async function drawBell() {
+    const panel = $('admin-bell-panel');
+    const d = await pollBell();
+    if (!d) { panel.innerHTML = '<div class="bell-empty">Could not load notifications.</div>'; return; }
+    panel.innerHTML = '<div class="bell-head"><b>Notifications</b><button id="bell-read">Mark all read</button></div>' +
+      (d.items.length ? d.items.map((n) => `<div class="bell-item ${n.read ? '' : 'unread'}" data-n="${n.id}" data-link="${esc(n.link || '')}"><div class="bt">${esc(n.title)}</div><div class="bb">${esc(n.body)}</div><div class="bw">${fmtDateTime(n.createdAt)}</div></div>`).join('') : '<div class="bell-empty">Nothing yet. Payment requests, money that arrives and tickets show up here.</div>');
+    $('bell-read').addEventListener('click', async () => { await api('/inbox/notifications/read', { method: 'POST', body: {} }); drawBell(); });
+    panel.querySelectorAll('.bell-item').forEach((el) => el.addEventListener('click', async () => {
+      await api('/inbox/notifications/read', { method: 'POST', body: { ids: [el.dataset.n] } });
+      panel.classList.add('hidden');
+      const target = el.dataset.link === 'payments' ? 'requests' : el.dataset.link === 'tickets' ? 'tickets' : null;
+      if (target) go(target);
+      pollBell();
+    }));
+  }
+  function startBell() { ensureBell(); pollBell(); if (!bellTimer) bellTimer = setInterval(pollBell, 30000); }
+
+  async function renderRequests() {
+    const d = await api('/inbox/requests');
+    const origin = location.origin;
+    view.innerHTML = '<div class="view-head"><div><h1>Requests</h1><div class="muted">Payments waiting for the money (bank transfer / USSD) and money that arrived in the account. The bell (top right) tells you the moment one comes in.</div></div></div>' +
+      '<h3>Payments waiting for the money</h3><p class="muted small">The system confirms each one by itself when the money arrives (see the box below). You can also confirm or turn one down by hand.</p>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Amount</th><th>Reference</th><th></th></tr></thead><tbody>' +
+      (d.waiting.map((r) => '<tr><td>' + fmtDateTime(r.createdAt) + '</td><td><strong>' + esc(r.holder) + '</strong><div class="small muted">' + esc(r.contact) + '</div></td><td>' + esc(r.label) + '</td><td>' + naira(r.amountKobo) + '</td><td><code>' + esc(r.ref) + '</code></td><td><button class="btn-gold btn-sm" data-rc="' + esc(r.ref) + '">Confirm paid</button> <button class="btn-ghost btn-sm" data-rr="' + esc(r.ref) + '">Reject</button></td></tr>').join('') || '<tr><td colspan="6" class="muted">Nothing is waiting. 🎉</td></tr>') + '</tbody></table></div>' +
+      '<h3 style="margin-top:22px">Money that arrived and was not matched</h3><p class="muted small">Money the bank reported that could not be tied to one request (no request for that amount, or several). Pick the request it belongs to.</p>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Amount</th><th>Paid by</th><th>Note</th><th>Status</th><th>Match to</th></tr></thead><tbody>' +
+      (d.credits.map((c) => { const opts = d.waiting.slice().sort((a, b) => (b.amountKobo === c.amountKobo) - (a.amountKobo === c.amountKobo)).map((r) => '<option value="' + esc(r.ref) + '">' + esc(r.holder || '?') + ' — ' + esc(r.label) + ' — ' + naira(r.amountKobo) + '</option>').join(''); return '<tr><td>' + fmtDateTime(c.createdAt) + '</td><td>' + naira(c.amountKobo) + '</td><td>' + esc(c.payerName || '') + '</td><td>' + esc(c.narration || c.note || '') + '</td><td>' + esc(c.status) + '</td><td>' + (opts ? '<select data-cs="' + c.id + '">' + opts + '</select> <button class="btn-gold btn-sm" data-cm="' + c.id + '">Match</button>' : '') + '</td></tr>'; }).join('') || '<tr><td colspan="6" class="muted">No unmatched money.</td></tr>') + '</tbody></table></div>' +
+      '<h3 style="margin-top:22px">Automatic confirmation: connect the bank feed</h3>' +
+      '<div class="panel"><p>Learnza confirms a bank transfer by itself when a bank / payment-provider feed tells it that money arrived. Point the feed\'s webhook to one of these addresses:</p><ul>' +
+      '<li><b>Flutterwave</b> (virtual account transfers): <code>' + origin + '/api/billing/webhook/bank-credit?provider=flutterwave</code> — the same secret hash as <code>FLUTTERWAVE_WEBHOOK_HASH</code> on the server.</li>' +
+      '<li><b>Paystack</b> (dedicated account transfers): <code>' + origin + '/api/billing/webhook/bank-credit?provider=paystack</code> — signed with your Paystack secret key.</li>' +
+      '<li><b>Monnify</b>: <code>' + origin + '/api/billing/webhook/bank-credit?provider=monnify</code> — set <code>MONNIFY_SECRET_KEY</code>.</li>' +
+      '<li><b>Any other bank alert service</b>: <code>POST ' + origin + '/api/billing/webhook/bank-credit?provider=generic</code> with header <code>x-bank-secret: &lt;BANK_WEBHOOK_SECRET&gt;</code> and body <code>{"id":"unique id","amount":13500,"narration":"...","name":"payer name"}</code>.</li></ul>' +
+      '<p class="muted small">A credit is matched to the waiting request that has its reference in the narration; otherwise to the only request waiting for that exact amount; if several wait for the same amount, to the one whose account holder\'s name matches the payer\'s. Anything else comes to you above.</p></div>';
+    view.querySelectorAll('[data-rc]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Confirm that this money has arrived? The student gets what they paid for straight away.')) return;
+      try { await api('/inbox/requests/confirm', { method: 'POST', body: { ref: b.dataset.rc } }); toast('Confirmed'); renderRequests(); pollBell(); } catch (err) { toast(err.message); }
+    }));
+    view.querySelectorAll('[data-rr]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Reject this request? Nothing is given to the student.')) return;
+      try { await api('/inbox/requests/reject', { method: 'POST', body: { ref: b.dataset.rr } }); toast('Rejected'); renderRequests(); pollBell(); } catch (err) { toast(err.message); }
+    }));
+    view.querySelectorAll('[data-cm]').forEach((b) => b.addEventListener('click', async () => {
+      const ref = view.querySelector('[data-cs="' + b.dataset.cm + '"]').value;
+      if (!confirm('Match this money to that request and confirm it?')) return;
+      try { await api('/inbox/credits/' + b.dataset.cm + '/match', { method: 'POST', body: { ref } }); toast('Matched'); renderRequests(); pollBell(); } catch (err) { toast(err.message); }
+    }));
   }
 
   // ---------------- payments & subscriptions ----------------
