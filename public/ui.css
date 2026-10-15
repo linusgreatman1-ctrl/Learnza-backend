@@ -652,3 +652,8 @@ html { font-size: 14.5px; }
 .video-tile.lz-big .expand-toggle-btn { top: 14px; right: 14px; width: 42px; height: 42px; }
 .video-tile.lz-big .label { bottom: 16px; left: 16px; font-size: .9rem; }
 body.lz-video-big { overflow: hidden; }
+
+/* the live stage sits in its own layer (z-index 20), so an expanded video has to lift the whole stage above the menu bar and bell */
+body.lz-video-big .live-stage { z-index: 600 !important; position: static !important; }
+.video-tile.lz-big { z-index: 600; }
+.video-tile.lz-big .expand-toggle-btn { width: auto; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 700; background: rgba(255,255,255,.92); color: #142033; box-shadow: 0 4px 16px rgba(0,0,0,.4); }

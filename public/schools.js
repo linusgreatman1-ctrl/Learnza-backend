@@ -2673,7 +2673,7 @@
     } else if (other) {
       body = `<div class="meta" style="opacity:.6;">🎤 ${esc(other.name)} is ${other.kind === 'answer' ? 'answering' : 'asking a question'}…</div>`;
     } else {
-      body = `<div style="display:flex; flex-direction:column; gap:8px;"><button class="btn" style="width:100%; background:#2563d6; color:#fff;" data-hand="raise" data-kind="question">✋ Raise your hand to ask</button><button class="btn" style="width:100%; background:#1f8a5b; color:#fff;" data-hand="raise" data-kind="answer">✋ Raise your hand to answer</button></div>`;
+      body = `<div style="display:flex; flex-direction:column; gap:8px;"><button class="btn" style="width:100%; background:#2563d6; color:#fff;" data-hand="raise" data-kind="question">✋ Got a question? Raise your hand to ask</button><button class="btn" style="width:100%; background:#1f8a5b; color:#fff;" data-hand="raise" data-kind="answer">✋ Want to answer? Raise your hand to answer</button></div>`;
     }
     zone.innerHTML = body;
     zone.querySelectorAll('[data-hand]').forEach((btn) => btn.addEventListener('click', () => handAction(btn.dataset.hand, btn.dataset.kind)));
@@ -2745,10 +2745,14 @@
     const set = (big) => {
       tile.classList.toggle('lz-big', big);
       document.body.classList.toggle('lz-video-big', big);
-      btn.textContent = big ? '⤡' : '⤢';
+      btn.textContent = big ? '⤡ Collapse' : '⤢';
       btn.title = big ? 'Shrink the video' : 'Expand the video';
       btn.setAttribute('aria-label', btn.title);
+      if (big) { try { const r = tile.requestFullscreen || tile.webkitRequestFullscreen; if (r) { const p = r.call(tile); if (p && p.catch) p.catch(() => {}); } } catch { /* the page overlay is enough */ } }
+      else if (document.fullscreenElement === tile) { try { document.exitFullscreen(); } catch { /* already out */ } }
     };
+    // leaving full screen with the browser's own Escape/back also shrinks the video
+    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && tile.classList.contains('lz-big')) set(false); });
     btn.addEventListener('click', () => set(!tile.classList.contains('lz-big')));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && tile.classList.contains('lz-big')) set(false); });
     tile.appendChild(btn);
