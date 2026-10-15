@@ -643,3 +643,12 @@ html { font-size: 14.5px; }
 .lz-lang-pick select{background:transparent;border:0;color:inherit;font:600 .8rem 'Plus Jakarta Sans',sans-serif;outline:none;cursor:pointer;max-width:130px}
 .lz-lang-pick select option{color:#142033}
 #lz-lang-card .field select{width:100%}
+
+/* ---- live class: expand any video to the whole screen and back ---- */
+.video-tile .expand-toggle-btn { position: absolute; top: 8px; right: 8px; z-index: 3; width: 34px; height: 34px; border-radius: 10px; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.video-tile .expand-toggle-btn:hover { background: rgba(0,0,0,.8); }
+.video-tile.lz-big, #tile-self.lz-big, #tile-host.lz-big { position: fixed; inset: 0; z-index: 400; width: 100vw; height: 100vh; height: 100dvh; max-height: none; aspect-ratio: auto; border-radius: 0; grid-column: auto; background: #000; }
+.video-tile.lz-big video { object-fit: contain; }
+.video-tile.lz-big .expand-toggle-btn { top: 14px; right: 14px; width: 42px; height: 42px; }
+.video-tile.lz-big .label { bottom: 16px; left: 16px; font-size: .9rem; }
+body.lz-video-big { overflow: hidden; }

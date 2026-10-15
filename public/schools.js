@@ -2372,6 +2372,7 @@
     if (live.audioCtx) { try { live.audioCtx.close(); } catch { /* already closed */ } }
     if (live.socket) live.socket.disconnect();
     document.getElementById('speaking-banner')?.remove();
+    document.body.classList.remove('lz-video-big');
     document.querySelectorAll('[id^="relay-audio-"]').forEach((el) => el.remove());
     // Closing a peer connection does not stop the remote tracks it already delivered,
     // nor clear whatever <video> is still holding them -- a student's screen could
@@ -2727,22 +2728,29 @@
       grid.appendChild(tile);
     }
     tile.querySelector('video').srcObject = stream;
+    addExpandToggleButton(id);
   }
 
-  // Student-side: a toggle on their one video tile (the lecturer's feed) to grow it
-  // beyond its already-larger default size, and shrink it back -- CSS-only (see
-  // .video-tile.expanded in app.html), so it works the same on every browser without
-  // depending on the Fullscreen API.
+  // An expand symbol on every video tile, the lecturer's and the students' alike: it fills the whole screen with that video
+  // and the same symbol brings it back (so does Escape). CSS only (.video-tile.lz-big), so it works on every browser and phone.
   function addExpandToggleButton(tileId) {
     const tile = document.getElementById('tile-' + tileId);
     if (!tile || tile.querySelector('.expand-toggle-btn')) return;
     const btn = document.createElement('button');
-    btn.className = 'btn btn-ghost btn-sm expand-toggle-btn';
-    btn.textContent = '⤢ Expand';
-    btn.addEventListener('click', () => {
-      const expanded = tile.classList.toggle('expanded');
-      btn.textContent = expanded ? '⤡ Collapse' : '⤢ Expand';
-    });
+    btn.type = 'button';
+    btn.className = 'expand-toggle-btn';
+    btn.textContent = '⤢';
+    btn.title = 'Expand the video';
+    btn.setAttribute('aria-label', 'Expand the video');
+    const set = (big) => {
+      tile.classList.toggle('lz-big', big);
+      document.body.classList.toggle('lz-video-big', big);
+      btn.textContent = big ? '⤡' : '⤢';
+      btn.title = big ? 'Shrink the video' : 'Expand the video';
+      btn.setAttribute('aria-label', btn.title);
+    };
+    btn.addEventListener('click', () => set(!tile.classList.contains('lz-big')));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && tile.classList.contains('lz-big')) set(false); });
     tile.appendChild(btn);
   }
 
