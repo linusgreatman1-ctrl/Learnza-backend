@@ -366,7 +366,7 @@ async function createStudent(req, res, { departmentId, courseIds }) {
   const created = await createSchoolUser(req, res, {
     role: 'STUDENT',
     requiredFields: ['matricNumber'],
-    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, yearOfAdmission: admitted, programmeYears: length, addedById: req.user.id },
+    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, yearOfAdmission: admitted, programmeYears: length, addedById: req.user.id, ...(req.body.attendedDepartment ? { attendedDepartment: req.body.attendedDepartment } : {}), ...(req.body.courseOfStudy ? { courseOfStudy: req.body.courseOfStudy } : {}) },
     courseIds,
   });
   if (!created) return;

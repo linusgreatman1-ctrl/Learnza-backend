@@ -34,6 +34,16 @@ function publicSchool(school, role) {
   return { ...base, address: school.address, contactEmail: school.contactEmail, contactPhone: school.contactPhone, joinCode: school.joinCode };
 }
 
+// fromLecturer: a student whose school is an independent lecturer's own class (they use the student app, with that lecturer's courses)
+async function withLecturerFlag(u, school) {
+  const out = publicUser(u);
+  if (u.role === 'STUDENT' && u.schoolId) {
+    const s = school || await prisma.school.findUnique({ where: { id: u.schoolId }, select: { independent: true } });
+    if (s && s.independent) out.fromLecturer = true;
+  }
+  return out;
+}
+
 function checkStatus(res, user) {
   if (user.status !== 'ACTIVE') {
     res.status(403).json({ error: STATUS_MESSAGE[user.status] || 'This account is inactive.', code: 'ACCOUNT_INACTIVE' });
@@ -130,12 +140,12 @@ router.post('/register-lecturer', async (req, res) => {
   const className = String(req.body.className || '').trim();
   const subject = String(req.body.subject || '').trim() || 'General';
   const { password, phone } = req.body;
-  if (!fullName || !email || !password || !className) return res.status(400).json({ error: 'Your name, email, password and the name of your class are required.' });
+  if (!fullName || !email || !password || !className) return res.status(400).json({ error: 'Your name, email, password and the name of your school are required.' });
   if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-  if (className.length < 3) return res.status(400).json({ error: 'Give your class a name of at least 3 letters. Your students use it to sign in.' });
+  if (className.length < 3) return res.status(400).json({ error: 'Give your school a name of at least 3 letters.' });
   if (await prisma.user.findUnique({ where: { email } })) return res.status(409).json({ error: 'An account with that email already exists' });
   // students sign in by this name, so two classes cannot share one (ignoring case)
-  if (await prisma.school.findFirst({ where: { name: { equals: className, mode: 'insensitive' } } })) return res.status(409).json({ error: 'That class name is already taken. Choose another one.' });
+  if (await prisma.school.findFirst({ where: { name: { equals: className, mode: 'insensitive' } } })) return res.status(409).json({ error: 'That school name is already taken. Choose another one.' });
   const { generateJoinCode } = require('../utils');
   const year = new Date().getFullYear();
   const passwordHash = await bcrypt.hash(password, 10);
@@ -211,6 +221,22 @@ router.post('/login-with-code', async (req, res) => {
   res.json({ ...(await issueSession(user, 'schools')), user: publicUser(user) });
 });
 
+// A student of an independent lecturer signs in to the student app with the name the lecturer registered and the access code
+// made for them (codes are unique, so no school name is needed). Courses they see are only the ones that lecturer added.
+router.post('/login-lecturer-student', async (req, res) => {
+  const fullName = String((req.body && req.body.fullName) || '').trim();
+  const accessCode = String((req.body && req.body.accessCode) || '').trim().toUpperCase();
+  if (!fullName || !accessCode) return res.status(400).json({ error: 'Your name and access code are both required.' });
+  const user = await prisma.user.findUnique({ where: { accessCode } });
+  const school = user && user.schoolId ? await prisma.school.findUnique({ where: { id: user.schoolId } }) : null;
+  if (!user || user.role !== 'STUDENT' || !school || !school.independent || user.fullName.trim().toLowerCase() !== fullName.toLowerCase()) {
+    return res.status(401).json({ error: 'Your name or access code did not match. Use the name your lecturer registered and the access code they gave you.' });
+  }
+  if (!checkSchoolAccess(res, school)) return;
+  if (!checkStatus(res, user)) return;
+  res.json({ ...(await issueSession(user, 'app')), user: { ...publicUser(user), fromLecturer: true } });
+});
+
 // Swap a refresh token for a fresh access + refresh pair. Re-checks the account and the
 // school (suspension, lapsed licence) every time, so losing access takes effect within
 // one access-token lifetime even for someone who never signs out.
@@ -225,7 +251,7 @@ router.post('/refresh', async (req, res) => {
     const block = await schoolBlock(user.schoolId);
     if (block) return res.status(403).json(block);
   }
-  res.json({ ...(await issueSession(user, surface)), user: publicUser(user) });
+  res.json({ ...(await issueSession(user, surface)), user: await withLecturerFlag(user) });
 });
 
 router.post('/logout', async (req, res) => {
@@ -293,7 +319,7 @@ router.get('/me', requireAuth, async (req, res) => {
     req.user.departmentId ? prisma.department.findUnique({ where: { id: req.user.departmentId } }) : null,
     req.user.schoolId ? prisma.semester.findMany({ where: { schoolId: req.user.schoolId }, orderBy: { createdAt: 'asc' } }) : [],
   ]);
-  res.json({ user: publicUser(req.user), school: publicSchool(school, req.user.role), department, semesters });
+  res.json({ user: await withLecturerFlag(req.user, school), school: publicSchool(school, req.user.role), department, semesters });
 });
 
 // ---- Settings: shared by every role (student, lecturer, admin, staff) ----
@@ -305,14 +331,20 @@ router.get('/me', requireAuth, async (req, res) => {
 // level. School-affiliated identity fields (matric number, staff ID, department) stay
 // admin-managed (Staff & Student Directory).
 router.patch('/me', requireAuth, async (req, res) => {
-  const { fullName, phone, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, yearOfStudy } = req.body;
+  const { fullName, phone, email, attendedSchoolName, attendedDepartment, courseOfStudy, institutionType, yearOfStudy } = req.body;
   const data = {};
+  if (email !== undefined && String(email).trim() && String(email).trim().toLowerCase() !== req.user.email) {
+    const e = String(email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ error: 'That email address does not look right.' });
+    if (await prisma.user.findUnique({ where: { email: e } })) return res.status(409).json({ error: 'An account with that email already exists.' });
+    data.email = e;
+  }
   if (fullName !== undefined) {
     if (!fullName.trim()) return res.status(400).json({ error: 'Name cannot be empty.' });
     data.fullName = fullName.trim();
   }
   if (phone !== undefined) data.phone = phone || null;
-  if (req.user.isIndividual) {
+  if (true) {                      // every role can keep its own institution details up to date
     if (attendedSchoolName !== undefined) data.attendedSchoolName = attendedSchoolName || null;
     if (attendedDepartment !== undefined) data.attendedDepartment = attendedDepartment || null;
     if (courseOfStudy !== undefined) data.courseOfStudy = courseOfStudy || null;

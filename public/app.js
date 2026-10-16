@@ -310,6 +310,19 @@
     });
   });
 
+  // A student of an independent lecturer: their name and the access code made for them
+  const lstudentForm = document.getElementById('lg-lstudent-form');
+  if (lstudentForm) lstudentForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitting('lg-lstudent-submit', async () => {
+      const { token, user, refreshToken } = await api('/auth/login-lecturer-student', {
+        method: 'POST',
+        body: { fullName: document.getElementById('lg-lstudent-name').value.trim(), accessCode: document.getElementById('lg-lstudent-code').value.trim() },
+      });
+      onAuthed(token, user, refreshToken);
+    });
+  });
+
   // An independent lecturer works in the lecturer screens (the Schools app): hand the signed-in session over and open it.
   function goToLecturerApp(token, user, refreshToken) {
     try {
@@ -623,7 +636,7 @@
     }
 
     const nav = document.getElementById('nav-items');
-    const navKey = state.user.role === 'STUDENT' && state.user.isIndividual ? 'STUDENT_INDIVIDUAL' : state.user.role;
+    const navKey = state.user.role === 'STUDENT' && (state.user.isIndividual || state.user.fromLecturer) ? 'STUDENT_INDIVIDUAL' : state.user.role;
     const navItems = NAV[navKey];
     nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
@@ -694,13 +707,13 @@
   // continue, a glance at today, what is due and what is new.
   async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results, courses: given }) {
     let courses = given || [];
-    if (!given) { try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; } }
+    if (!given) { try { courses = (await api(isIndividual && !state.user.fromLecturer ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; } }
     const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 8 min each' : 'Practise questions from your courses every day';
     const banner = homeBanner('⚡', 'Daily Challenge', titles, 'daily-challenge');
     const days = daily && daily.days ? daily.days : [];
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
     const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
-      ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
+      ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${state.user.fromLecturer ? 'lecturer-course' : isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
       : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your Learnza lecturer prepares the lectures.' : 'Open My Courses to enrol.' }]));
     const pm = planModel(daily, courses, results);
     const glance = `<div class="sec"><div class="sh"><div class="st">📋 Study Plan — Today</div></div><div class="plan-wrap"><div class="plan-card"><div class="plan-n"><b>${pm.daysLeft}</b><span>days to exam</span></div><div class="plan-n"><b>${pm.hours} hrs</b><span>study/day</span></div><div class="plan-n"><b style="color:#E02020;">${pm.weak.length}</b><span>weak areas</span></div></div><div class="plan-goal">🎯 Goal: <b>${isIndividual ? 'My exams' : 'Semester exam'}</b></div><button class="btn btn-primary" data-jump-nav="study-plan" style="width:100%;">See Full Plan →</button></div></div>`;
@@ -901,7 +914,8 @@
 
     function dispatch() {
       switch (state.view.screen) {
-        case 'individual-courses': return renderIndividualCourses();
+        case 'individual-courses': return state.user.fromLecturer ? renderLecturerCourses() : renderIndividualCourses();
+        case 'lecturer-course': return renderLecturerCourse();
         case 'my-ai-lectures': return renderMyAiLectures();
         case 'my-ai-live': return renderMyAiLive();
         case 'my-lab-live': return renderMyAiLive();
@@ -955,6 +969,39 @@
       </div>
     `;
     document.getElementById('go-upgrade-btn').addEventListener('click', () => navigate('billing'));
+  }
+
+  // ================= A STUDENT FROM A LECTURER: only the courses that lecturer added =================
+  async function renderLecturerCourses() {
+    const { courses } = await api('/students/me/courses');
+    view.innerHTML = `
+      <div class="page-head"><h1>My Courses</h1></div>
+      <p class="muted" style="margin-bottom:20px;">These are the courses your lecturer added for you.</p>
+      <div class="grid-cards">
+        ${courses.map((c) => `
+          <div class="card course-card" data-open="${c.id}">
+            <div style="font-weight:600;">${esc(c.title)}</div>
+            <div class="meta" style="margin-top:6px;">${esc([c.code, c.level ? c.level * 100 + 'L' : ''].filter(Boolean).join(' · '))}</div>
+            ${c.description ? `<div class="meta" style="margin-top:6px;">${esc(c.description)}</div>` : ''}
+          </div>
+        `).join('') || '<p class="muted">Your lecturer has not added a course yet. Check back soon.</p>'}
+      </div>`;
+    view.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => navigate('lecturer-course', { courseId: el.dataset.open })));
+  }
+
+  async function renderLecturerCourse() {
+    const courseId = state.view.courseId;
+    const [{ course }, lessonsRes] = await Promise.all([api(`/courses/${courseId}`), api(`/courses/${courseId}/lessons`).catch(() => ({ lessons: [] }))]);
+    const lessons = lessonsRes.lessons || [];
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(course.title)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">← Back to My Courses</button></div>
+      <p class="muted" style="margin-bottom:16px;">${esc([course.code, course.description].filter(Boolean).join(' · '))}</p>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Lectures from your lecturer</h3>
+      <div class="card">
+        ${lessons.map((l) => `<div class="list-row" data-open-lesson="${l.id}" style="cursor:pointer;"><div><div style="font-weight:600;">${esc(l.title)}</div><div class="meta">${l.videoUrl ? 'Video lecture' : 'Narrated lecture'}</div></div><div>▶</div></div>`).join('') || '<p class="muted" style="padding:16px;">Your lecturer has not uploaded a lecture for this course yet.</p>'}
+      </div>`;
+    document.getElementById('back-btn').addEventListener('click', () => navigate('individual-courses'));
+    view.querySelectorAll('[data-open-lesson]').forEach((el) => el.addEventListener('click', () => navigate('lesson-player', { courseId, lessonId: el.dataset.openLesson, isIndividual: false })));
   }
 
   // ================= INDIVIDUAL (non-school) LEARNER COURSES =================
@@ -1226,7 +1273,7 @@
   async function renderLessonPlayer() {
     const { courseId, lessonId, isIndividual } = state.view;
     const lessonsPath = isIndividual ? `/individual-courses/${courseId}/lessons` : `/courses/${courseId}/lessons`;
-    const backScreen = isIndividual ? 'individual-course-detail' : 'course-detail';
+    const backScreen = isIndividual ? 'individual-course-detail' : (state.user.fromLecturer ? 'lecturer-course' : 'course-detail');
     const { lessons } = await api(lessonsPath);
     const lesson = lessons.find((l) => l.id === lessonId);
     if (!lesson) { view.innerHTML = '<p>Lecture not found.</p>'; return; }
@@ -2360,7 +2407,7 @@
     `;
 
     mountMyDigitalId();
-    document.getElementById('cred-courses').addEventListener('click', () => navigate(state.user.isIndividual ? 'individual-courses' : 'courses'));
+    document.getElementById('cred-courses').addEventListener('click', () => navigate(state.user.isIndividual || state.user.fromLecturer ? 'individual-courses' : 'courses'));
     view.querySelectorAll('[data-open-result]').forEach((row) => {
       row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'digital-id' }));
     });
@@ -2521,7 +2568,8 @@
         <form id="profile-form">
           <div class="field"><label>Full name</label><input type="text" id="profile-name" value="${esc(u.fullName)}" required></div>
           <div class="field"><label>Phone number</label><input type="tel" id="profile-phone" value="${esc(u.phone || '')}"></div>
-          ${u.isIndividual ? `
+          <div class="field"><label>Email</label><input type="email" id="profile-email" value="${esc(/@internal\.learnza\.local$/.test(u.email || '') ? '' : (u.email || ''))}" placeholder="you@example.com"></div>
+          ${u.isIndividual || u.role === 'STUDENT' ? `
             <div class="field"><label>Institution type</label>
               <select id="profile-institution-type">
                 ${Object.entries(INSTITUTION_TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${u.institutionType === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
@@ -2549,8 +2597,8 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('settings'));
     document.getElementById('profile-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const body = { fullName: document.getElementById('profile-name').value, phone: document.getElementById('profile-phone').value };
-      if (u.isIndividual) {
+      const body = { fullName: document.getElementById('profile-name').value, phone: document.getElementById('profile-phone').value, email: document.getElementById('profile-email').value };
+      if (u.isIndividual || u.role === 'STUDENT') {
         body.institutionType = document.getElementById('profile-institution-type').value;
         body.attendedSchoolName = document.getElementById('profile-school').value;
         body.attendedDepartment = document.getElementById('profile-department').value;
@@ -2630,11 +2678,11 @@
   }
 
   async function renderStudyPlan() {
-    const isIndividual = state.user.isIndividual;
+    const isIndividual = state.user.isIndividual || state.user.fromLecturer;
     const [daily, dash, cr] = await Promise.all([
       api('/questions/daily').catch(() => null),
       api('/students/me/dashboard').catch(() => ({ recentResults: [] })),
-      api(isIndividual ? '/individual-courses' : '/students/me/courses').catch(() => ({ courses: [] })),
+      api(isIndividual && !state.user.fromLecturer ? '/individual-courses' : '/students/me/courses').catch(() => ({ courses: [] })),
     ]);
     const m = planModel(daily, cr.courses || [], dash.recentResults);
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -2642,7 +2690,7 @@
     const sunday = new Date(); sunday.setHours(0, 0, 0, 0); sunday.setDate(sunday.getDate() - todayIdx);
     const doneOn = (d) => { const t = new Date(sunday.getTime() + d * 86400000).getTime(); return !!(daily && daily.days && daily.days.find((x) => x.date === t && x.done)); };
     const nm = (c) => esc(c ? c.title : 'Mixed revision');
-    const courseScreen = isIndividual ? 'individual-course-detail' : 'course-detail';
+    const courseScreen = state.user.fromLecturer ? 'lecturer-course' : isIndividual ? 'individual-course-detail' : 'course-detail';
     const week = [0, 1, 2, 3, 4, 5, 6].map((d) => {
       const c1 = m.order[d % (m.order.length || 1)], c2 = m.order[(d + 1) % (m.order.length || 1)];
       if (d < todayIdx) return `<div class="sp-day past"><div class="sp-head"><span>${dayNames[d]}</span><span class="pill ${doneOn(d) ? 'pill-pass' : 'pill-muted'}">${doneOn(d) ? 'Done ✓' : 'Missed'}</span></div><div class="sp-body"><b>${nm(c1)}:</b> Daily Challenge · <b>${nm(c2)}:</b> read and revise</div></div>`;
@@ -2695,7 +2743,7 @@
     return `<div class="dh-tile p${pal}" data-jump-nav="${nav}"><div class="dh-i">${icon}</div><div class="dh-l">${label}</div></div>`;
   }
   async function renderStudentHub() {
-    const isIndividual = state.user.isIndividual;
+    const isIndividual = state.user.isIndividual || state.user.fromLecturer;
     const { assignments, attendance, recentResults, individualAssessments } = await api('/students/me/dashboard');
     const attendancePct = attendance && attendance.totalCount ? Math.round((attendance.presentCount / attendance.totalCount) * 100) : null;
     const avg = recentResults.length ? Math.round(recentResults.reduce((sum, r) => sum + (r.score / (r.total || 1)) * 100, 0) / recentResults.length) : null;
@@ -2722,7 +2770,7 @@
   }
 
   async function renderMyDashboard(only) {
-    const isIndividual = state.user.isIndividual;
+    const isIndividual = state.user.isIndividual || state.user.fromLecturer;
     // Everything the page needs is asked for at once: one wait instead of five in a row.
     const [{ assignments, attendance, recentResults, lessons, liveRecordings, individualAssessments }, { notifications }, dailyRes, courseRes] = await Promise.all([
       api('/students/me/dashboard'),

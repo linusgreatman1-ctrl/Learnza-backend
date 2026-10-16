@@ -3696,7 +3696,8 @@
         <form id="profile-form">
           <div class="field"><label>Full name</label><input type="text" id="profile-name" value="${esc(u.fullName)}" required></div>
           <div class="field"><label>Phone number</label><input type="tel" id="profile-phone" value="${esc(u.phone || '')}"></div>
-          ${u.isIndividual ? `
+          <div class="field"><label>Email</label><input type="email" id="profile-email" value="${esc(shownEmail(u.email))}" placeholder="you@example.com"></div>
+          ${u.isIndividual || u.role === 'STUDENT' ? `
             <div class="field"><label>Institution type</label>
               <select id="profile-institution-type">
                 ${Object.entries(INSTITUTION_TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${u.institutionType === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
@@ -3724,8 +3725,8 @@
     document.getElementById('back-btn').addEventListener('click', () => navigate('settings'));
     document.getElementById('profile-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const body = { fullName: document.getElementById('profile-name').value, phone: document.getElementById('profile-phone').value };
-      if (u.isIndividual) {
+      const body = { fullName: document.getElementById('profile-name').value, phone: document.getElementById('profile-phone').value, email: document.getElementById('profile-email').value };
+      if (u.isIndividual || u.role === 'STUDENT') {
         body.institutionType = document.getElementById('profile-institution-type').value;
         body.attendedSchoolName = document.getElementById('profile-school').value;
         body.attendedDepartment = document.getElementById('profile-department').value;
@@ -6164,12 +6165,59 @@
     search();
   }
 
+  // An independent lecturer adds a student with just: full name, department, course of study, level and (optionally) a phone.
+  // The student gets an access code and signs in to the Learnza app under "Student From Lecturer" with their name and that code.
+  function openIndependentStudentDialog(opts) {
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(520px,94vw); height:fit-content; max-height:88vh; overflow-y:auto; padding:24px; z-index:200;';
+    const levels = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n * 100}L</option>`).join('');
+    box.innerHTML = `
+      <h3 style="margin-bottom:6px;">Add a student</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">An access code is made for them now. They sign in with their name and that code.</p>
+      <form id="ns-form">
+        <div class="field"><label>Full name</label><input id="ns-name" required></div>
+        <div class="field"><label>Department</label><input id="ns-dept" required placeholder="e.g. Computer Science"></div>
+        <div class="field"><label>Course of study</label><input id="ns-course" required placeholder="e.g. Software Engineering"></div>
+        <div class="field"><label>Level</label><select id="ns-level" required><option value="">Select…</option>${levels}</select></div>
+        <div class="field"><label>Phone number (optional)</label><input id="ns-phone" type="tel"></div>
+        <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Add student</button><button class="btn btn-ghost" type="button" id="ns-cancel">Cancel</button></div>
+      </form>`;
+    document.body.appendChild(backdrop);
+    document.body.appendChild(box);
+    const close = () => { backdrop.remove(); box.remove(); };
+    backdrop.addEventListener('click', close);
+    box.querySelector('#ns-cancel').addEventListener('click', close);
+    box.querySelector('#ns-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.submitter || box.querySelector('[type=submit]');
+      btn.disabled = true;
+      try {
+        const r = await api('/lect/students', { method: 'POST', body: {
+          fullName: box.querySelector('#ns-name').value.trim(), attendedDepartment: box.querySelector('#ns-dept').value.trim(),
+          courseOfStudy: box.querySelector('#ns-course').value.trim(), yearOfStudy: box.querySelector('#ns-level').value,
+          phone: box.querySelector('#ns-phone').value.trim(), departmentId: opts.departments[0].id, courseIds: [],
+        } });
+        box.innerHTML = `
+          <h3 style="margin-bottom:8px;">${esc(r.user.fullName)} has been added</h3>
+          <p class="muted" style="margin-bottom:12px;">Give them this access code. In the Learnza app they tap <b>Sign in</b>, then <b>Student From Lecturer</b>, and type their name exactly as you registered it and this code. It is permanent and is also kept in their details.</p>
+          <div class="code tabular" style="font-size:1.6rem; letter-spacing:.12em; margin-bottom:16px;">${esc(r.accessCode)}</div>
+          <div style="display:flex; gap:10px;"><button class="btn btn-ghost" id="ns-copy">Copy code</button><button class="btn btn-primary" id="ns-done">Done</button></div>`;
+        box.querySelector('#ns-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(r.accessCode); toast('Copied'); } catch { toast(r.accessCode); } });
+        box.querySelector('#ns-done').addEventListener('click', () => { close(); render(); });
+      } catch (err) { btn.disabled = false; toast(err.message); }
+    });
+  }
+
   // A lecturer adds a brand-new student to their department and classes. The student gets a
   // permanent access code, which the lecturer passes on; they sign in with it.
   async function openNewStudentDialog(courseId) {
     let opts;
     try { opts = await api('/lect/add-student-options'); } catch (err) { toast(err.message); return; }
     if (!opts.departments.length) { toast('You are not in a department yet. Ask your school admin to put you in one first.'); return; }
+    if (state.school && state.school.independent) return openIndependentStudentDialog(opts);
     const backdrop = document.createElement('div');
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     const box = document.createElement('div');

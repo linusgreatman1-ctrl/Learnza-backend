@@ -54,6 +54,12 @@ router.get('/courses/:id', requireAuth, loadCourse(), async (req, res) => {
 
 // Student: my enrolled courses
 router.get('/students/me/courses', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  // a student of an independent lecturer sees all the courses that lecturer has added (it is a class of one lecturer)
+  const own = req.user.schoolId ? await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } }) : null;
+  if (own && own.independent) {
+    const courses = await prisma.course.findMany({ where: { department: { schoolId: req.user.schoolId } }, include: { department: true }, orderBy: { code: 'asc' } });
+    return res.json({ courses });
+  }
   const enrollments = await prisma.enrollment.findMany({
     where: { studentId: req.user.id },
     include: { course: { include: { department: true } } },
@@ -200,6 +206,18 @@ router.post('/lect/students', requireAuth, requireRole('LECTURER'), async (req, 
   if (!scope.departments.length) return res.status(400).json({ error: 'You are not in a department yet. Ask your school admin to put you in one, or to assign you a class.' });
   const departmentId = req.body.departmentId ? String(req.body.departmentId) : (scope.departments.find((d) => d.mine) || scope.departments[0]).id;
   if (!scope.departments.some((d) => d.id === departmentId)) return res.status(403).json({ error: 'You can only add students to your own department or the departments of your classes.' });
+  // an independent lecturer adds a student with only: full name, department, course of study, level and (optionally) a phone
+  const ownSchool = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } });
+  if (ownSchool && ownSchool.independent) {
+    const clean = (v, n) => String(v || '').trim().slice(0, n);
+    if (!clean(req.body.fullName, 120)) return res.status(400).json({ error: 'Enter the student\'s full name.' });
+    if (!clean(req.body.attendedDepartment, 100)) return res.status(400).json({ error: 'Enter the student\'s department.' });
+    if (!clean(req.body.courseOfStudy, 100)) return res.status(400).json({ error: 'Enter the student\'s course of study.' });
+    if (!req.body.yearOfStudy) return res.status(400).json({ error: 'Choose the student\'s level.' });
+    req.body.attendedDepartment = clean(req.body.attendedDepartment, 100);
+    req.body.courseOfStudy = clean(req.body.courseOfStudy, 100);
+    if (!req.body.matricNumber) req.body.matricNumber = 'STU-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+  }
   const courseIds = adminRoutes.parseCourseIds(req.body);
   const mine = new Set(scope.courses.map((c) => c.id));
   if (courseIds.some((id) => !mine.has(id))) return res.status(403).json({ error: 'You can only put a student into classes you teach.' });

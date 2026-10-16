@@ -350,6 +350,7 @@
       <p class="lg-rs">Select your account type to continue</p>
       <button type="button" class="lg-role" data-go="lg-login"><span class="lg-role-ic" style="background:linear-gradient(135deg,#f3d58c,#e3ac4c 55%,#c1861f)">👩‍🎓</span><span class="lg-role-tx"><b>Student</b><small>Sign in with your Email &amp; Password</small></span><span class="lg-role-go">›</span></button>
       <button type="button" class="lg-role" data-go="lg-login"><span class="lg-role-ic" style="background:linear-gradient(135deg,#5b8def,#2563d6)">👨‍🏫</span><span class="lg-role-tx"><b>Lecturer</b><small>Sign in with your Email &amp; Password</small></span><span class="lg-role-go">›</span></button>
+      <button type="button" class="lg-role" data-go="lg-lstudent"><span class="lg-role-ic" style="background:linear-gradient(135deg,#34d399,#059669)">🧑‍🏫</span><span class="lg-role-tx"><b>Student From Lecturer</b><small>Sign in with your Name &amp; Access Code</small></span><span class="lg-role-go">›</span></button>
       <button type="button" class="lg-btn lg-btn-out lg-role-back" data-go="lg-splash">← Back</button>
     </div>
   </div>
@@ -392,14 +393,14 @@
   <div class="lg-s lg-light" id="lg-lect-register">
     <div class="lg-bar"><div class="lg-inner"><button class="lg-back" data-go="lg-roles" aria-label="Back">←</button><div class="lg-bar-title">Lecturer Account</div><div style="width:40px"></div></div></div>
     <form class="lg-inner lg-form" id="lg-lect-form" autocomplete="on">
-      <div class="lg-info"><span>👨‍🏫</span><span>Teach on your own: add your students, set work, go live and upload lectures. Your students sign in with your class name and the access code you give them.</span></div>
+      <div class="lg-info"><span>👨‍🏫</span><span>Teach on your own: add your students, set work, go live and upload lectures. Your students sign in with their name and the access code you give them.</span></div>
       <div class="lg-fg"><label class="lg-label">Full Name</label><input class="lg-input" id="lg-lreg-name" required placeholder="e.g. Dr. Chiamaka Okonkwo"></div>
       <div class="lg-fg"><label class="lg-label">Email</label><input class="lg-input" type="email" id="lg-lreg-email" name="username" autocomplete="username" required placeholder="you@example.com"></div>
       <div class="lg-fg"><label class="lg-label">Phone Number</label><input class="lg-input" type="tel" id="lg-lreg-phone" placeholder="+234 800 000 0000"></div>
-      <div class="lg-fg"><label class="lg-label">Your Class Name</label><input class="lg-input" id="lg-lreg-class" required minlength="3" placeholder="e.g. Okonkwo Maths Class"><div class="lg-hint">Your students type this to sign in, so keep it easy to spell.</div></div>
+      <div class="lg-fg"><label class="lg-label">Your School Name</label><input class="lg-input" id="lg-lreg-class" required minlength="3" placeholder="e.g. Okonkwo Academy"></div>
       <div class="lg-fg"><label class="lg-label">What You Teach</label><input class="lg-input" id="lg-lreg-subject" placeholder="e.g. Mathematics"></div>
-      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-lreg-pw" name="new-password" autocomplete="new-password" required minlength="6" placeholder="At least 6 characters"></div></div>
-      <div class="lg-fg"><label class="lg-label">Confirm Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-lreg-pw2" required minlength="6" placeholder="Repeat your password"></div></div>
+      <div class="lg-fg"><label class="lg-label">Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-lreg-pw" name="new-password" autocomplete="new-password" required minlength="6" placeholder="At least 6 characters"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
+      <div class="lg-fg"><label class="lg-label">Confirm Password</label><div class="password-field"><input class="lg-input" type="password" id="lg-lreg-pw2" required minlength="6" placeholder="Repeat your password"><button type="button" class="pw-toggle-btn" tabindex="-1">👁</button></div></div>
       <label class="lg-check"><input type="checkbox" id="lg-lreg-terms" required><span>I have read and accept the <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</span></label>
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-lreg-submit">Create Lecturer Account →</button>
       <p class="lg-switch">Already have an account? <a data-go="lg-login">Sign in</a></p>
@@ -420,6 +421,21 @@
       <button class="lg-btn lg-btn-gold" type="submit" id="lg-login-submit" style="margin-top:6px">Sign In →</button>
       <p class="lg-note">By continuing you agree to our <a href="legal.html#terms" data-legal="terms">Terms &amp; Conditions</a> and <a href="legal.html#privacy" data-legal="privacy">Privacy Policy</a>.</p>
       <p class="lg-switch">New here? <a data-go="lg-roles">Create free account</a></p>
+    </form>
+  </div>
+
+  <!-- STUDENT FROM LECTURER: the name the lecturer registered and the access code made for the student -->
+  <div class="lg-s lg-light" id="lg-lstudent">
+    <div class="lg-head"><div class="lg-inner">
+      <button class="lg-back" data-go="lg-signin" aria-label="Back" style="margin-right:auto;display:block">←</button>
+      <div class="lg-head-icon">🧑‍🏫</div>
+      <h2>Student From Lecturer</h2><p>Sign in with the details your lecturer gave you</p>
+    </div></div>
+    <form class="lg-inner lg-form" id="lg-lstudent-form" autocomplete="off">
+      <div class="lg-info"><span>🔑</span><span>Type your name exactly as your lecturer registered it, and the access code your lecturer gave you.</span></div>
+      <div class="lg-fg"><label class="lg-label">Your Name</label><input class="lg-input" id="lg-lstudent-name" required placeholder="e.g. Chiamaka Okonkwo"></div>
+      <div class="lg-fg"><label class="lg-label">Access Code</label><input class="lg-input" id="lg-lstudent-code" required autocapitalize="characters" placeholder="Your access code" style="letter-spacing:.12em;text-transform:uppercase"></div>
+      <button class="lg-btn lg-btn-gold" type="submit" id="lg-lstudent-submit" style="margin-top:6px">Sign In →</button>
     </form>
   </div>
 
