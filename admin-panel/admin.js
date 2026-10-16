@@ -906,7 +906,11 @@
   function cardStat(n, l) { return '<div class="stat"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; }
   async function schoolOptions(selectedId) {
     const { schools } = await api('/schools');
-    return '<option value="">All schools</option>' + schools.map((s) => '<option value="' + s.id + '" ' + (s.id === selectedId ? 'selected' : '') + '>' + esc(s.name) + '</option>').join('');
+    const opt = (s) => '<option value="' + s.id + '" ' + (s.id === selectedId ? 'selected' : '') + '>' + esc(s.name) + '</option>';
+    const own = schools.filter((s) => !s.independent), indep = schools.filter((s) => s.independent);
+    // independent lecturers (each teaches in a class of their own) are listed apart from the schools, with one choice for all of them
+    return '<option value="">All schools</option>' + own.map(opt).join('') +
+      (indep.length ? '<option value="INDEPENDENT" ' + (selectedId === 'INDEPENDENT' ? 'selected' : '') + '>All independent lecturers</option><optgroup label="Independent lecturers">' + indep.map(opt).join('') + '</optgroup>' : '');
   }
   // A paged list view: draws `render(data)` into `box` and re-fetches on page/filter change.
   function listView(box, fetchUrl, render) {

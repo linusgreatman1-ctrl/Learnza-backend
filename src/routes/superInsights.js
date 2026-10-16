@@ -389,7 +389,8 @@ router.get('/teachers', async (req, res) => {
   const search = String(req.query.search || '').trim();
   const where = { role: { in: ['LECTURER', 'STAFF'] } };
   if (req.query.role === 'LECTURER' || req.query.role === 'STAFF') where.role = req.query.role;
-  if (req.query.schoolId) where.schoolId = String(req.query.schoolId);
+  if (req.query.schoolId === 'INDEPENDENT') where.school = { independent: true };      // every independent lecturer
+  else if (req.query.schoolId) where.schoolId = String(req.query.schoolId);
   if (search) where.OR = [{ fullName: { contains: search, mode: 'insensitive' } }, { staffId: { contains: search, mode: 'insensitive' } }];
   const [total, rows] = await Promise.all([
     prisma.user.count({ where }),

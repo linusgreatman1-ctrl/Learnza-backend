@@ -637,7 +637,12 @@
 
     const nav = document.getElementById('nav-items');
     const navKey = state.user.role === 'STUDENT' && (state.user.isIndividual || state.user.fromLecturer) ? 'STUDENT_INDIVIDUAL' : state.user.role;
-    const navItems = NAV[navKey];
+    let navItems = NAV[navKey];
+    // a student of an independent lecturer also does their final-year project with that lecturer
+    if (state.user.role === 'STUDENT' && state.user.fromLecturer) {
+      const at = navItems.findIndex(([k]) => k === 'library');
+      navItems = [...navItems.slice(0, at < 0 ? 2 : at), ['my-project', 'Project & Defense'], ...navItems.slice(at < 0 ? 2 : at)];
+    }
     nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
@@ -881,7 +886,7 @@
     }
     speechCtrl = null;
     if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopped */ } voiceRecognizer = null; }
-    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen) { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
+    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen && state.view.screen !== 'live-class') { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -916,6 +921,7 @@
       switch (state.view.screen) {
         case 'individual-courses': return state.user.fromLecturer ? renderLecturerCourses() : renderIndividualCourses();
         case 'lecturer-course': return renderLecturerCourse();
+        case 'my-project': return LZX.projectStudent(view, { api, esc, toast });
         case 'my-ai-lectures': return renderMyAiLectures();
         case 'my-ai-live': return renderMyAiLive();
         case 'my-lab-live': return renderMyAiLive();

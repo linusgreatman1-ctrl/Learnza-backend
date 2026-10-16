@@ -1556,5 +1556,113 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pwa); else pwa();
 
-  window.LZX = { support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
+  // ============================================================================================================
+  // PROJECT & DEFENSE: the final-year project as Nigerian higher institutions run it (topic approval, chapters one
+  // to five reviewed by the supervisor, clearance for defense, the defense and its marks). Shared by the school
+  // student, the independent lecturer's student, the school lecturer and the independent lecturer.
+  // ============================================================================================================
+  const PJ_STATUS = {
+    PROPOSED: ['Topic waiting for approval', 'pill-warn'], TOPIC_REVISE: ['Topic sent back', 'pill-fail'], TOPIC_REJECTED: ['Topic rejected', 'pill-fail'],
+    TOPIC_APPROVED: ['Topic approved', 'pill-pass'], IN_PROGRESS: ['Writing', 'pill-pass'], READY_FOR_DEFENSE: ['Cleared for defense', 'pill-pass'],
+    DEFENSE_SCHEDULED: ['Defense scheduled', 'pill-accent'], DEFENDED: ['Defended', 'pill-accent'], COMPLETED: ['Completed', 'pill-pass'],
+  };
+  const CH_STATUS = { NOT_STARTED: ['Not started', 'pill-muted'], DRAFT: ['Draft saved', 'pill-muted'], SUBMITTED: ['With supervisor', 'pill-warn'], APPROVED: ['Approved', 'pill-pass'], CORRECTION: ['Corrections needed', 'pill-fail'] };
+  const VERDICT = { PASSED: 'Passed', PASSED_WITH_CORRECTIONS: 'Passed with corrections', REPRESENT: 'Re-present the defense', FAILED: 'Not passed' };
+  const pill = (map, k) => { const [t, c] = map[k] || [k, 'pill-muted']; return '<span class="pill ' + c + '">' + t + '</span>'; };
+  const pjWhen = (d) => (d ? new Date(d).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+  const pjHow = '<div class="card" style="padding:14px 16px;margin-bottom:16px;"><b>How the project works</b><ol class="muted" style="margin:6px 0 0 18px;font-size:.88rem;line-height:1.7;"><li>Propose your topic; your supervisor approves it.</li><li>Write Chapters One to Five (and references); your supervisor approves each or sends it back for correction.</li><li>When all five are approved you are cleared for defense.</li><li>You defend before a panel on the date set; the panel marks you (60) and your supervisor\'s assessment counts 40.</li><li>Make any corrections; your supervisor signs you off. Grades: A 70+, B 60+, C 50+, D 45+, E 40+, F below 40.</li></ol></div>';
+
+  async function projectStudent(view, { api, esc, toast }) {
+    view.innerHTML = '<div class="page-head"><h1>Project &amp; Defense</h1></div><p class="muted">Loading…</p>';
+    const draw = async (given) => {
+      let p;
+      if (given) p = given; else { const r = await api('/projects/mine'); p = r.project; }
+      if (!p) {
+        let sup = [];
+        try { sup = (await api('/projects/supervisors')).supervisors || []; } catch { sup = []; }
+        view.innerHTML = '<div class="page-head"><h1>Project &amp; Defense</h1></div>' + pjHow + '<div class="card" style="padding:20px;max-width:560px;"><h3 style="margin-bottom:10px;">Propose your project topic</h3><form id="pj-new">' +
+          '<div class="field"><label>Project topic</label><input id="pj-title" required maxlength="200" placeholder="e.g. Design and Implementation of an Online Result Checking System"></div>' +
+          '<div class="field"><label>What is it about? (aim and what it will do)</label><textarea id="pj-abs" rows="5" required maxlength="3000"></textarea></div>' +
+          (sup.length > 1 ? '<div class="field"><label>Supervisor</label><select id="pj-sup" required><option value="">Choose…</option>' + sup.map((x) => '<option value="' + esc(x.id) + '">' + esc(x.fullName) + '</option>').join('') + '</select></div>' : '') +
+          '<div class="field"><label>Session (optional)</label><input id="pj-ses" maxlength="20" placeholder="e.g. 2026/2027"></div><button class="btn btn-primary" type="submit">Send to my supervisor</button></form></div>';
+        view.querySelector('#pj-new').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          try { const r = await api('/projects', { method: 'POST', body: { title: view.querySelector('#pj-title').value, abstract: view.querySelector('#pj-abs').value, supervisorId: view.querySelector('#pj-sup') ? view.querySelector('#pj-sup').value : '', session: view.querySelector('#pj-ses').value } }); toast('Topic sent to your supervisor'); draw(); } catch (err) { toast(err.message); }
+        });
+        return;
+      }
+      const topicOpen = ['TOPIC_REVISE', 'TOPIC_REJECTED'].includes(p.status);
+      const canWrite = !['PROPOSED', 'TOPIC_REVISE', 'TOPIC_REJECTED'].includes(p.status) && !['READY_FOR_DEFENSE', 'DEFENSE_SCHEDULED', 'COMPLETED'].includes(p.status);
+      const d = p.defense;
+      view.innerHTML = '<div class="page-head"><h1>Project &amp; Defense</h1></div>' + pjHow +
+        '<div class="card" style="padding:18px 20px;margin-bottom:14px;"><div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div class="meta">Project topic</div><div style="font-weight:700;font-size:1.05rem;">' + esc(p.title) + '</div><div class="meta" style="margin-top:4px;">Supervisor: ' + esc(p.supervisorName || '—') + (p.session ? ' · ' + esc(p.session) : '') + '</div></div><div>' + pill(PJ_STATUS, p.status) + '</div></div>' +
+        '<p class="muted" style="margin-top:10px;font-size:.9rem;white-space:pre-wrap;">' + esc(p.abstract) + '</p>' + (p.topicNote ? '<div class="hint-box" style="margin-top:10px;"><b>Supervisor:</b> ' + esc(p.topicNote) + '</div>' : '') +
+        (p.finalScore != null ? '<div style="margin-top:12px;font:800 1.3rem Sora,sans-serif;">Final mark: ' + p.finalScore + '/100 · Grade ' + esc(p.grade) + '</div>' : '') + '</div>' +
+        (topicOpen ? '<div class="card" style="padding:18px;max-width:560px;margin-bottom:14px;"><h3 style="margin-bottom:8px;">Rework your topic</h3><div class="field"><label>Topic</label><input id="pj-t2" value="' + esc(p.title) + '" maxlength="200"></div><div class="field"><label>What is it about?</label><textarea id="pj-a2" rows="4" maxlength="3000">' + esc(p.abstract) + '</textarea></div><button class="btn btn-primary" id="pj-resend">Send again</button></div>' : '') +
+        '<h3 style="margin:18px 0 10px;font-size:1rem;">Chapters</h3>' + p.chapters.map((c) =>
+          '<div class="card" style="padding:14px 16px;margin-bottom:8px;" data-ch="' + c.number + '"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:200px;font-weight:700;">' + esc(c.title) + '</div>' + pill(CH_STATUS, c.status) +
+          (canWrite && c.status !== 'APPROVED' && c.status !== 'SUBMITTED' ? '<button class="btn btn-ghost btn-sm" data-edit="' + c.number + '">' + (c.status === 'NOT_STARTED' ? 'Write' : 'Edit') + '</button>' : '') + '</div>' +
+          (c.feedback ? '<div class="hint-box" style="margin-top:8px;"><b>Supervisor:</b> ' + esc(c.feedback) + '</div>' : '') + '<div class="ch-edit" style="display:none;margin-top:10px;"></div></div>').join('') +
+        (d ? '<h3 style="margin:18px 0 10px;font-size:1rem;">Defense</h3><div class="card" style="padding:16px 18px;"><div><b>' + (d.kind === 'INTERNAL' ? 'Internal defense' : 'Final defense') + '</b> · ' + pjWhen(d.scheduledAt) + ' · ' + esc(d.venue) + '</div>' + (d.panel ? '<div class="meta" style="margin-top:4px;">Panel: ' + esc(d.panel) + '</div>' : '') +
+          (d.verdict ? '<div style="margin-top:12px;"><div style="font-weight:800;">' + esc(VERDICT[d.verdict]) + '</div><div class="meta">Presentation ' + d.presentation + '/20 · Mastery ' + d.mastery + '/20 · Questions ' + d.questions + '/15 · Documentation ' + d.documentation + '/5 · Panel ' + d.panelTotal + '/60' + (p.supervisorScore != null ? ' · Supervisor ' + p.supervisorScore + '/40' : '') + '</div>' + (d.corrections ? '<div class="hint-box" style="margin-top:8px;"><b>Corrections:</b> ' + esc(d.corrections) + (d.correctionsDue ? ' (by ' + pjWhen(d.correctionsDue) + ')' : '') + '</div>' : '') + (d.remarks ? '<div class="muted" style="margin-top:6px;">' + esc(d.remarks) + '</div>' : '') + '</div>' : '') + '</div>' : '');
+      const again = view.querySelector('#pj-resend');
+      if (again) again.addEventListener('click', async () => { try { const r = await api('/projects/mine', { method: 'PATCH', body: { title: view.querySelector('#pj-t2').value, abstract: view.querySelector('#pj-a2').value } }); toast('Sent to your supervisor'); draw(); } catch (err) { toast(err.message); } });
+      view.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+        const n = Number(b.dataset.edit), card = view.querySelector('[data-ch="' + n + '"]'), box = card.querySelector('.ch-edit'), c = p.chapters.find((x) => x.number === n);
+        box.style.display = 'block';
+        box.innerHTML = '<div class="field"><label>Write or paste the chapter</label><textarea rows="12" id="ch-c">' + esc(c.content) + '</textarea></div><div class="field"><label>Or a link to the file (Google Drive, OneDrive…)</label><input id="ch-f" value="' + esc(c.fileUrl) + '" placeholder="https://"></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-ghost" id="ch-save">Save draft</button><button class="btn btn-primary" id="ch-send">Submit to my supervisor</button></div>';
+        const go = async (submit) => { try { const r = await api('/projects/mine/chapters/' + n, { method: 'PUT', body: { content: box.querySelector('#ch-c').value, fileUrl: box.querySelector('#ch-f').value, submit } }); toast(submit ? 'Handed in to your supervisor' : 'Draft saved'); draw(r.project); } catch (err) { toast(err.message); } };
+        box.querySelector('#ch-save').addEventListener('click', () => go(false));
+        box.querySelector('#ch-send').addEventListener('click', () => { if (confirm('Hand this chapter in to your supervisor? You cannot change it until they reply.')) go(true); });
+      }));
+    };
+    try { await draw(); } catch (err) { view.innerHTML = '<div class="error-box">' + esc(err.message) + '</div>'; }
+  }
+
+  async function projectLecturer(view, { api, esc, toast }) {
+    const list = async () => {
+      view.innerHTML = '<div class="page-head"><h1>Project &amp; Defense</h1></div>' + pjHow + '<p class="muted">Loading…</p>';
+      const { projects } = await api('/projects/supervised');
+      view.innerHTML = '<div class="page-head"><h1>Project &amp; Defense</h1></div>' + pjHow +
+        '<h3 style="margin-bottom:10px;font-size:1rem;">Students you supervise (' + projects.length + ')</h3>' +
+        (projects.map((p) => '<div class="card" style="padding:14px 16px;margin-bottom:8px;cursor:pointer;" data-open="' + p.id + '"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div style="font-weight:700;">' + esc(p.studentName || 'Student') + ' <span class="meta">' + esc([p.matricNumber, p.programme, p.level].filter(Boolean).join(' · ')) + '</span></div><div class="meta">' + esc(p.title) + '</div></div>' + (p.chaptersWaiting ? '<span class="pill pill-warn">' + p.chaptersWaiting + ' to review</span>' : '') + (p.grade ? '<b>' + p.finalScore + ' (' + p.grade + ')</b>' : '') + pill(PJ_STATUS, p.status) + '</div></div>').join('') || '<div class="card" style="padding:18px;"><p class="muted">No student has chosen you as supervisor yet. When a student proposes a project topic it appears here for you to approve.</p></div>');
+      view.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => detail(el.dataset.open)));
+    };
+    const detail = async (id, given) => {
+      let p = given;
+      if (!p) p = (await api('/projects/' + id)).project;
+      const st = p.student || {}, d = p.defense;
+      const act = async (path, body, msg) => { try { const r = await api(path, { method: 'POST', body: body || {} }); toast(msg || 'Done'); detail(id, r.project); } catch (err) { toast(err.message); } };
+      const core = p.chapters.filter((c) => c.number <= 5);
+      view.innerHTML = '<div class="page-head"><h1>Project &amp; Defense</h1><button class="btn btn-ghost btn-sm" id="pj-back">← Back to my students</button></div>' +
+        '<div class="card" style="padding:18px 20px;margin-bottom:14px;"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;"><div style="flex:1;min-width:220px;"><div class="meta">' + esc(st.fullName || 'Student') + ' · ' + esc([st.matricNumber, st.courseOfStudy || st.attendedDepartment, st.yearOfStudy ? st.yearOfStudy * 100 + 'L' : ''].filter(Boolean).join(' · ')) + '</div><div style="font-weight:700;font-size:1.05rem;">' + esc(p.title) + '</div></div>' + pill(PJ_STATUS, p.status) + '</div><p class="muted" style="margin-top:8px;white-space:pre-wrap;font-size:.9rem;">' + esc(p.abstract) + '</p>' +
+        (['PROPOSED', 'TOPIC_REVISE'].includes(p.status) ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button class="btn btn-primary btn-sm" id="tp-ok">Approve topic</button><button class="btn btn-ghost btn-sm" id="tp-rev">Send back to rework</button><button class="btn btn-ghost btn-sm" id="tp-no">Reject topic</button></div>' : '') +
+        (p.finalScore != null ? '<div style="margin-top:10px;font:800 1.2rem Sora,sans-serif;">Final mark ' + p.finalScore + '/100 · Grade ' + esc(p.grade) + '</div>' : '') + '</div>' +
+        '<h3 style="margin:16px 0 10px;font-size:1rem;">Chapters</h3>' + p.chapters.map((c) => '<div class="card" style="padding:14px 16px;margin-bottom:8px;"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:200px;font-weight:700;">' + esc(c.title) + (c.version ? ' <span class="meta">v' + c.version + '</span>' : '') + '</div>' + pill(CH_STATUS, c.status) + '</div>' +
+          (c.content || c.fileUrl ? '<details style="margin-top:8px;"><summary class="meta" style="cursor:pointer;">Read it</summary>' + (c.fileUrl ? '<div style="margin:6px 0;"><a href="' + esc(c.fileUrl) + '" target="_blank" rel="noopener">Open the file</a></div>' : '') + (c.content ? '<div style="white-space:pre-wrap;font-size:.9rem;margin-top:6px;max-height:380px;overflow:auto;">' + esc(c.content) + '</div>' : '') + '</details>' : '') +
+          (c.feedback ? '<div class="hint-box" style="margin-top:8px;"><b>Your feedback:</b> ' + esc(c.feedback) + '</div>' : '') +
+          (c.status === 'SUBMITTED' ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><button class="btn btn-primary btn-sm" data-ap="' + c.number + '">Approve</button><button class="btn btn-ghost btn-sm" data-co="' + c.number + '">Send back for correction</button></div>' : '') + '</div>').join('') +
+        (['TOPIC_APPROVED', 'IN_PROGRESS'].includes(p.status) && core.every((c) => c.status === 'APPROVED') ? '<div class="card" style="padding:16px 18px;margin-top:6px;"><b>All five chapters are approved.</b><div class="field" style="margin-top:8px;max-width:320px;"><label>Your assessment of the student\'s work (out of 40)</label><input type="number" id="cl-sc" min="0" max="40"></div><button class="btn btn-primary btn-sm" id="cl-go">Clear for defense</button></div>' : '') +
+        (['READY_FOR_DEFENSE', 'DEFENSE_SCHEDULED'].includes(p.status) ? '<h3 style="margin:16px 0 10px;font-size:1rem;">Defense</h3><div class="card" style="padding:16px 18px;"><div class="field"><label>Type</label><select id="df-k"><option value="INTERNAL">Internal defense</option><option value="FINAL" selected>Final defense</option></select></div><div class="field"><label>Date and time</label><input type="datetime-local" id="df-w"></div><div class="field"><label>Venue (or online link)</label><input id="df-v" placeholder="e.g. Department Seminar Room"></div><div class="field"><label>Panel members</label><input id="df-p" placeholder="e.g. Dr A. Bello (chair), Prof C. Eze, Mrs D. Obi"></div><button class="btn btn-primary btn-sm" id="df-go">' + (d ? 'Change the schedule' : 'Schedule the defense') + '</button></div>' : '') +
+        (p.status === 'DEFENSE_SCHEDULED' && d ? '<div class="card" style="padding:16px 18px;margin-top:10px;"><b>Record the result</b> <span class="meta">' + pjWhen(d.scheduledAt) + ' · ' + esc(d.venue) + '</span><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px;"><div class="field"><label>Presentation /20</label><input type="number" id="rs-p" min="0" max="20"></div><div class="field"><label>Mastery of the work /20</label><input type="number" id="rs-m" min="0" max="20"></div><div class="field"><label>Answers to questions /15</label><input type="number" id="rs-q" min="0" max="15"></div><div class="field"><label>Documentation /5</label><input type="number" id="rs-d" min="0" max="5"></div></div><div class="field"><label>Verdict</label><select id="rs-v"><option value="PASSED">Passed</option><option value="PASSED_WITH_CORRECTIONS">Passed with corrections</option><option value="REPRESENT">Re-present the defense</option><option value="FAILED">Not passed</option></select></div><div class="field"><label>Corrections to make (if any)</label><textarea id="rs-c" rows="3"></textarea></div><div class="field"><label>Corrections due by (optional)</label><input type="date" id="rs-due"></div><div class="field"><label>Remarks (optional)</label><input id="rs-r"></div><button class="btn btn-primary btn-sm" id="rs-go">Save the result</button></div>' : '') +
+        (p.status === 'DEFENDED' && d && d.verdict === 'PASSED_WITH_CORRECTIONS' ? '<div class="card" style="padding:16px 18px;margin-top:10px;"><b>Corrections:</b> <span class="muted">' + esc(d.corrections || '') + '</span><div style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="fin-go">Corrections done: sign off the project</button></div></div>' : '') +
+        (p.status === 'DEFENDED' && d && d.verdict === 'REPRESENT' ? '<div class="card" style="padding:16px 18px;margin-top:10px;"><b>The student must re-present.</b> <span class="muted">' + esc(d.corrections || '') + '</span><div style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="rep-go">Schedule another defense</button></div></div>' : '');
+      const $ = (q) => view.querySelector(q);
+      $('#pj-back').addEventListener('click', list);
+      const note = (msg) => prompt(msg) || '';
+      if ($('#tp-ok')) $('#tp-ok').addEventListener('click', () => act('/projects/' + id + '/topic', { decision: 'APPROVE', note: note('A note for the student (optional):') }, 'Topic approved'));
+      if ($('#tp-rev')) $('#tp-rev').addEventListener('click', () => { const n = note('What must the student change?'); if (n) act('/projects/' + id + '/topic', { decision: 'REVISE', note: n }, 'Sent back'); });
+      if ($('#tp-no')) $('#tp-no').addEventListener('click', () => { const n = note('Why is the topic rejected?'); if (n) act('/projects/' + id + '/topic', { decision: 'REJECT', note: n }, 'Topic rejected'); });
+      view.querySelectorAll('[data-ap]').forEach((b) => b.addEventListener('click', () => act('/projects/' + id + '/chapters/' + b.dataset.ap + '/review', { decision: 'APPROVE', feedback: note('A comment for the student (optional):') }, 'Chapter approved')));
+      view.querySelectorAll('[data-co]').forEach((b) => b.addEventListener('click', () => { const n = note('What must the student correct?'); if (n) act('/projects/' + id + '/chapters/' + b.dataset.co + '/review', { decision: 'CORRECTION', feedback: n }, 'Sent back for correction'); }));
+      if ($('#cl-go')) $('#cl-go').addEventListener('click', () => act('/projects/' + id + '/clear', { supervisorScore: $('#cl-sc').value }, 'Cleared for defense'));
+      if ($('#df-go')) $('#df-go').addEventListener('click', () => act('/projects/' + id + '/defense', { kind: $('#df-k').value, scheduledAt: $('#df-w').value, venue: $('#df-v').value, panel: $('#df-p').value }, 'Defense scheduled; the student is told'));
+      if ($('#rs-go')) $('#rs-go').addEventListener('click', () => act('/projects/' + id + '/defense/result', { presentation: $('#rs-p').value, mastery: $('#rs-m').value, questions: $('#rs-q').value, documentation: $('#rs-d').value, verdict: $('#rs-v').value, corrections: $('#rs-c').value, correctionsDue: $('#rs-due').value, remarks: $('#rs-r').value }, 'Result saved; the student is told'));
+      if ($('#fin-go')) $('#fin-go').addEventListener('click', () => act('/projects/' + id + '/complete', {}, 'Project signed off'));
+      if ($('#rep-go')) $('#rep-go').addEventListener('click', () => act('/projects/' + id + '/represent', {}, 'Ready to schedule again'));
+    };
+    try { await list(); } catch (err) { view.innerHTML = '<div class="error-box">' + esc(err.message) + '</div>'; }
+  }
+
+  window.LZX = { projectStudent, projectLecturer, support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
 })();

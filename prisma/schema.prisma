@@ -1301,3 +1301,59 @@ model BankCredit {
 
   @@index([status, createdAt])
 }
+
+// ---- Final-year Project and Defense (see routes/projects.js) --------------------------------------
+model Project {
+  id              String   @id @default(cuid())
+  studentId       String
+  schoolId        String
+  supervisorId    String
+  title           String
+  abstract        String
+  session         String?
+  status          String   @default("PROPOSED") // PROPOSED | TOPIC_REVISE | TOPIC_REJECTED | TOPIC_APPROVED | IN_PROGRESS | READY_FOR_DEFENSE | DEFENSE_SCHEDULED | DEFENDED | COMPLETED
+  topicNote       String?
+  supervisorScore Int? // the supervisor's assessment, out of 40
+  finalScore      Int? // supervisor 40 + defense panel 60
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([supervisorId, status])
+  @@index([schoolId])
+}
+
+model ProjectChapter {
+  id          String    @id @default(cuid())
+  projectId   String
+  number      Int // 1-5 the chapters, 6 references and appendices
+  title       String
+  content     String    @default("")
+  fileUrl     String    @default("")
+  status      String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | CORRECTION
+  feedback    String?
+  version     Int       @default(0)
+  submittedAt DateTime?
+  reviewedAt  DateTime?
+
+  @@unique([projectId, number])
+}
+
+model ProjectDefense {
+  id              String    @id @default(cuid())
+  projectId       String    @unique
+  kind            String    @default("FINAL") // INTERNAL | FINAL
+  scheduledAt     DateTime
+  venue           String
+  panel           String    @default("")
+  status          String    @default("SCHEDULED") // SCHEDULED | HELD
+  presentation    Int? // out of 20
+  mastery         Int? // out of 20
+  questions       Int? // out of 15
+  documentation   Int? // out of 5
+  panelTotal      Int? // out of 60
+  verdict         String? // PASSED | PASSED_WITH_CORRECTIONS | REPRESENT | FAILED
+  corrections     String?
+  correctionsDue  DateTime?
+  remarks         String?
+}

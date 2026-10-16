@@ -452,6 +452,7 @@
     STUDENT: [
       ['my-dashboard', 'Home'],
       ['courses', 'My Courses'],
+      ['my-project', 'Project & Defense'],
       ['library', 'e-Library'],
       ['groups', 'Study Groups'],
       ['lab-hub', 'Digital Lab'],
@@ -506,6 +507,7 @@
       ['lect-semester-exam', 'Semester Exam'],
       ['lect-assignments-hub', 'Assignments'],
       ['lect-results-hub', 'Student Results'],
+      ['lect-projects', 'Project & Defense'],
       ['research', 'Learnza Research Assistant'],
       ['staff-profile', 'My Staff Profile'],
       ['class-vote', 'Class Rep Voting'],
@@ -635,7 +637,7 @@
     let navItems = NAV[navKey];
     // an independent lecturer pays for their own plan: Subscription sits just above Settings
     if (state.user.role === 'LECTURER' && state.school && state.school.independent) {
-      navItems = navItems.filter(([k]) => k !== 'preview-student-dashboard');
+      navItems = navItems.filter(([k]) => k !== 'preview-student-dashboard' && k !== 'elections' && k !== 'class-vote');
       const at = navItems.findIndex(([k]) => k === 'settings');
       navItems = [...navItems.slice(0, at < 0 ? navItems.length : at), ['lect-billing', 'Subscription'], ...navItems.slice(at < 0 ? navItems.length : at)];
     }
@@ -896,7 +898,7 @@
     }
     speechCtrl = null;
     if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopped */ } voiceRecognizer = null; }
-    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen) { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
+    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen && state.view.screen !== 'live-class') { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
@@ -1003,6 +1005,8 @@
         case 'support-review': return LZX.support(view, { api, esc, toast, tab: 'review' });
         case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'elections': return LZX.elections(view, { api, esc, toast });
+        case 'lect-projects': return LZX.projectLecturer(view, { api, esc, toast });
+        case 'my-project': return LZX.projectStudent(view, { api, esc, toast });
         case 'admin-elections': return LZX.electionsAdmin(view, { api, esc, toast });
         case 'class-vote': return LZX.electionsAdmin(view, { api, esc, toast, mode: 'class' });
         case 'fees': return LZX.fees(view, { api, esc, toast });
@@ -2585,7 +2589,7 @@
       // The lecturer goes back to the course they were just teaching (to upload
       // materials, see the recording land, etc). A student instead goes to their own
       // dashboard, not the course page.
-      if (isHost) navigate('lect-lessons', { courseId });
+      if (isHost) navigate('lect-courses');
       else navigate('my-dashboard');
     });
     if (isHost) {
@@ -2820,7 +2824,7 @@
       // A student lands on their own dashboard once class ends, not the course page.
       // The host doesn't rely on this at all -- their own "End class" click already
       // navigates them straight to the course page before this broadcast even arrives.
-      if (isHost) navigate('lect-lessons', { courseId });
+      if (isHost) navigate('lect-courses');
       else navigate('my-dashboard');
     });
     socket.on('live:watching-count', ({ count }) => {
