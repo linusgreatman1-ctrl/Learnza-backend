@@ -2586,8 +2586,8 @@
       <div class="page-head"><h1>Project &amp; Defense</h1></div>
       <p class="muted" style="margin-bottom:14px;">Every final-year project in your school: the topic, the chapters, the supervisor, the defense and the marks. Lecturers supervise and mark; you can see it all here. <span id="ap-count"></span></p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
-        <input type="text" id="ap-search" placeholder="Search project topics…" style="max-width:280px;">
-        <select id="ap-status"><option value="">Every stage</option>${Object.entries(STAGE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+        <input type="text" id="ap-search" placeholder="Search project topics…" style="max-width:280px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+        <select id="ap-status" style="padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);"><option value="">Every stage</option>${Object.entries(STAGE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
       </div>
       <div class="card" id="ap-list"></div>`;
     let t;
