@@ -585,7 +585,12 @@
     const u = state.user;
     const roleLabel = u.role.charAt(0) + u.role.slice(1).toLowerCase();
     const lines = [`${esc(u.fullName)} · ${esc(roleLabel)}`];
-    if (u.isIndividual) {
+    if (u.fromLecturer) {
+      // a lecturer's own student: the lecturer, not a school
+      lines.push('Lecturer · ' + esc(u.lecturerName || ''));
+      const lb = [u.courseOfStudy, levelLabel(u.yearOfStudy)].filter(Boolean).map(esc);
+      if (lb.length) lines.push(lb.join(' · '));
+    } else if (u.isIndividual) {
       // Institution type (e.g. "University") is left off here -- attendedSchoolName is
       // the actual school name and already says as much, so showing both read as
       // redundant. Level shows the same way a school student's does.
@@ -2614,7 +2619,10 @@
   function renderSettingsProfile() {
     const u = state.user;
     const readOnlyRows = [];
-    if (!u.isIndividual) {
+    if (u.fromLecturer) {
+      readOnlyRows.push(['Lecturer', u.lecturerName || '—'], ['Level', levelLabel(u.yearOfStudy) || '—']);
+      if (u.accessCode) readOnlyRows.push(['Access code', u.accessCode]);
+    } else if (!u.isIndividual) {
       if (u.role === 'STUDENT') {
         readOnlyRows.push(['Matric number', u.matricNumber || '—'], ['Department', state.department ? state.department.name : '—'], ['Level', levelLabel(u.yearOfStudy) || '—']);
       } else if (u.role === 'LECTURER' || u.role === 'STAFF') {

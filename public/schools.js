@@ -6168,7 +6168,7 @@
     const { students: allStudents } = await api('/lect/students').catch(() => ({ students: [] }));
     view.innerHTML = `
       <div class="page-head"><h1>My Students</h1><button class="btn btn-accent btn-sm" id="new-student-btn">+ Add a new student</button></div>
-      <p class="muted" style="margin-bottom:18px;">Pick a class to see its students. Only lecturers add students: you add them to your department and classes, give each one their access code, and they sign in with it.</p>
+      <p class="muted" style="margin-bottom:18px;">${state.school && state.school.independent ? 'Pick a course to see its students. You register your students, give each one their access code, and they sign in with it.' : 'Pick a class to see its students. Only lecturers add students: you add them to your department and classes, give each one their access code, and they sign in with it.'}</p>
       <div class="grid-cards">
         ${courses.map((c, i) => `
           <div class="card course-card" data-open="${c.id}" data-title="${esc(c.title)}" data-code="${esc(c.code)}" style="cursor:pointer;">

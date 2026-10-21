@@ -238,7 +238,7 @@ router.post('/login-lecturer-student', async (req, res) => {
   }
   if (!checkSchoolAccess(res, school)) return;
   if (!checkStatus(res, user)) return;
-  res.json({ ...(await issueSession(user, 'app')), user: { ...publicUser(user), fromLecturer: true } });
+  res.json({ ...(await issueSession(user, 'app')), user: { ...(await withLecturerFlag(user)), fromLecturer: true } });
 });
 
 // Swap a refresh token for a fresh access + refresh pair. Re-checks the account and the
