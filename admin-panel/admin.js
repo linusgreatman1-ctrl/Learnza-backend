@@ -177,7 +177,7 @@
   // ---------------- navigation ----------------
   const views = {
     dashboard: renderDashboard, analytics: renderAnalytics, questions: renderQuestions,
-    lessons: renderLessons, courses: renderCourses,
+    lessons: renderLessons, projects: renderProjects, courses: renderCourses,
     conversations: () => renderAi('logs'), teacher: () => renderAi('sessions'), demonstrations: renderDemonstrations,
     requests: renderRequests, payments: () => renderPayments('payments'), coins: () => renderPayments('coins'), subscriptions: () => renderPayments('subs'),
     gamification: renderGamification, attendance: renderAttendance, results: renderResults, records: renderRecords,
@@ -1028,17 +1028,39 @@
 
   // ---------------- lessons ----------------
   async function renderLessons() {
-    view.innerHTML = '<div class="view-head"><div><h1>Lessons</h1><div class="muted">Every lesson on the platform — lecturer-recorded, and AI Lecturer lessons written for self-study courses.</div></div></div>' +
-      searchBar('ls-search', 'Search lesson titles…', null, '<select id="ls-kind"><option value="">All</option><option value="recorded">Lecturer lessons</option><option value="ai">AI Lecturer lessons</option></select>') + '<div id="ls-list"></div>';
+    view.innerHTML = '<div class="view-head"><div><h1>Lectures</h1><div class="muted">Every lecture on the platform — lecturer-recorded, and AI Lecturer lectures written for self-study courses.</div></div></div>' +
+      searchBar('ls-search', 'Search lecture titles…', null, '<select id="ls-kind"><option value="">All</option><option value="recorded">Lecturer lectures</option><option value="ai">AI Lecturer lectures</option></select>') + '<div id="ls-list"></div>';
     const box = $('ls-list');
     box.addEventListener('drawn', () => box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Remove this lesson for everyone?')) return;
-      try { await api('/lessons/' + b.dataset.del, { method: 'DELETE' }); toast('Lesson removed'); box.reload(); } catch (err) { toast(err.message); }
+      if (!confirm('Remove this lecture for everyone?')) return;
+      try { await api('/lessons/' + b.dataset.del, { method: 'DELETE' }); toast('Lecture removed'); box.reload(); } catch (err) { toast(err.message); }
     })));
     await listView(box, (p) => '/lessons?page=' + p + '&search=' + encodeURIComponent($('ls-search').value.trim()) + '&kind=' + $('ls-kind').value, (d) =>
-      table(['Lesson', 'Where', 'School', 'By', 'Type', 'Added', ''], d.lessons.map((l) => '<tr><td><strong>' + esc(l.title) + '</strong></td><td>' + esc(l.where) + '</td><td>' + esc(l.schoolName || '—') + '</td><td>' + esc(l.owner || '—') + '</td><td>' + (l.isAiTeacher ? '<span class="pill ok">AI Lecturer</span>' : (l.videoUrl ? 'Video' : 'Script')) + '</td><td>' + fmtDate(l.createdAt) + '</td><td><button class="btn-ghost btn-sm" data-del="' + l.id + '">Remove</button></td></tr>').join(''), 'No lessons yet.'));
+      table(['Lecture', 'Where', 'School', 'By', 'Type', 'Added', ''], d.lessons.map((l) => '<tr><td><strong>' + esc(l.title) + '</strong></td><td>' + esc(l.where) + '</td><td>' + esc(l.schoolName || '—') + '</td><td>' + esc(l.owner || '—') + '</td><td>' + (l.isAiTeacher ? '<span class="pill ok">AI Lecturer</span>' : (l.videoUrl ? 'Video' : 'Script')) + '</td><td>' + fmtDate(l.createdAt) + '</td><td><button class="btn-ghost btn-sm" data-del="' + l.id + '">Remove</button></td></tr>').join(''), 'No lessons yet.'));
     const reload = debounce(() => box.reload(true));
     $('ls-search').addEventListener('input', reload); $('ls-kind').addEventListener('change', reload);
+  }
+
+  // ---------------- projects & defense (every school and every independent lecturer) ----------------
+  const PROJECT_STATUS = {
+    PROPOSED: 'Topic proposed', TOPIC_REVISE: 'Topic sent back', TOPIC_REJECTED: 'Topic rejected', TOPIC_APPROVED: 'Topic approved', IN_PROGRESS: 'Writing',
+    READY_FOR_DEFENSE: 'Cleared for defense', DEFENSE_SCHEDULED: 'Defense scheduled', DEFENDED: 'Defended', CORRECTIONS: 'Corrections', COMPLETED: 'Completed',
+  };
+  const VERDICT_TEXT = { PASSED: 'Passed', PASSED_WITH_CORRECTIONS: 'Passed with corrections', REPRESENT: 'Re-present', FAILED: 'Failed' };
+  async function renderProjects() {
+    view.innerHTML = '<div class="view-head"><div><h1>Projects &amp; Defense</h1><div class="muted">Every final-year project on the platform: topic, chapters, supervisor, defense and marks, for every school and every independent lecturer.</div></div></div>' +
+      searchBar('pj-search', 'Search project topics…', null, '<select id="pj-school"></select><select id="pj-status"><option value="">Every stage</option>' + Object.entries(PROJECT_STATUS).map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join('') + '</select>') + '<div id="pj-list"></div>';
+    $('pj-school').innerHTML = await schoolOptions();
+    const box = $('pj-list');
+    await listView(box, (p) => '/projects?page=' + p + '&search=' + encodeURIComponent($('pj-search').value.trim()) + '&schoolId=' + $('pj-school').value + '&status=' + $('pj-status').value, (d) =>
+      table(['Topic', 'Student', 'Supervisor', 'School', 'Stage', 'Chapters', 'Defense', 'Mark'], d.projects.map((p) => '<tr><td><strong>' + esc(p.title) + '</strong><div class="small muted">' + esc(p.session || '') + '</div></td>' +
+        '<td>' + esc(p.studentName) + '<div class="small muted">' + esc(p.programme || '') + '</div></td><td>' + esc(p.supervisorName) + '</td>' +
+        '<td>' + esc(p.schoolName) + (p.independent ? ' <span class="pill">Independent</span>' : '') + '</td><td>' + esc(PROJECT_STATUS[p.status] || p.status) + '</td>' +
+        '<td>' + p.chaptersApproved + '/5 approved' + (p.chaptersWaiting ? '<div class="small muted">' + p.chaptersWaiting + ' waiting for review</div>' : '') + '</td>' +
+        '<td>' + (p.defense ? esc(fmtDateTime(p.defense.scheduledAt)) + '<div class="small muted">' + esc(p.defense.venue) + (p.defense.verdict ? ' · ' + esc(VERDICT_TEXT[p.defense.verdict] || p.defense.verdict) : '') + '</div>' : '—') + '</td>' +
+        '<td>' + (p.finalScore != null ? p.finalScore + '/100' : '—') + '</td></tr>').join(''), 'No projects yet.'));
+    const reload = debounce(() => box.reload(true));
+    $('pj-search').addEventListener('input', reload); $('pj-school').addEventListener('change', () => box.reload(true)); $('pj-status').addEventListener('change', () => box.reload(true));
   }
 
   // ---------------- courses ----------------
@@ -1049,8 +1071,8 @@
       if (tab === 'school') $('co-school').innerHTML = await schoolOptions();
       const box = $('co-list');
       await listView(box, (p) => '/courses?kind=' + tab + '&page=' + p + '&search=' + encodeURIComponent($('co-search').value.trim()) + (tab === 'school' ? '&schoolId=' + $('co-school').value : ''), (d) => tab === 'school'
-        ? table(['Course', 'School', 'Department', 'Level', 'Students', 'Lecturers', 'Lessons', 'Tests', ''], d.courses.map((c) => '<tr><td><strong>' + esc(c.code) + ' — ' + esc(c.title) + '</strong></td><td>' + esc(c.schoolName || '—') + '</td><td>' + esc(c.department) + '</td><td>' + esc(c.level) + '</td><td class="tabular">' + c.students + '</td><td>' + esc(c.lecturers.join(', ') || '—') + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td><button class="btn-ghost btn-sm" data-edit-course="' + c.id + '" data-code="' + esc(c.code) + '" data-title="' + esc(c.title) + '" data-level="' + esc(c.level) + '">✏️ Edit</button></td></tr>').join(''), 'No courses yet.')
-        : table(['Course', 'Learner', 'Lessons', 'Tests', 'Created', ''], d.courses.map((c) => '<tr><td><strong>' + esc(c.title) + '</strong></td><td>' + esc(c.owner) + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td>' + fmtDate(c.createdAt) + '</td><td><button class="btn-ghost btn-sm" data-edit-course="' + c.id + '" data-self="1" data-title="' + esc(c.title) + '">✏️ Edit</button></td></tr>').join(''), 'No self-study courses yet.'));
+        ? table(['Course', 'School', 'Department', 'Level', 'Students', 'Lecturers', 'Lectures', 'Tests', ''], d.courses.map((c) => '<tr><td><strong>' + esc(c.code) + ' — ' + esc(c.title) + '</strong></td><td>' + esc(c.schoolName || '—') + '</td><td>' + esc(c.department) + '</td><td>' + esc(c.level) + '</td><td class="tabular">' + c.students + '</td><td>' + esc(c.lecturers.join(', ') || '—') + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td><button class="btn-ghost btn-sm" data-edit-course="' + c.id + '" data-code="' + esc(c.code) + '" data-title="' + esc(c.title) + '" data-level="' + esc(c.level) + '">✏️ Edit</button></td></tr>').join(''), 'No courses yet.')
+        : table(['Course', 'Learner', 'Lectures', 'Tests', 'Created', ''], d.courses.map((c) => '<tr><td><strong>' + esc(c.title) + '</strong></td><td>' + esc(c.owner) + '</td><td class="tabular">' + c.lessons + '</td><td class="tabular">' + c.assessments + '</td><td>' + fmtDate(c.createdAt) + '</td><td><button class="btn-ghost btn-sm" data-edit-course="' + c.id + '" data-self="1" data-title="' + esc(c.title) + '">✏️ Edit</button></td></tr>').join(''), 'No self-study courses yet.'));
       box.addEventListener('drawn', () => box.querySelectorAll('[data-edit-course]').forEach((b) => b.addEventListener('click', () => {
         const self = !!b.dataset.self;
         const m = modal('<div class="modal-head"><h3>Edit course</h3><button class="btn-ghost btn-sm" data-close>✕</button></div>' +
@@ -1118,7 +1140,7 @@
     $('te-school').innerHTML = await schoolOptions();
     const box = $('te-list');
     await listView(box, (p) => '/teachers?page=' + p + '&search=' + encodeURIComponent($('te-search').value.trim()) + '&schoolId=' + $('te-school').value + '&role=' + $('te-role').value, (d) =>
-      table(['Name', 'School', 'Department', 'Role', 'Courses', 'Lessons', 'Tests', 'Status'], d.teachers.map((t) => '<tr><td><strong>' + esc(t.fullName) + '</strong><div class="small muted">' + esc(t.staffId || t.email || '') + '</div></td><td>' + esc(t.school ? t.school.name : '—') + '</td><td>' + esc(t.department || t.position || '—') + '</td><td>' + (t.role === 'LECTURER' ? 'Lecturer' : 'Staff') + '</td><td class="tabular">' + t.courses + '</td><td class="tabular">' + t.lessons + '</td><td class="tabular">' + t.tests + '</td><td><span class="pill ' + (t.status === 'ACTIVE' ? 'ok' : 'bad') + '">' + esc(t.status) + '</span></td></tr>').join(''), 'No teachers yet.'));
+      table(['Name', 'School', 'Department', 'Role', 'Courses', 'Lectures', 'Tests', 'Status'], d.teachers.map((t) => '<tr><td><strong>' + esc(t.fullName) + '</strong><div class="small muted">' + esc(t.staffId || t.email || '') + '</div></td><td>' + esc(t.school ? t.school.name : '—') + '</td><td>' + esc(t.department || t.position || '—') + '</td><td>' + (t.role === 'LECTURER' ? 'Lecturer' : 'Staff') + '</td><td class="tabular">' + t.courses + '</td><td class="tabular">' + t.lessons + '</td><td class="tabular">' + t.tests + '</td><td><span class="pill ' + (t.status === 'ACTIVE' ? 'ok' : 'bad') + '">' + esc(t.status) + '</span></td></tr>').join(''), 'No teachers yet.'));
     const reload = debounce(() => box.reload(true));
     $('te-search').addEventListener('input', reload); $('te-school').addEventListener('change', () => box.reload(true)); $('te-role').addEventListener('change', () => box.reload(true));
   }

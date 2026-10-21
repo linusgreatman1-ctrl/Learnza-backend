@@ -70,6 +70,18 @@ router.get('/analytics', async (req, res) => {
 });
 
 // ---------------------------------------------------------------- lessons
+router.get('/projects', async (req, res) => {
+  const where = {};
+  if (req.query.schoolId === 'INDEPENDENT') {
+    const ids = (await prisma.school.findMany({ where: { independent: true }, select: { id: true } })).map((s) => s.id);
+    where.schoolId = { in: ids };
+  } else if (req.query.schoolId) where.schoolId = String(req.query.schoolId);
+  if (req.query.status) where.status = String(req.query.status);
+  const search = String(req.query.search || '').trim();
+  if (search) where.title = { contains: search, mode: 'insensitive' };
+  res.json(await require('./projects').overview(where, { page: pageOf(req).page }));
+});
+
 router.get('/lessons', async (req, res) => {
   const { page, size } = pageOf(req);
   const search = String(req.query.search || '').trim();

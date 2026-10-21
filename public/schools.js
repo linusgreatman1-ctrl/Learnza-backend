@@ -7,9 +7,32 @@
   // is keyed by the tab's own name (window.name belongs to the tab and survives a refresh). A tab that
   // is opened fresh has no name yet, so it asks for a sign-in instead of quietly taking over whichever
   // account last signed in anywhere.
+  // A live tab announces itself (a "claim" that is renewed every few seconds and withdrawn when the page closes). A tab
+  // that opens under a name another live tab is still holding (a duplicated tab, or a browser that restores every tab with
+  // the same name) takes a new one, so two tabs can never end up sharing - and swapping - one sign-in.
+  const newTabName = () => 'lzt_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   const TAB_ID = (function () {
     try {
-      if (!/^lzt_/.test(window.name)) window.name = 'lzt_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      if (!/^lzt_/.test(window.name)) window.name = newTabName();
+      else {
+        const held = Number(localStorage.getItem('lz_claim@' + window.name) || 0);
+        if (Date.now() - held < 12000) {
+          const old = window.name;
+          window.name = newTabName();
+          // this tab keeps its own sign-in (sessionStorage came with it); carry the saved copy across under the new name
+          for (const part of ['lz_app_token', 'lz_app_user', 'lz_app_refresh', 'lz_schools_token', 'lz_schools_user', 'lz_schools_refresh']) {
+            const v = sessionStorage.getItem(part);
+            if (v) localStorage.setItem(part + '@' + window.name, v);
+          }
+          void old;
+        }
+      }
+      const claim = () => { try { localStorage.setItem('lz_claim@' + window.name, String(Date.now())); } catch { /* storage unavailable */ } };
+      const release = () => { try { localStorage.removeItem('lz_claim@' + window.name); } catch { /* storage unavailable */ } };
+      claim();
+      setInterval(claim, 4000);
+      window.addEventListener('pagehide', release);
+      window.addEventListener('pageshow', claim);
       return window.name;
     } catch { return 'lzt_x'; }
   })();
@@ -528,6 +551,7 @@
       ['admin-academics', 'Departments & Courses'],
       ['admin-tests', 'Tests'],
       ['admin-semester-exam', 'Semester Exam'],
+      ['admin-projects', 'Project & Defense'],
       ['admin-activity', 'Lecturer Activity'],
       ['admin-student-activity', 'Student Activity'],
       ['admin-lab-queue', 'Digital Lab'],
@@ -637,7 +661,7 @@
     let navItems = NAV[navKey];
     // an independent lecturer pays for their own plan: Subscription sits just above Settings
     if (state.user.role === 'LECTURER' && state.school && state.school.independent) {
-      navItems = navItems.filter(([k]) => k !== 'preview-student-dashboard' && k !== 'elections' && k !== 'class-vote');
+      navItems = navItems.filter(([k]) => k !== 'preview-student-dashboard' && k !== 'elections');
       const at = navItems.findIndex(([k]) => k === 'settings');
       navItems = [...navItems.slice(0, at < 0 ? navItems.length : at), ['lect-billing', 'Subscription'], ...navItems.slice(at < 0 ? navItems.length : at)];
     }
@@ -711,7 +735,7 @@
   async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results, courses: given }) {
     let courses = given || [];
     if (!given) { try { courses = (await api(isIndividual ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; } }
-    const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 8 min each' : 'Practise questions from your courses every day';
+    const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 5 min each' : 'Practise questions from your courses every day';
     const banner = homeBanner('⚡', 'Daily Challenge', titles, 'daily-challenge');
     const days = daily && daily.days ? daily.days : [];
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
@@ -832,6 +856,17 @@
     const markSeen = () => { api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {}); };
     banner.querySelector('[data-dismiss]').addEventListener('click', () => { markSeen(); banner.remove(); });
     setTimeout(() => { markSeen(); banner.remove(); }, 45000);
+    // a class that ends before the student joins clears off the screen
+    const lcParams = parseNotificationLink(n.link)[1] || {};
+    if (lcParams.courseId) {
+      const watch = setInterval(async () => {
+        if (!document.body.contains(banner)) { clearInterval(watch); return; }
+        try {
+          const { liveClass } = await api('/courses/' + lcParams.courseId + '/live');
+          if (!liveClass || liveClass.id !== lcParams.liveClassId) { clearInterval(watch); banner.remove(); refreshNotifications(); }
+        } catch { /* try again on the next tick */ }
+      }, 8000);
+    }
   }
 
   function toggleNotifPanel(force) {
@@ -1006,6 +1041,7 @@
         case 'wallet': return LZX.wallet(view, { api, esc, toast });
         case 'elections': return LZX.elections(view, { api, esc, toast });
         case 'lect-projects': return LZX.projectLecturer(view, { api, esc, toast });
+        case 'admin-projects': return renderAdminProjects();
         case 'my-project': return LZX.projectStudent(view, { api, esc, toast });
         case 'admin-elections': return LZX.electionsAdmin(view, { api, esc, toast });
         case 'class-vote': return LZX.electionsAdmin(view, { api, esc, toast, mode: 'class' });
@@ -2528,6 +2564,54 @@
     }));
   }
 
+  // The school admin sees every project and defense of the school (lecturers supervise; students write and defend).
+  async function renderAdminProjects() {
+    const STAGE = { PROPOSED: 'Topic proposed', TOPIC_REVISE: 'Topic sent back', TOPIC_REJECTED: 'Topic rejected', TOPIC_APPROVED: 'Topic approved', IN_PROGRESS: 'Writing', READY_FOR_DEFENSE: 'Cleared for defense', DEFENSE_SCHEDULED: 'Defense scheduled', DEFENDED: 'Defended', CORRECTIONS: 'Corrections', COMPLETED: 'Completed' };
+    const VERDICT = { PASSED: 'Passed', PASSED_WITH_CORRECTIONS: 'Passed with corrections', REPRESENT: 'Re-present', FAILED: 'Failed' };
+    let status = '', q = '';
+    async function paint() {
+      const { projects, total } = await api('/admin/projects?status=' + encodeURIComponent(status) + '&search=' + encodeURIComponent(q));
+      document.getElementById('ap-list').innerHTML = projects.map((p) => `
+        <div class="list-row">
+          <div style="min-width:0;">
+            <div style="font-weight:600;">${esc(p.title)}</div>
+            <div class="meta">${esc(p.studentName)}${p.programme ? ' · ' + esc(p.programme) : ''} · Supervisor: ${esc(p.supervisorName)}</div>
+            <div class="meta">Chapters ${p.chaptersApproved}/5 approved${p.chaptersWaiting ? ' · ' + p.chaptersWaiting + ' waiting for review' : ''}${p.defense ? ' · Defense ' + new Date(p.defense.scheduledAt).toLocaleString() + ' at ' + esc(p.defense.venue) + (p.defense.verdict ? ' · ' + esc(VERDICT[p.defense.verdict] || p.defense.verdict) : '') : ''}${p.finalScore != null ? ' · Mark ' + p.finalScore + '/100' : ''}</div>
+          </div>
+          <span class="pill pill-accent">${esc(STAGE[p.status] || p.status)}</span>
+        </div>`).join('') || '<p class="muted" style="padding:16px;">No projects yet. They appear here as students propose topics to their supervisors.</p>';
+      document.getElementById('ap-count').textContent = total + ' project' + (total === 1 ? '' : 's');
+    }
+    view.innerHTML = `
+      <div class="page-head"><h1>Project &amp; Defense</h1></div>
+      <p class="muted" style="margin-bottom:14px;">Every final-year project in your school: the topic, the chapters, the supervisor, the defense and the marks. Lecturers supervise and mark; you can see it all here. <span id="ap-count"></span></p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+        <input type="text" id="ap-search" placeholder="Search project topics…" style="max-width:280px;">
+        <select id="ap-status"><option value="">Every stage</option>${Object.entries(STAGE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+      </div>
+      <div class="card" id="ap-list"></div>`;
+    let t;
+    document.getElementById('ap-search').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); paint(); }, 250); });
+    document.getElementById('ap-status').addEventListener('change', (e) => { status = e.target.value; paint(); });
+    await paint();
+  }
+
+  // A lecturer's own student came here from the student app only for the class: back to their dashboard there, same sign-in.
+  function leaveLiveAsStudent() {
+    if (state.user && state.user.fromLecturer) {
+      try {
+        sessionStorage.setItem('lz_app_token', state.token);
+        sessionStorage.setItem('lz_app_user', JSON.stringify(state.user));
+        if (state.refreshToken) sessionStorage.setItem('lz_app_refresh', state.refreshToken);
+        localStorage.setItem('lz_app_token@' + window.name, state.token);
+        localStorage.setItem('lz_app_user@' + window.name, JSON.stringify(state.user));
+        if (state.refreshToken) localStorage.setItem('lz_app_refresh@' + window.name, state.refreshToken);
+      } catch { /* the student app will ask for a sign-in */ }
+      window.location.href = '/app';
+      return;
+    }
+    navigate('my-dashboard');
+  }
   async function renderLiveClass() {
     const { courseId, liveClassId, isHost, title } = state.view;
     view.innerHTML = `
@@ -2590,7 +2674,7 @@
       // materials, see the recording land, etc). A student instead goes to their own
       // dashboard, not the course page.
       if (isHost) navigate('lect-courses');
-      else navigate('my-dashboard');
+      else leaveLiveAsStudent();
     });
     if (isHost) {
       // The topic the lecturer types shows on every student's screen.
@@ -2825,7 +2909,7 @@
       // The host doesn't rely on this at all -- their own "End class" click already
       // navigates them straight to the course page before this broadcast even arrives.
       if (isHost) navigate('lect-courses');
-      else navigate('my-dashboard');
+      else leaveLiveAsStudent();
     });
     socket.on('live:watching-count', ({ count }) => {
       const pill = document.getElementById('live-watching-pill');
@@ -3686,10 +3770,10 @@
       if (u.role === 'STUDENT') {
         readOnlyRows.push(['Matric number', u.matricNumber || '—'], ['Department', state.department ? state.department.name : '—'], ['Level', levelLabel(u.yearOfStudy) || '—']);
       } else if (u.role === 'LECTURER' || u.role === 'STAFF') {
-        readOnlyRows.push(['Staff ID', u.staffId || '—'], ['Department', state.department ? state.department.name : '—']);
+        if (!(state.school && state.school.independent)) readOnlyRows.push(['Department', state.department ? state.department.name : '—']);
         if (u.position) readOnlyRows.push(['Position', u.position]);
       }
-      if (state.school) readOnlyRows.push(['School', [state.school.name, state.school.state].filter(Boolean).join(', ')]);
+      if (state.school && !state.school.independent) readOnlyRows.push(['School', [state.school.name, state.school.state].filter(Boolean).join(', ')]);
       if (u.accessCode) readOnlyRows.push(['Access code', u.accessCode]);
     }
     readOnlyRows.push(['Email', shownEmail(u.email)], ['Member since', new Date(u.createdAt).toLocaleDateString()]);
@@ -3717,6 +3801,10 @@
               </select>
             </div>
           ` : ''}
+          ${u.role === 'LECTURER' ? `
+            <div class="field"><label>School name</label><input type="text" id="profile-school" value="${esc(u.attendedSchoolName || (state.school && state.school.independent ? state.school.name : '') || '')}"></div>
+            <div class="field"><label>Department</label><input type="text" id="profile-department" value="${esc(u.attendedDepartment || '')}"></div>
+          ` : ''}
           <button class="btn btn-primary" type="submit">Save changes</button>
         </form>
       </div>
@@ -3736,6 +3824,10 @@
         body.attendedDepartment = document.getElementById('profile-department').value;
         body.courseOfStudy = document.getElementById('profile-course').value;
         body.yearOfStudy = document.getElementById('profile-level').value;
+      }
+      if (u.role === 'LECTURER') {
+        body.attendedSchoolName = document.getElementById('profile-school').value;
+        body.attendedDepartment = document.getElementById('profile-department').value;
       }
       try {
         const { user } = await api('/auth/me', { method: 'PATCH', body });
@@ -3799,7 +3891,7 @@
         <table class="data-table">
           <thead><tr><th>Course</th><th>Assessment</th><th>Score</th></tr></thead>
           <tbody>
-            ${data.results.map((r) => `<tr><td class="tabular">${r.courseCode ? `${esc(r.courseCode)} — ` : ''}${esc(r.courseTitle)}</td><td>${esc(r.assessmentTitle)}</td><td class="tabular">${r.score}/${r.total}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No results on record.</td></tr>'}
+            ${data.results.map((r) => `<tr><td class="tabular">${r.courseCode ? `${esc(r.courseCode)} — ` : ''}${esc(r.courseTitle)}</td><td>${esc(r.assessmentTitle)}</td><td class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No results on record.</td></tr>'}
           </tbody>
         </table>
         <button class="btn btn-primary no-print" style="margin-top:20px;" id="print-btn">Print / Save as PDF</button>
@@ -4108,7 +4200,7 @@
       return `
           <div class="list-row clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
             <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course ? r.assessment.course.code : r.assessment.individualCourse.title)} · ${esc(r.assessment.type)}</div></div>
-            <span class="tabular">${r.score}/${r.total}</span>
+            <span class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</span>
           </div>`;
     }
     function lessonRowHtml(l) {
@@ -5411,7 +5503,7 @@
         <div class="mk-year ${p ? '' : 'wait'}"><div class="mk-y">${year}</div><div class="mk-ys">CBT Mock Exam</div>
           ${p ? [p.a, p.b].filter(Boolean).map((a) => `
           <div class="mk-sec"><div class="mk-st"><b>${a.section === 'THEORY' ? 'Section B · Theory' : 'Section A · Objective'}</b><span>${esc(paperSummary(a))}</span></div>
-            <button type="button" class="btn btn-primary btn-sm" data-take="${a.id}">Take exam</button></div>`).join('') : '<div class="mk-pending">Being written…</div>'}
+            ${a.taken ? '<span class="pill pill-pass">Already taken</span>' : `<button type="button" class="btn btn-primary btn-sm" data-take="${a.id}">Take exam</button>`}</div>`).join('') : '<div class="mk-pending">Being written…</div>'}
         </div>`;
       view.querySelector('#mk-list').innerHTML = `<div class="mk-grid">${YEARS.map((y) => card(y, byYear.get(y))).join('')}${others.map((p) => card('Earlier', p)).join('')}</div>`;
       view.querySelector('#mk-status').innerHTML = ready >= YEARS.length ? '' : `<div class="card" style="padding:12px 14px; margin-bottom:12px;">⏳ The system is writing the ${YEARS[YEARS.length - 1]}–${YEARS[0]} papers for this course: <b>${ready} of ${YEARS.length}</b> ready. This page fills in by itself.</div>`;
@@ -5467,7 +5559,7 @@
                       <button class="btn btn-ghost btn-sm" data-send="${a.id}">${a.sentAt ? 'Resend' : 'Send'}</button>
                       <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
                     </div>`
-                  : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(a.type) ? 'Take exam' : 'Take test'}</button>`}
+                  : (a.taken ? '<span class="pill pill-pass">Already taken</span>' : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(a.type) ? 'Take exam' : 'Take test'}</button>`)}
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>
@@ -5634,8 +5726,9 @@
       examTimerHandle = null;
       const payload = Object.values(answers);
       try {
-        const { submission, pointsEarned, newBadges } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
-        toast(auto ? `Time's up — submitted automatically. Score ${submission.score}/${submission.total}` : `Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
+        const { submission, pointsEarned, newBadges, view } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
+        const done = (v) => (v && v.pendingTheory ? 'Your written answers will be marked by your lecturer; your score is recorded after that.' : 'Score ' + LZX.scoreText(v, submission.score, submission.total));
+        toast(auto ? `Time's up — submitted automatically. ${done(view)}` : `Submitted. ${done(view)} · +${pointsEarned} points`);
         (newBadges || []).forEach((b) => setTimeout(() => toast(`Badge earned: ${b.icon} ${b.name}`), 400));
         navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo, backCourseId: state.view.backCourseId });
       } catch (err) { toast(err.message); }
@@ -5697,17 +5790,9 @@
     return { department: myDept, courses };
   }
 
-  async function renderLecturerCourses() {
-    const { department, courses } = await ensureLectCourses();
-    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
-    view.innerHTML = `
-      <div class="page-head">
-        <h1>My Courses</h1>
-        <button class="btn btn-primary btn-sm" id="add-course-btn">+ Add course</button>
-      </div>
-      <p class="muted" style="margin-bottom:18px;">${department ? esc(department.name) : ''} department</p>
-      <div class="grid-cards">
-        ${courses.map((c, i) => `
+  // The lecturer's course cards: the same on My Courses and on the Home screen (open the course, how many are enrolled, Go live).
+  function lecturerCourseCardsHtml(courses, counts, emptyHtml) {
+    return courses.map((c, i) => `
           <div class="card course-card" data-open="${c.id}">
             <div class="code tabular">${esc(c.code)}</div>
             <div style="margin:4px 0 8px;">${esc(c.title)}</div>
@@ -5717,13 +5802,14 @@
             </div>
             <button class="btn btn-accent btn-sm" data-go-live="${c.id}" style="margin-top:12px;">🔴 Go live</button>
           </div>
-        `).join('') || '<p class="muted">No courses in your department yet — add one to get started.</p>'}
-      </div>
-    `;
-    view.querySelectorAll('[data-open]').forEach((el) => {
+        `).join('') || emptyHtml;
+  }
+  function wireLecturerCourseCards(root, courses) {
+    if (!root) return;
+    root.querySelectorAll('[data-open]').forEach((el) => {
       el.addEventListener('click', () => navigate('lect-lessons', { courseId: el.dataset.open }));
     });
-    view.querySelectorAll('[data-go-live]').forEach((btn) => btn.addEventListener('click', async (e) => {
+    root.querySelectorAll('[data-go-live]').forEach((btn) => btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const course = courses.find((c) => c.id === btn.dataset.goLive);
       const title = prompt('Title your live class:', `${course.code} live session`);
@@ -5733,6 +5819,22 @@
         navigate('live-class', { courseId: course.id, liveClassId: liveClass.id, isHost: true, title: liveClass.title });
       } catch (err) { toast(err.message); }
     }));
+  }
+
+  async function renderLecturerCourses() {
+    const { department, courses } = await ensureLectCourses();
+    const counts = await Promise.all(courses.map((c) => api(`/courses/${c.id}/enrollment-count`).catch(() => ({ count: 0 }))));
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>My Courses</h1>
+        <button class="btn btn-primary btn-sm" id="add-course-btn">+ Add course</button>
+      </div>
+      <p class="muted" style="margin-bottom:18px;">${department && !(state.school && state.school.independent) ? esc(department.name) + ' department' : ''}</p>
+      <div class="grid-cards" id="course-cards">
+        ${lecturerCourseCardsHtml(courses, counts, '<p class="muted">No courses yet — add one to get started.</p>')}
+      </div>
+    `;
+    wireLecturerCourseCards(document.getElementById('course-cards'), courses);
     view.querySelector('#add-course-btn').addEventListener('click', () => openAddCourseDialog(department));
   }
 
@@ -5775,7 +5877,7 @@
         });
         toast('Course created');
         close();
-        renderLecturerCourses();
+        if (state.view.screen === 'lect-courses') renderLecturerCourses(); else render();
       } catch (err) { toast(err.message); }
     });
   }
@@ -5958,14 +6060,14 @@
     const u = state.user;
     view.innerHTML = `
       <div class="hero-wrap" id="dash-profile-card">
-        <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock(u.staffId ? 'Staff ID ' + u.staffId : '')}${selfAvatarHtml('avatar-lect-dash')}</div></div>
+        <div class="card hero pn-hero hero-profile"><div class="hero-top">${greetingBlock('')}${selfAvatarHtml('avatar-lect-dash')}</div></div>
         <div class="hero-extra"><div class="hero-stats">
           <div class="hs" data-jump-nav="lect-courses"><div class="hs-n" style="color:#00C853">${courses.length}</div><div class="hs-l">Courses</div></div>
           <div class="hs" data-jump-nav="lect-students"><div class="hs-n" style="color:#FFD600">${totalStudents}</div><div class="hs-l">Students</div></div>
         </div></div>
       </div>
-      <div class="grid-cards tiles center">${homeTile('lect-lessons-entry', '📹', 'Upload Lectures', 'Video + notes')}${homeTile('lect-tests', '📝', 'Create Test', 'Notifies students')}${homeTile('lect-students', '👥', 'My Students', 'Your learners')}${homeTile('lect-classwork-quiz', '📋', 'Classwork / Quiz', 'Set work')}${homeTile('lect-mark-work', '✅', 'Mark Work', 'Score and feedback')}${homeTile('lect-attendance-hub', '🗓️', 'Attendance', 'Daily records')}<button type="button" class="card course-card" id="dash-announce-btn"><div class="code">📣</div><div class="meta">Announce</div><div class="sub">To a class</div></button>${homeTile('class-recordings', '🎞️', 'My Recorded Classes', 'Replays')}</div>
-      ${homeSection('📚 My Courses', 'lect-courses', courses.length ? sjStrip(courses.map((c, i) => ({ title: c.title, sub: `${counts[i].count} student${counts[i].count === 1 ? '' : 's'}`, screen: 'lect-lessons', params: { courseId: c.id } }))) : pnRows([{ icon: '📚', title: 'No courses assigned yet' }]))}
+      <div class="grid-cards tiles center">${homeTile('lect-lessons-entry', '📹', 'Upload Lectures', 'Video + notes')}${homeTile('lect-tests', '📝', 'Create Test', 'Notifies students')}${homeTile('lect-students', '👥', 'My Students', 'Your learners')}${homeTile('lect-classwork-quiz', '📋', 'Classwork / Quiz', 'Set work')}${homeTile('lect-mark-work', '✅', 'Mark Work', 'Score and feedback')}${homeTile('lect-attendance-hub', '🗓️', 'Attendance', 'Daily records')}<button type="button" class="card course-card" id="dash-announce-btn"><div class="code">📣</div><div class="meta">Announce</div><div class="sub">To a class</div></button>${homeTile('class-recordings', '🎞️', 'My Recorded Classes', 'Replays')}${homeTile('lect-semester-exam', '🎓', 'Semester Exams', 'Set and mark')}${homeTile('lect-projects', '📘', 'Project & Defense', 'Final-year work')}${homeTile('research', '🤖', 'Learnza Research Assistant', 'Your study helper')}${homeTile('lect-results-hub', '📊', 'Student Results', 'Scores and grades')}</div>
+      ${homeSection('📚 My Courses', 'lect-courses', `<div style="margin-bottom:12px;"><button class="btn btn-primary btn-sm" id="dash-add-course">+ Add course</button></div><div class="grid-cards" id="dash-course-cards">${lecturerCourseCardsHtml(courses, counts, '<p class="muted">No courses yet — add one to get started.</p>')}</div>`)}
       ${homeSection('🔔 Latest', null, notifRows(notifRes.notifications))}
     `;
     wireSelfAvatarUpload('avatar-lect-dash');
@@ -5974,6 +6076,8 @@
       navigate(el.dataset.jumpNav);
     }));
     document.getElementById('dash-announce-btn').addEventListener('click', () => openAnnounceDialog(courses));
+    wireLecturerCourseCards(document.getElementById('dash-course-cards'), courses);
+    document.getElementById('dash-add-course').addEventListener('click', () => openAddCourseDialog(department));
   }
 
   // "Upload Lecture" has no cross-course hub of its own (a lecture always belongs to
@@ -6074,11 +6178,12 @@
           </div>
         `).join('') || '<p class="muted">You don\'t have any classes yet. Add a course under <strong>My Courses</strong> and it will appear here, or ask your school admin to assign you to one.</p>'}
       </div>
+      ${state.school && state.school.independent ? '<div class="card" style="padding:14px 18px; margin-top:22px; font-size:.9rem;">ℹ️ A student you register <b>inside a course</b> is added to that course straight away, and sees its live classes. A student registered here, <b>without a course</b>, waits in <b>All my students</b> until you add them to a course (open the course, then <b>Add student</b>).</div>' : ''}
       <h3 style="margin:26px 0 10px; font-size:1rem;">All my students (${allStudents.length})</h3>
       <div class="card">
         ${allStudents.map((s) => `
           <div class="list-row clickable" data-open-any="${s.id}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${esc(s.matricNumber || '—')}${s.yearOfStudy ? ' · ' + s.yearOfStudy * 100 + 'L' : ''} · ${s.classes.length ? esc(s.classes.join(', ')) : '<b>not in a class yet</b>'}</div></div>
+            <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${studentSubline(s)}</div></div>
             ${statusPillHtml(s.status)}
           </div>`).join('') || '<p class="muted" style="padding:16px;">No students yet. Add one above: they appear here straight away, whichever class they are in.</p>'}
       </div>
@@ -6088,6 +6193,13 @@
       el.addEventListener('click', () => navigate('lect-class-roster', { courseId: el.dataset.open, courseTitle: el.dataset.title, courseCode: el.dataset.code }));
     });
     document.getElementById('new-student-btn').addEventListener('click', () => openNewStudentDialog(null));
+  }
+
+  function studentSubline(s) {
+    const ind = !!(state.school && state.school.independent);
+    const where = s.classes.length ? esc(s.classes.join(', ')) : '<b>' + (ind ? 'waiting to be added to a course' : 'not in a class yet') + '</b>';
+    if (ind) return [s.yearOfStudy ? s.yearOfStudy * 100 + 'L' : '', where].filter(Boolean).join(' · ');
+    return `${esc(s.matricNumber || '—')}${s.yearOfStudy ? ' · ' + s.yearOfStudy * 100 + 'L' : ''} · ${where}`;
   }
 
   async function renderLecturerClassRoster() {
@@ -6104,7 +6216,7 @@
       <div class="card">
         ${students.map((s) => `
           <div class="list-row clickable" data-open-student="${s.id}" style="cursor:pointer;">
-            <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${esc(s.matricNumber || '—')}</div></div>
+            <div><div style="font-weight:600;">${esc(s.fullName)}</div><div class="meta tabular">${state.school && state.school.independent ? 'In this course' : esc(s.matricNumber || '—')}</div></div>
             ${statusPillHtml(s.status)}
           </div>
         `).join('') || '<p class="muted" style="padding:16px;">No students in this class yet — add one above.</p>'}
@@ -6123,8 +6235,8 @@
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,94vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
       <h3 style="margin-bottom:6px;">Add students to ${esc(courseTitle || 'this class')}</h3>
-      <p class="muted" style="font-size:13px; margin-bottom:10px;">Search your school's students by name or matric number and add them to the class.</p>
-      <button class="btn btn-accent btn-sm" id="as-new" style="margin-bottom:12px;">+ New student (not on Learnza yet)</button>
+      <p class="muted" style="font-size:13px; margin-bottom:10px;">${state.school && state.school.independent ? 'Pick from the students waiting in All my students, or register a new student straight into this course.' : "Search your school's students by name or matric number and add them to the class."}</p>
+      <button class="btn btn-accent btn-sm" id="as-new" style="margin-bottom:12px;">${state.school && state.school.independent ? '+ Register a new student into this course' : '+ New student (not on Learnza yet)'}</button>
       <div class="field"><input type="text" id="as-search" placeholder="Search by name or matric number…" autocomplete="off"></div>
       <div id="as-results" style="margin:8px 0 14px;"></div>
       <button class="btn btn-ghost" id="as-close">Done</button>
@@ -6169,9 +6281,11 @@
     search();
   }
 
-  // An independent lecturer adds a student with just: full name, department, course of study, level and (optionally) a phone.
+  // An independent lecturer adds a student with just: full name, course of study, level and (optionally) a phone.
   // The student gets an access code and signs in to the Learnza app under "Student From Lecturer" with their name and that code.
-  function openIndependentStudentDialog(opts) {
+  // Opened from a course, the student goes straight into that course; opened from My Students, the student waits in
+  // All my students until the lecturer adds them to a course.
+  function openIndependentStudentDialog(opts, courseId) {
     const backdrop = document.createElement('div');
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     const box = document.createElement('div');
@@ -6180,10 +6294,9 @@
     const levels = [1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n * 100}L</option>`).join('');
     box.innerHTML = `
       <h3 style="margin-bottom:6px;">Add a student</h3>
-      <p class="muted" style="font-size:13px; margin-bottom:14px;">An access code is made for them now. They sign in with their name and that code.</p>
+      <p class="muted" style="font-size:13px; margin-bottom:14px;">An access code is made for them now. They sign in with their name and that code. ${courseId ? 'They are added to <b>this course</b> straight away.' : 'Registered here, they wait in <b>All my students</b> until you add them to a course.'}</p>
       <form id="ns-form">
         <div class="field"><label>Full name</label><input id="ns-name" required></div>
-        <div class="field"><label>Department</label><input id="ns-dept" required placeholder="e.g. Computer Science"></div>
         <div class="field"><label>Course of study</label><input id="ns-course" required placeholder="e.g. Software Engineering"></div>
         <div class="field"><label>Level</label><select id="ns-level" required><option value="">Select…</option>${levels}</select></div>
         <div class="field"><label>Phone number (optional)</label><input id="ns-phone" type="tel"></div>
@@ -6200,9 +6313,9 @@
       btn.disabled = true;
       try {
         const r = await api('/lect/students', { method: 'POST', body: {
-          fullName: box.querySelector('#ns-name').value.trim(), attendedDepartment: box.querySelector('#ns-dept').value.trim(),
+          fullName: box.querySelector('#ns-name').value.trim(),
           courseOfStudy: box.querySelector('#ns-course').value.trim(), yearOfStudy: box.querySelector('#ns-level').value,
-          phone: box.querySelector('#ns-phone').value.trim(), departmentId: opts.departments[0].id, courseIds: [],
+          phone: box.querySelector('#ns-phone').value.trim(), departmentId: opts.departments[0].id, courseIds: courseId ? [courseId] : [],
         } });
         box.innerHTML = `
           <h3 style="margin-bottom:8px;">${esc(r.user.fullName)} has been added</h3>
@@ -6221,7 +6334,7 @@
     let opts;
     try { opts = await api('/lect/add-student-options'); } catch (err) { toast(err.message); return; }
     if (!opts.departments.length) { toast('You are not in a department yet. Ask your school admin to put you in one first.'); return; }
-    if (state.school && state.school.independent) return openIndependentStudentDialog(opts);
+    if (state.school && state.school.independent) return openIndependentStudentDialog(opts, courseId);
     const backdrop = document.createElement('div');
     backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
     const box = document.createElement('div');
@@ -6277,8 +6390,8 @@
   function lecturerDetailsCard(u, department, courseCount, studentCount) {
     const row = (k, v) => `<div><div class="meta">${esc(k)}</div><div class="tabular">${v}</div></div>`;
     return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
-      ${row('Staff ID', esc(u.staffId || '—'))}
-      ${row('Department', esc((department && department.name) || '—'))}
+      ${state.school && state.school.independent ? row('School', esc(u.attendedSchoolName || '—')) : ''}
+      ${row('Department', esc(state.school && state.school.independent ? (u.attendedDepartment || '—') : ((department && department.name) || '—')))}
       ${row('Status', statusPillHtml(u.status || 'ACTIVE'))}
       ${row('Position', esc(u.position || 'Lecturer'))}
       ${row('Email', esc(shownEmail(u.email) || '—'))}
@@ -6288,6 +6401,29 @@
       ${row('Member since', esc(u.createdAt ? String(new Date(u.createdAt).getFullYear()) : '—'))}
       ${u.accessCode ? row('Access code', `<span style="letter-spacing:.12em; font-weight:700;">${esc(u.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(u.accessCode)}">Copy</button><div class="meta" style="font-size:.74rem; margin-top:2px;">You sign in with your full name and this code. It does not change.</div>`) : ''}
     </div></div>`;
+  }
+
+  // An independent lecturer's student: every item on the detail card is the lecturer's to edit (there is no school admin).
+  function independentStudentForm(d) {
+    const f = (label, input) => `<div class="field" style="margin:0;"><label class="meta">${label}</label>${input}</div>`;
+    const year = new Date().getFullYear();
+    return `<form id="lect-student-edit-ind" class="card" style="padding:24px; max-width:680px; margin-bottom:22px;">
+      <div class="id-grid">
+        ${f('Full name', `<input id="ie-name" required value="${esc(d.fullName || '')}">`)}
+        ${f('Course of study', `<input id="ie-course" value="${esc(d.courseOfStudy || '')}">`)}
+        ${f('Level', `<select id="ie-level"><option value="">Select…</option>${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${d.yearOfStudy === n ? 'selected' : ''}>${n * 100}L</option>`).join('')}</select>`)}
+        ${f('Status', `<select id="ie-status">${[['ACTIVE', 'Active'], ['SUSPENDED', 'Suspended'], ['EXPELLED', 'Expelled']].map(([v, l]) => `<option value="${v}" ${d.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+        ${f('Email', `<input id="ie-email" type="email" value="${esc(shownEmail(d.email) || '')}">`)}
+        ${f('Phone', `<input id="ie-phone" type="tel" value="${esc(d.phone || '')}">`)}
+        ${f('Year admitted', `<input id="ie-year" type="number" min="1980" max="${year + 1}" value="${d.yearOfAdmission || ''}">`)}
+        ${f('Programme length', `<select id="ie-length">${[1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}" ${(d.programmeYears || 4) === n ? 'selected' : ''}>${n} year${n === 1 ? '' : 's'}</option>`).join('')}</select>`)}
+        ${f('CGPA (you enter it)', `<input id="ie-cgpa" type="number" step="0.01" min="0" max="5" value="${d.cgpaEntered ? d.cgpa : ''}" placeholder="${d.cgpa != null ? d.cgpa + ' (from grades)' : 'e.g. 4.25'}">`)}
+        ${f('Position held', `<input id="ie-position" value="${esc(d.classPosition || '')}" placeholder="e.g. Course representative">`)}
+        <div><div class="meta">Expected graduation</div><div class="tabular">${d.expectedGraduationYear || '—'}</div></div>
+        ${d.accessCode ? `<div><div class="meta">Access code</div><div class="tabular"><span style="letter-spacing:.12em; font-weight:700;">${esc(d.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(d.accessCode)}">Copy</button><div class="muted" style="font-size:.74rem; font-weight:400; margin-top:2px;">The student signs in under Student From Lecturer with their full name and this code. It does not change.</div></div></div>` : ''}
+      </div>
+      <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" type="submit">Save changes</button></div>
+    </form>`;
   }
 
   // Everything on record about a student, shown the same way to the student and to the lecturer:
@@ -6323,8 +6459,8 @@
     view.innerHTML = `
       <div class="page-head"><h1>${esc(data.fullName)}</h1><button class="btn btn-ghost btn-sm" id="back-btn">${courseId ? "← Back to class" : "← Back to My Students"}</button></div>
       <div id="lzx-id-host" style="margin-bottom:6px;"></div>
-      ${studentDetailsCard(data)}
-      <form id="lect-student-edit" class="card" style="padding:18px 22px; max-width:680px; margin-bottom:22px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+      ${data.independent ? independentStudentForm(data) : studentDetailsCard(data)}
+      <form id="lect-student-edit"${data.independent ? ' hidden' : ''} class="card" style="padding:18px 22px; max-width:680px; margin-bottom:22px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
         <div class="field" style="margin:0;"><label>Year admitted</label><input type="number" id="le-year" min="1980" max="${new Date().getFullYear() + 1}" value="${data.yearOfAdmission || ''}" placeholder="e.g. ${new Date().getFullYear()}" style="width:130px;"></div>
         <div class="field" style="margin:0;"><label>Programme length</label><select id="le-length" style="width:190px;">${[1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}" ${(data.programmeYears || 4) === n ? 'selected' : ''}>${n} year${n === 1 ? '' : 's'}</option>`).join('')}</select></div>
         <button class="btn btn-primary btn-sm" type="submit">Save</button>
@@ -6344,7 +6480,7 @@
       ` : ''}
     `;
     LZX.digitalId(document.getElementById('lzx-id-host'), {
-      user: { id: data.id, role: 'STUDENT', fullName: data.fullName, matricNumber: data.matricNumber, yearOfStudy: data.yearOfStudy, avatarUrl: data.avatarUrl, createdAt: data.createdAt, schoolId: true },
+      user: { id: data.id, role: 'STUDENT', fullName: data.fullName, matricNumber: data.matricNumber, yearOfStudy: data.yearOfStudy, avatarUrl: data.avatarUrl, createdAt: data.createdAt, schoolId: true, ...(data.independent ? { courseOfStudy: data.courseOfStudy, fromLecturer: true, lecturerName: state.user.fullName } : {}) },
       school: state.school, department: { name: data.department }, api, esc, toast,
       photoPath: `/lect/students/${data.id}/photo`,
     });
@@ -6353,6 +6489,19 @@
       e.preventDefault();
       try {
         await api(`/lect/students/${data.id}`, { method: 'PATCH', body: { fullName: data.fullName, matricNumber: data.matricNumber, yearOfAdmission: document.getElementById('le-year').value, programmeYears: document.getElementById('le-length').value } });
+        toast('Saved');
+        render();
+      } catch (err) { toast(err.message); }
+    });
+    const indForm = document.getElementById('lect-student-edit-ind');
+    if (indForm) indForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const v = (id) => document.getElementById(id).value;
+      try {
+        await api(`/lect/students/${data.id}`, { method: 'PATCH', body: {
+          fullName: v('ie-name').trim(), courseOfStudy: v('ie-course'), yearOfStudy: v('ie-level'), status: v('ie-status'), email: v('ie-email'), phone: v('ie-phone'),
+          yearOfAdmission: v('ie-year'), programmeYears: v('ie-length'), cgpa: v('ie-cgpa'), classPosition: v('ie-position'),
+        } });
         toast('Saved');
         render();
       } catch (err) { toast(err.message); }
@@ -7000,7 +7149,7 @@
         <table class="data-table">
           <thead><tr><th>Student</th><th>Matric No.</th><th>Score</th></tr></thead>
           <tbody>
-            ${submissions.map((s) => `<tr><td>${esc(s.student.fullName)}</td><td class="tabular">${esc(s.student.matricNumber || '—')}</td><td class="tabular">${s.score}/${s.total}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No submissions yet.</td></tr>'}
+            ${submissions.map((s) => `<tr><td>${esc(s.student.fullName)}</td><td class="tabular">${esc(s.student.matricNumber || '—')}</td><td class="tabular">${LZX.scoreText(s.view, s.score, s.total)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No submissions yet.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -8431,6 +8580,11 @@
       buildSidebar();
       if (location.hash.includes('billing-callback') && state.user.role === 'STUDENT') {
         checkPendingPayment().then((where) => navigate(where === 'coins' ? 'wallet' : 'billing'));
+      } else if (/^#join=/.test(location.hash) && state.user.role === 'STUDENT') {
+        // a lecturer's student arriving from the student app to join a live class
+        const [courseId, liveClassId, title] = decodeURIComponent(location.hash.slice(6)).split('|');
+        history.replaceState(null, '', location.pathname);
+        navigate('live-class', { courseId, liveClassId, isHost: false, title });
       } else {
         navigate(defaultScreenFor(state.user.role));
       }

@@ -54,7 +54,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
       where: { studentId: req.user.id, submittedAt: { not: null } },
       include: {
         assessment: {
-          select: { title: true, type: true, course: { select: { code: true } }, individualCourse: { select: { title: true } } },
+          select: { title: true, type: true, course: { select: { code: true } }, individualCourse: { select: { title: true } }, questions: { select: { questionType: true } } },
         },
       },
       orderBy: { submittedAt: 'desc' },
@@ -111,7 +111,7 @@ router.get('/students/me/dashboard', requireAuth, requireRole('STUDENT'), async 
   res.json({
     assignments: assignments.map((a) => ({ ...a, mySubmission: subByAssignment.get(a.id) || null })),
     attendance: { recent: attendance, presentCount, totalCount: attendance.length },
-    recentResults,
+    recentResults: recentResults.map((r) => ({ ...r, view: require('./assessments').scoreView(r, (r.assessment && r.assessment.questions) || []) })),
     lessons,
     liveRecordings,
     individualAssessments,

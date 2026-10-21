@@ -295,6 +295,16 @@ function attachLiveNamespace(io) {
     const liveClass = await prisma.liveClass.findUnique({ where: { id: liveClassId } });
     const durationMin = liveClass ? Math.max(1, Math.round((endedAt - liveClass.startedAt) / 60000)) : 0;
     await prisma.liveClass.updateMany({ where: { id: liveClassId, status: 'ACTIVE' }, data: { status: 'ENDED', endedAt } });
+    if (liveClass) {
+      try {
+        const host = await prisma.user.findUnique({ where: { id: liveClass.hostId }, select: { fullName: true } });
+        const course = await prisma.course.findUnique({ where: { id: liveClass.courseId }, select: { code: true } });
+        await prisma.notification.updateMany({
+          where: { link: { contains: 'liveClassId=' + liveClassId } },
+          data: { title: (host ? host.fullName : 'Your lecturer') + ' was live', body: (course ? course.code + ' — ' : '') + liveClass.title + ' · class ended', link: null },
+        });
+      } catch (e) { /* the class is ended either way */ }
+    }
     nsp.to(`live:${liveClassId}`).emit('live:ended', { durationMin });
     const room = nsp.adapter.rooms.get(`live:${liveClassId}`);
     if (room) for (const socketId of room) nsp.sockets.get(socketId)?.leave(`live:${liveClassId}`);

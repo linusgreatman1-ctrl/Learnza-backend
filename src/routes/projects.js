@@ -223,5 +223,43 @@ router.post('/projects/:id/represent', requireRole('LECTURER'), async (req, res)
   await reply(res, d.p.id);
 });
 
+// ── everything that is going on, for the people who oversee it: a school admin sees their own school's projects (and the
+// defenses), the platform owner sees every school and every independent lecturer
+async function overview(where, { page = 1, size = 40 } = {}) {
+  const [total, rows] = await Promise.all([
+    prisma.project.count({ where }),
+    prisma.project.findMany({ where, orderBy: { updatedAt: 'desc' }, skip: (page - 1) * size, take: size }),
+  ]);
+  const ids = [...new Set(rows.flatMap((r) => [r.studentId, r.supervisorId]))];
+  const people = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true, matricNumber: true, courseOfStudy: true, department: { select: { name: true } } } });
+  const schools = await prisma.school.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.schoolId))] } }, select: { id: true, name: true, independent: true } });
+  const defenses = await prisma.projectDefense.findMany({ where: { projectId: { in: rows.map((r) => r.id) } } });
+  const chapters = await prisma.projectChapter.findMany({ where: { projectId: { in: rows.map((r) => r.id) } }, select: { projectId: true, number: true, status: true } });
+  const byId = (list, id) => list.find((x) => x.id === id) || {};
+  return {
+    total, page, pageSize: size,
+    projects: rows.map((p) => {
+      const s = byId(people, p.studentId), sup = byId(people, p.supervisorId), sch = byId(schools, p.schoolId);
+      const d = defenses.find((x) => x.projectId === p.id);
+      const ch = chapters.filter((c) => c.projectId === p.id);
+      return {
+        id: p.id, title: p.title, status: p.status, session: p.session, supervisorScore: p.supervisorScore, finalScore: p.finalScore, updatedAt: p.updatedAt,
+        studentName: s.fullName || '—', matricNumber: s.matricNumber || null, programme: s.courseOfStudy || (s.department && s.department.name) || '',
+        supervisorName: sup.fullName || '—', schoolName: sch.name || '—', independent: !!sch.independent,
+        chaptersApproved: ch.filter((c) => c.status === 'APPROVED' && c.number <= 5).length, chaptersWaiting: ch.filter((c) => c.status === 'SUBMITTED').length,
+        defense: d ? { kind: d.kind, status: d.status, scheduledAt: d.scheduledAt, venue: d.venue, panel: d.panel, panelTotal: d.panelTotal, verdict: d.verdict } : null,
+      };
+    }),
+  };
+}
+router.get('/admin/projects', requireRole('ADMIN'), async (req, res) => {
+  const where = { schoolId: req.user.schoolId };
+  if (req.query.status) where.status = String(req.query.status);
+  const search = String(req.query.search || '').trim();
+  if (search) where.title = { contains: search, mode: 'insensitive' };
+  res.json(await overview(where, { page: Math.max(1, parseInt(req.query.page, 10) || 1) }));
+});
+
 module.exports = router;
 module.exports.CHAPTERS = CHAPTERS;
+module.exports.overview = overview;

@@ -252,6 +252,7 @@ async function computeAcademicRecord(student) {
     email: student.email,
     phone: student.phone,
     matricNumber: student.matricNumber,
+    courseOfStudy: student.courseOfStudy || null,
     accessCode: student.accessCode,
     status: student.status,
     department: student.department ? student.department.name : null,

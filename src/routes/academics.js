@@ -54,12 +54,6 @@ router.get('/courses/:id', requireAuth, loadCourse(), async (req, res) => {
 
 // Student: my enrolled courses
 router.get('/students/me/courses', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  // a student of an independent lecturer sees all the courses that lecturer has added (it is a class of one lecturer)
-  const own = req.user.schoolId ? await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } }) : null;
-  if (own && own.independent) {
-    const courses = await prisma.course.findMany({ where: { department: { schoolId: req.user.schoolId } }, include: { department: true }, orderBy: { code: 'asc' } });
-    return res.json({ courses });
-  }
   const enrollments = await prisma.enrollment.findMany({
     where: { studentId: req.user.id },
     include: { course: { include: { department: true } } },
@@ -206,15 +200,14 @@ router.post('/lect/students', requireAuth, requireRole('LECTURER'), async (req, 
   if (!scope.departments.length) return res.status(400).json({ error: 'You are not in a department yet. Ask your school admin to put you in one, or to assign you a class.' });
   const departmentId = req.body.departmentId ? String(req.body.departmentId) : (scope.departments.find((d) => d.mine) || scope.departments[0]).id;
   if (!scope.departments.some((d) => d.id === departmentId)) return res.status(403).json({ error: 'You can only add students to your own department or the departments of your classes.' });
-  // an independent lecturer adds a student with only: full name, department, course of study, level and (optionally) a phone
+  // an independent lecturer adds a student with only: full name, course of study, level and (optionally) a phone
   const ownSchool = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } });
   if (ownSchool && ownSchool.independent) {
     const clean = (v, n) => String(v || '').trim().slice(0, n);
     if (!clean(req.body.fullName, 120)) return res.status(400).json({ error: 'Enter the student\'s full name.' });
-    if (!clean(req.body.attendedDepartment, 100)) return res.status(400).json({ error: 'Enter the student\'s department.' });
     if (!clean(req.body.courseOfStudy, 100)) return res.status(400).json({ error: 'Enter the student\'s course of study.' });
     if (!req.body.yearOfStudy) return res.status(400).json({ error: 'Choose the student\'s level.' });
-    req.body.attendedDepartment = clean(req.body.attendedDepartment, 100);
+    delete req.body.attendedDepartment;
     req.body.courseOfStudy = clean(req.body.courseOfStudy, 100);
     if (!req.body.matricNumber) req.body.matricNumber = 'STU-' + Math.random().toString(36).slice(2, 8).toUpperCase();
   }
@@ -233,9 +226,31 @@ router.patch('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (
   });
   if (!student) return res.status(404).json({ error: 'Student not found among your students.' });
   const data = {};
-  for (const key of ['fullName', 'phone', 'matricNumber']) if (req.body[key] !== undefined) data[key] = String(req.body[key] || '').trim() || null;
+  const ownSchool = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } });
+  const independent = !!(ownSchool && ownSchool.independent);
+  for (const key of ['fullName', 'phone', 'matricNumber', 'courseOfStudy', 'classPosition']) if (req.body[key] !== undefined) data[key] = String(req.body[key] || '').trim().slice(0, 120) || null;
   if (data.fullName === null) return res.status(400).json({ error: 'A student needs a name.' });
-  if (data.matricNumber === null) return res.status(400).json({ error: 'A student needs a matric number.' });
+  if (data.matricNumber === null && !independent) return res.status(400).json({ error: 'A student needs a matric number.' });
+  if (data.matricNumber === null) delete data.matricNumber;
+  if (req.body.email !== undefined) {
+    const e = String(req.body.email || '').trim().toLowerCase();
+    if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ error: 'That email address does not look right.' });
+    if (e && await prisma.user.findFirst({ where: { email: e, NOT: { id: student.id } } })) return res.status(409).json({ error: 'That email address is already used by another account.' });
+    data.email = e || null;
+  }
+  if (req.body.status !== undefined) {
+    if (!['ACTIVE', 'SUSPENDED', 'EXPELLED'].includes(req.body.status)) return res.status(400).json({ error: 'Choose Active, Suspended or Expelled.' });
+    data.status = req.body.status;
+  }
+  // an independent lecturer has no school admin: the CGPA is theirs to enter
+  if (req.body.cgpa !== undefined && independent) {
+    if (req.body.cgpa === '' || req.body.cgpa === null) data.cgpa = null;
+    else {
+      const g = Number(req.body.cgpa);
+      if (!(g >= 0 && g <= 5)) return res.status(400).json({ error: 'CGPA must be a number from 0 to 5.' });
+      data.cgpa = Math.round(g * 100) / 100;
+    }
+  }
   if (data.matricNumber) {
     const dup = await prisma.user.findFirst({ where: { schoolId: req.user.schoolId, role: 'STUDENT', NOT: { id: student.id }, matricNumber: { equals: data.matricNumber, mode: 'insensitive' } } });
     if (dup) return res.status(409).json({ error: 'A student with that matric number already exists in your school.' });
@@ -251,7 +266,7 @@ router.patch('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (
     await prisma.enrollment.deleteMany({ where: { studentId: student.id, courseId: { in: mine, notIn: wanted } } });
     if (wanted.length) await prisma.enrollment.createMany({ data: wanted.map((courseId) => ({ studentId: student.id, courseId })), skipDuplicates: true });
   }
-  res.json({ user: { id: updated.id, fullName: updated.fullName, matricNumber: updated.matricNumber, phone: updated.phone, yearOfStudy: updated.yearOfStudy, yearOfAdmission: updated.yearOfAdmission, programmeYears: updated.programmeYears } });
+  res.json({ user: { id: updated.id, fullName: updated.fullName, courseOfStudy: updated.courseOfStudy, matricNumber: updated.matricNumber, phone: updated.phone, yearOfStudy: updated.yearOfStudy, yearOfAdmission: updated.yearOfAdmission, programmeYears: updated.programmeYears } });
 });
 
 // Comprehensive detail for one of the lecturer's own students -- reuses the same
@@ -271,7 +286,8 @@ router.get('/lect/students/:id', requireAuth, requireRole('LECTURER'), async (re
     include: { department: true },
   });
   if (!student) return res.status(404).json({ error: 'Student not found among your students.' });
-  res.json(await computeAcademicRecord(student));
+  const ownSchool = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { independent: true } });
+  res.json({ ...(await computeAcademicRecord(student)), independent: !!(ownSchool && ownSchool.independent) });
 });
 
 // A lecturer can add or change the photo on the Digital ID of a student in one of their classes.

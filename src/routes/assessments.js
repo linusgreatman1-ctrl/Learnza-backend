@@ -24,10 +24,30 @@ router.get('/courses/:id/assessments', requireAuth, loadCourse(), async (req, re
     // students read papers in the order they were set (Mock Exam 1, then 2; Section A, then B)
     orderBy: { createdAt: req.user.role === 'STUDENT' ? 'asc' : 'desc' },
   });
-  res.json({ assessments: assessments.map(withTiming) });
+  let takenIds = new Set();
+  if (req.user.role === 'STUDENT' && assessments.length) {
+    const done = await prisma.submission.findMany({ where: { studentId: req.user.id, assessmentId: { in: assessments.map((a) => a.id) }, submittedAt: { not: null } }, select: { assessmentId: true } });
+    takenIds = new Set(done.map((d) => d.assessmentId));
+  }
+  res.json({ assessments: assessments.map((a) => ({ ...withTiming(a), taken: takenIds.has(a.id) })) });
 });
 
 const MAX_QUESTIONS = { PAST_QUESTION: 20, DEFAULT: 10 };
+
+// What is recorded for a submission. Objective questions mark themselves; theory questions wait for the lecturer, so a paper with
+// theory is NOT recorded as a score until the lecturer has marked it. Both parts are shown together, each labelled; a paper with
+// only objective or only theory questions shows just that part.
+function scoreView(sub, questions) {
+  const objectiveCount = questions.filter((q) => q.questionType !== 'THEORY').length;
+  const hasTheory = questions.some((q) => q.questionType === 'THEORY');
+  const objective = objectiveCount ? { score: sub.score == null ? 0 : sub.score, total: objectiveCount } : null;
+  const theory = hasTheory && sub.markedAt ? { score: sub.theoryScore == null ? 0 : sub.theoryScore, max: sub.theoryMaxScore == null ? 0 : sub.theoryMaxScore } : null;
+  const pendingTheory = hasTheory && !sub.markedAt;
+  const kind = objectiveCount && hasTheory ? 'BOTH' : hasTheory ? 'THEORY' : 'OBJECTIVE';
+  const recorded = pendingTheory ? null : { score: (objective ? objective.score : 0) + (theory ? theory.score : 0), max: (objective ? objective.total : 0) + (theory ? theory.max : 0) };
+  return { kind, objective, theory, pendingTheory, recorded };
+}
+module.exports.scoreView = scoreView;
 
 function questionCreateData(questions) {
   return questions.map((q, i) => ({
@@ -226,7 +246,7 @@ router.post('/assessments/:id/submit', requireAuth, requireRole('STUDENT'), load
     `${req.user.fullName} submitted "${assessment.title}" (${score}/${objectiveQuestions.length}).`,
     hasTheory ? 'lect-mark-work' : `lect-assessment-results?assessmentId=${assessment.id}`
   );
-  res.json({ submission, pointsEarned, newBadges });
+  res.json({ submission, view: scoreView(submission, assessment.questions), pointsEarned, newBadges });
 });
 
 // Review-mistakes: correct answers + the student's own choice, for after a graded
@@ -364,8 +384,10 @@ router.get('/students/me/results', requireAuth, requireRole('STUDENT'), async (r
     },
     orderBy: { submittedAt: 'desc' },
   });
+  const qsOf = await prisma.question.findMany({ where: { assessmentId: { in: submissions.map((s) => s.assessmentId) } }, select: { assessmentId: true, questionType: true } });
   res.json({
     results: submissions.map((s) => ({
+      view: scoreView(s, qsOf.filter((q) => q.assessmentId === s.assessmentId)),
       id: s.id,
       assessmentId: s.assessmentId,
       assessmentTitle: s.assessment.title,
@@ -387,7 +409,8 @@ router.get('/assessments/:id/results', requireAuth, requireRole('LECTURER', 'ADM
     include: { student: { select: { fullName: true, matricNumber: true } } },
     orderBy: { score: 'desc' },
   });
-  res.json({ submissions });
+  const qs = await prisma.question.findMany({ where: { assessmentId: req.assessment.id }, select: { questionType: true } });
+  res.json({ submissions: submissions.map((s) => ({ ...s, view: scoreView(s, qs) })) });
 });
 
-module.exports = router;
+module.exports = Object.assign(router, { scoreView });

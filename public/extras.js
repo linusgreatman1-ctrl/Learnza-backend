@@ -461,7 +461,7 @@
           ${mine.length ? `<optgroup label="Your courses">${mine.map((c) => `<option value="${c.kind}:${esc(c.id)}">${esc(c.title)} (${c.count} questions)</option>`).join('')}</optgroup>` : ''}
           ${subjects.length ? `<optgroup label="General subjects">${subjects.map((x) => `<option value="subject:${esc(x.subject)}">${esc(x.subject)} (${x.count})</option>`).join('')}</optgroup>` : ''}
         </select></div>
-        <div class="field"><label>How many questions?</label><select id="pq-count"><option value="10">10 (8 minutes)</option><option value="20" selected>20 (15 minutes)</option><option value="30">30 (23 minutes)</option></select><div class="meta" style="margin-top:4px;">A full practice set is 20 objective questions in 15 minutes. For theory questions, open a Past Questions or CBT Mock paper and take Section B.</div></div>
+        <div class="field"><label>How many questions?</label><select id="pq-count"><option value="10">10 (5 minutes)</option><option value="20" selected>20 (10 minutes)</option><option value="30">30 (15 minutes)</option></select><div class="meta" style="margin-top:4px;">Every objective question gets 30 seconds (2 questions = 1 minute). For theory questions, open a Past Questions or CBT Mock paper and take Section B.</div></div>
         <button class="btn btn-primary" id="pq-start">Start practising</button>` : '<p class="muted">No practice questions yet.</p>'}
         ${preparing.length ? `<p class="muted" style="margin-top:14px;font-size:.85rem;">⏳ Still being prepared for: ${preparing.map((c) => esc(c.title)).join(', ')}. This page updates when they are ready.</p>` : ''}
       </div>`;
@@ -480,14 +480,14 @@
 
     function quiz(subject, questions) {
       const chosen = {};
-      // Same timing as every objective paper: 20 questions in 15 minutes.
-      const minutes = Math.max(1, Math.ceil(questions.length * 0.75));
-      const deadline = Date.now() + minutes * 60000;
+      // 30 seconds for each question: 1 question 30 seconds, 2 questions 1 minute, 20 questions 10 minutes.
+      const minutes = secsToText(questions.length * 30);
+      const deadline = Date.now() + questions.length * 30000;
       let ticker = null;
       const stop = () => { if (ticker) { clearInterval(ticker); ticker = null; } };
       view.innerHTML = `
         <div class="page-head"><h1>${esc(subject)}</h1><div style="display:flex;align-items:center;gap:10px;"><span class="pill pill-accent tabular" id="pq-clock">--:--</span><button class="btn btn-ghost btn-sm" id="pq-quit">Quit</button></div></div>
-        <p class="meta" style="margin-bottom:10px;">${questions.length} objective question${questions.length === 1 ? '' : 's'} · ${minutes} minute${minutes === 1 ? '' : 's'} · submitted automatically when time is up</p>
+        <p class="meta" style="margin-bottom:10px;">${questions.length} objective question${questions.length === 1 ? '' : 's'} · ${minutes} · submitted automatically when time is up</p>
         ${questions.map((q, i) => `
           <div class="card" style="margin-bottom:14px;">
             <div class="meta">Question ${i + 1} of ${questions.length}${q.year ? ' · ' + q.year : ''}${q.source ? ' · ' + esc(q.source) : ''}</div>
@@ -560,6 +560,12 @@
   // ---------------------------------------------------------------- Daily Challenge
   // A short timed set from the question bank, one course at a time, every day. Answers are not shown until the set is
   // submitted; every right answer earns points and keeps the streak going.
+  // "30 seconds", "1 minute", "5 minutes", "1.5 minutes"
+  function secsToText(secs) {
+    if (secs < 60) return secs + ' seconds';
+    const m = Math.round(secs / 30) / 2;
+    return m + ' minute' + (m === 1 ? '' : 's');
+  }
   async function dailyChallenge(view, { api, esc, toast, navigate }) {
     const QN = 10;
     let d;
@@ -567,8 +573,8 @@
       view.innerHTML = '<div class="page-head"><h1>Daily Challenge</h1></div><div class="card" style="padding:18px;">' + esc(err.message) + '</div>';
       return;
     }
-    const minutesFor = (n) => Math.max(1, Math.ceil(n * 0.75));
-    const row = (c, i) => `<div class="pn-row" data-dc="${i}" style="cursor:pointer;"><div class="pn-ico">${c.done ? '✅' : '⚡'}</div><div class="pn-main"><div class="pn-t">${esc(c.title)}</div><div class="pn-s">${Math.min(QN, c.count)} questions · ${minutesFor(Math.min(QN, c.count))} min</div></div><div class="pn-d" style="font-weight:800;color:var(--ui-accent,#c1861f);">${c.done ? 'Done' : 'Start ›'}</div></div>`;
+    const minutesFor = (n) => secsToText(n * 30);
+    const row = (c, i) => `<div class="pn-row" data-dc="${i}" style="cursor:pointer;"><div class="pn-ico">${c.done ? '✅' : '⚡'}</div><div class="pn-main"><div class="pn-t">${esc(c.title)}</div><div class="pn-s">${Math.min(QN, c.count)} questions · ${minutesFor(Math.min(QN, c.count))}</div></div><div class="pn-d" style="font-weight:800;color:var(--ui-accent,#c1861f);">${c.done ? 'Done' : 'Start ›'}</div></div>`;
 
     function home() {
       const todo = d.sources.filter((c) => !c.done);
@@ -599,7 +605,7 @@
     function run(c, questions) {
       let i = 0;
       const chosen = [];
-      const deadline = Date.now() + minutesFor(questions.length) * 60000;
+      const deadline = Date.now() + questions.length * 30000;
       let ticker = null;
       const stop = () => { if (ticker) { clearInterval(ticker); ticker = null; } };
       const last = questions.length - 1;
@@ -697,11 +703,19 @@
   function levelOf(u) { return u.yearOfStudy ? u.yearOfStudy * 100 + 'L' : ''; }
   function idFacts(u, ctx) {
     const f = [['ID No.', idNumber(u)]];
+    // a lecturer's own student (or the lecturer): no school and no department, the lecturer takes their place; no staff ID anywhere
+    const indep = !!(ctx.school && ctx.school.independent) || !!u.fromLecturer || !!u.lecturerName;
+    if (indep && u.role === 'STUDENT') {
+      if (u.lecturerName) f.push(['Lecturer', u.lecturerName]);
+      if (u.courseOfStudy) f.push(['Course of study', u.courseOfStudy]);
+      if (levelOf(u)) f.push(['Level', levelOf(u)]);
+      if (u.createdAt) f.push(['Member since', new Date(u.createdAt).getFullYear()]);
+      return f;
+    }
     if (u.role === 'STUDENT' && u.matricNumber) f.push(['Matric No.', u.matricNumber]);
-    if (u.role !== 'STUDENT' && u.staffId) f.push(['Staff ID', u.staffId]);
-    const inst = (ctx.school && ctx.school.name) || u.attendedSchoolName || (u.schoolId ? '' : 'Independent learner');
+    const inst = indep ? (u.attendedSchoolName || (ctx.school && ctx.school.name)) : ((ctx.school && ctx.school.name) || u.attendedSchoolName || (u.schoolId ? '' : 'Independent learner'));
     if (inst) f.push(['Institution', inst]);
-    const dept = (ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment;
+    const dept = indep ? u.attendedDepartment : ((ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment);
     if (dept) f.push(['Department', dept]);
     if (u.role === 'STUDENT' && levelOf(u)) f.push(['Level', levelOf(u)]);
     if (u.role === 'STUDENT' && u.courseOfStudy) f.push(['Programme', u.courseOfStudy]);
@@ -711,7 +725,9 @@
     return f;
   }
   function idSubLine(u, ctx) {
-    const dept = (ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment;
+    const indep = !!(ctx.school && ctx.school.independent) || !!u.fromLecturer || !!u.lecturerName;
+    const dept = indep ? u.attendedDepartment : ((ctx.department && ctx.department.name) || u.departmentName || u.attendedDepartment);
+    if (u.role === 'STUDENT' && indep) return [u.courseOfStudy, levelOf(u)].filter(Boolean).join(' · ') || 'Learnza student';
     if (u.role === 'STUDENT') return [dept, levelOf(u)].filter(Boolean).join(' · ') || 'Learnza student';
     if (u.role === 'LECTURER') return dept ? 'Lecturer · ' + dept : 'Teaching staff';
     if (u.role === 'STAFF') return u.position || 'Non-academic staff';
@@ -1664,5 +1680,15 @@
     try { await list(); } catch (err) { view.innerHTML = '<div class="error-box">' + esc(err.message) + '</div>'; }
   }
 
-  window.LZX = { projectStudent, projectLecturer, support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
+  // How a recorded score reads: objective and theory shown together, each labelled; only the part that exists when a paper has just one;
+  // "Awaiting marking" while the lecturer has not marked the theory (nothing is recorded until then).
+  function scoreText(view, score, total) {
+    if (!view) return score == null ? '—' : score + '/' + total;
+    const o = view.objective ? 'Objective ' + view.objective.score + '/' + view.objective.total : '';
+    const t = view.theory ? 'Theory ' + view.theory.score + '/' + view.theory.max : '';
+    if (view.pendingTheory) return 'Awaiting marking' + (o ? ' · ' + o : '');
+    if (view.objective && view.theory) return o + ' · ' + t + ' · Total ' + view.recorded.score + '/' + view.recorded.max;
+    return o || t || '—';
+  }
+  window.LZX = { scoreText, projectStudent, projectLecturer, support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
 })();

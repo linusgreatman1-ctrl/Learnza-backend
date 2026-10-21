@@ -7,9 +7,32 @@
   // is keyed by the tab's own name (window.name belongs to the tab and survives a refresh). A tab that
   // is opened fresh has no name yet, so it asks for a sign-in instead of quietly taking over whichever
   // account last signed in anywhere.
+  // A live tab announces itself (a "claim" that is renewed every few seconds and withdrawn when the page closes). A tab
+  // that opens under a name another live tab is still holding (a duplicated tab, or a browser that restores every tab with
+  // the same name) takes a new one, so two tabs can never end up sharing - and swapping - one sign-in.
+  const newTabName = () => 'lzt_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   const TAB_ID = (function () {
     try {
-      if (!/^lzt_/.test(window.name)) window.name = 'lzt_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      if (!/^lzt_/.test(window.name)) window.name = newTabName();
+      else {
+        const held = Number(localStorage.getItem('lz_claim@' + window.name) || 0);
+        if (Date.now() - held < 12000) {
+          const old = window.name;
+          window.name = newTabName();
+          // this tab keeps its own sign-in (sessionStorage came with it); carry the saved copy across under the new name
+          for (const part of ['lz_app_token', 'lz_app_user', 'lz_app_refresh', 'lz_schools_token', 'lz_schools_user', 'lz_schools_refresh']) {
+            const v = sessionStorage.getItem(part);
+            if (v) localStorage.setItem(part + '@' + window.name, v);
+          }
+          void old;
+        }
+      }
+      const claim = () => { try { localStorage.setItem('lz_claim@' + window.name, String(Date.now())); } catch { /* storage unavailable */ } };
+      const release = () => { try { localStorage.removeItem('lz_claim@' + window.name); } catch { /* storage unavailable */ } };
+      claim();
+      setInterval(claim, 4000);
+      window.addEventListener('pagehide', release);
+      window.addEventListener('pageshow', claim);
       return window.name;
     } catch { return 'lzt_x'; }
   })();
@@ -323,6 +346,19 @@
     });
   });
 
+  // A lecturer's student joins that lecturer's live class in the class screens (they carry the live video): the sign-in is handed
+  // over and handed back when the class ends.
+  function joinLiveInClassApp(view, params) {
+    view.innerHTML = '<p class="muted">Opening the live class…</p>';
+    try {
+      sessionStorage.setItem('lz_schools_token', state.token);
+      sessionStorage.setItem('lz_schools_user', JSON.stringify(state.user));
+      if (state.refreshToken) sessionStorage.setItem('lz_schools_refresh', state.refreshToken);
+    } catch { /* the sign-in page will ask again */ }
+    const p = params || {};
+    window.location.href = '/schools#join=' + encodeURIComponent([p.courseId || '', p.liveClassId || '', p.title || 'Live class'].join('|'));
+  }
+
   // An independent lecturer works in the lecturer screens (the Schools app): hand the signed-in session over and open it.
   function goToLecturerApp(token, user, refreshToken) {
     try {
@@ -568,6 +604,16 @@
   // An independent learner's details, laid out like a school student's.
   function learnerDetailsCard(u) {
     const row = (k, v) => `<div><div class="meta">${esc(k)}</div><div class="tabular">${v}</div></div>`;
+    if (u.fromLecturer) {
+      return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
+      ${row('Lecturer', esc(u.lecturerName || '—'))}
+      ${row('Course of study', esc(u.courseOfStudy || '—'))}
+      ${row('Level', esc(levelLabel(u.yearOfStudy) || '—'))}
+      ${row('Email', esc(/@internal\.learnza\.local$/.test(u.email || '') ? '—' : (u.email || '—')))}
+      ${row('Phone', esc(u.phone || '—'))}
+      ${row('Member since', esc(u.createdAt ? String(new Date(u.createdAt).getFullYear()) : '—'))}
+    </div></div>`;
+    }
     return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
       ${row('Institution', esc(u.attendedSchoolName || '—'))}
       ${row('Type', esc(INSTITUTION_TYPE_LABELS[u.institutionType] || '—'))}
@@ -713,7 +759,7 @@
   async function studentHomeExtras({ isIndividual, assignments, notifications, daily, pendingCount, attendancePct, takenCount, results, courses: given }) {
     let courses = given || [];
     if (!given) { try { courses = (await api(isIndividual && !state.user.fromLecturer ? '/individual-courses' : '/students/me/courses')).courses || []; } catch { courses = []; } }
-    const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 8 min each' : 'Practise questions from your courses every day';
+    const titles = daily && daily.sources && daily.sources.length ? daily.sources.slice(0, 4).map((c) => esc(c.title)).join(' · ') + ' · 10Q · 5 min each' : 'Practise questions from your courses every day';
     const banner = homeBanner('⚡', 'Daily Challenge', titles, 'daily-challenge');
     const days = daily && daily.days ? daily.days : [];
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
@@ -834,6 +880,17 @@
     const markSeen = () => { api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {}); };
     banner.querySelector('[data-dismiss]').addEventListener('click', () => { markSeen(); banner.remove(); });
     setTimeout(() => { markSeen(); banner.remove(); }, 45000);
+    // a class that ends before the student joins clears off the screen
+    const lcParams = parseNotificationLink(n.link)[1] || {};
+    if (lcParams.courseId) {
+      const watch = setInterval(async () => {
+        if (!document.body.contains(banner)) { clearInterval(watch); return; }
+        try {
+          const { liveClass } = await api('/courses/' + lcParams.courseId + '/live');
+          if (!liveClass || liveClass.id !== lcParams.liveClassId) { clearInterval(watch); banner.remove(); refreshNotifications(); }
+        } catch { /* try again on the next tick */ }
+      }, 8000);
+    }
   }
 
   function toggleNotifPanel(force) {
@@ -922,6 +979,7 @@
         case 'individual-courses': return state.user.fromLecturer ? renderLecturerCourses() : renderIndividualCourses();
         case 'lecturer-course': return renderLecturerCourse();
         case 'my-project': return LZX.projectStudent(view, { api, esc, toast });
+        case 'live-class': return joinLiveInClassApp(view, state.view);
         case 'my-ai-lectures': return renderMyAiLectures();
         case 'my-ai-live': return renderMyAiLive();
         case 'my-lab-live': return renderMyAiLive();
@@ -2384,7 +2442,7 @@
                 <td class="tabular">${esc(r.courseCode || r.courseTitle)}</td>
                 <td>${esc(r.assessmentTitle)}</td>
                 <td>${esc(r.assessmentType)}</td>
-                <td class="tabular">${r.score}/${r.total}</td>
+                <td class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</td>
                 <td class="tabular">${new Date(r.submittedAt).toLocaleDateString()}</td>
               </tr>
             `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
@@ -2560,7 +2618,7 @@
       if (u.role === 'STUDENT') {
         readOnlyRows.push(['Matric number', u.matricNumber || '—'], ['Department', state.department ? state.department.name : '—'], ['Level', levelLabel(u.yearOfStudy) || '—']);
       } else if (u.role === 'LECTURER' || u.role === 'STAFF') {
-        readOnlyRows.push(['Staff ID', u.staffId || '—'], ['Department', state.department ? state.department.name : '—']);
+        readOnlyRows.push(['Department', state.department ? state.department.name : '—']);
         if (u.position) readOnlyRows.push(['Position', u.position]);
       }
       if (state.school) readOnlyRows.push(['School', [state.school.name, state.school.location].filter(Boolean).join(', ')]);
@@ -2576,13 +2634,13 @@
           <div class="field"><label>Phone number</label><input type="tel" id="profile-phone" value="${esc(u.phone || '')}"></div>
           <div class="field"><label>Email</label><input type="email" id="profile-email" value="${esc(/@internal\.learnza\.local$/.test(u.email || '') ? '' : (u.email || ''))}" placeholder="you@example.com"></div>
           ${u.isIndividual || u.role === 'STUDENT' ? `
-            <div class="field"><label>Institution type</label>
+            ${u.fromLecturer ? '' : `<div class="field"><label>Institution type</label>
               <select id="profile-institution-type">
                 ${Object.entries(INSTITUTION_TYPE_LABELS).map(([v, l]) => `<option value="${v}" ${u.institutionType === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
               </select>
             </div>
             <div class="field"><label>School name</label><input type="text" id="profile-school" value="${esc(u.attendedSchoolName || '')}"></div>
-            <div class="field"><label>Department</label><input type="text" id="profile-department" value="${esc(u.attendedDepartment || '')}"></div>
+            <div class="field"><label>Department</label><input type="text" id="profile-department" value="${esc(u.attendedDepartment || '')}"></div>`}
             <div class="field"><label>Course of study</label><input type="text" id="profile-course" value="${esc(u.courseOfStudy || '')}"></div>
             <div class="field"><label>Level</label>
               <select id="profile-level">
@@ -2605,9 +2663,11 @@
       e.preventDefault();
       const body = { fullName: document.getElementById('profile-name').value, phone: document.getElementById('profile-phone').value, email: document.getElementById('profile-email').value };
       if (u.isIndividual || u.role === 'STUDENT') {
-        body.institutionType = document.getElementById('profile-institution-type').value;
-        body.attendedSchoolName = document.getElementById('profile-school').value;
-        body.attendedDepartment = document.getElementById('profile-department').value;
+        if (!u.fromLecturer) {
+          body.institutionType = document.getElementById('profile-institution-type').value;
+          body.attendedSchoolName = document.getElementById('profile-school').value;
+          body.attendedDepartment = document.getElementById('profile-department').value;
+        }
         body.courseOfStudy = document.getElementById('profile-course').value;
         body.yearOfStudy = document.getElementById('profile-level').value;
       }
@@ -2848,7 +2908,7 @@
       return `
           <div class="list-row clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
             <div><div style="font-weight:600;">${esc(r.assessment.title)}</div><div class="meta">${esc(r.assessment.course ? r.assessment.course.code : r.assessment.individualCourse.title)} · ${esc(r.assessment.type)}</div></div>
-            <span class="tabular">${r.score}/${r.total}</span>
+            <span class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</span>
           </div>`;
     }
     function lessonRowHtml(l) {
@@ -4095,7 +4155,7 @@
         <div class="mk-year ${p ? '' : 'wait'}"><div class="mk-y">${year}</div><div class="mk-ys">CBT Mock Exam</div>
           ${p ? [p.a, p.b].filter(Boolean).map((a) => `
           <div class="mk-sec"><div class="mk-st"><b>${a.section === 'THEORY' ? 'Section B · Theory' : 'Section A · Objective'}</b><span>${esc(paperSummary(a))}</span></div>
-            <button type="button" class="btn btn-primary btn-sm" data-take="${a.id}">Take exam</button></div>`).join('') : '<div class="mk-pending">Being written…</div>'}
+            ${a.taken ? '<span class="pill pill-pass">Already taken</span>' : `<button type="button" class="btn btn-primary btn-sm" data-take="${a.id}">Take exam</button>`}</div>`).join('') : '<div class="mk-pending">Being written…</div>'}
         </div>`;
       view.querySelector('#mk-list').innerHTML = `<div class="mk-grid">${YEARS.map((y) => card(y, byYear.get(y))).join('')}${others.map((p) => card('Earlier', p)).join('')}</div>`;
       view.querySelector('#mk-status').innerHTML = ready >= YEARS.length ? '' : `<div class="card" style="padding:12px 14px; margin-bottom:12px;">⏳ The system is writing the ${YEARS[YEARS.length - 1]}–${YEARS[0]} papers for this course: <b>${ready} of ${YEARS.length}</b> ready. This page fills in by itself.</div>`;
@@ -4151,7 +4211,7 @@
                       <button class="btn btn-ghost btn-sm" data-send="${a.id}">${a.sentAt ? 'Resend' : 'Send'}</button>
                       <button class="btn btn-ghost btn-sm" data-results="${a.id}">View results</button>
                     </div>`
-                  : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(a.type) ? 'Take exam' : 'Take test'}</button>`}
+                  : (a.taken ? '<span class="pill pill-pass">Already taken</span>' : `<button class="btn btn-primary btn-sm" data-take="${a.id}">${['SEMESTER_EXAM', 'Mock', 'PAST_QUESTION'].includes(a.type) ? 'Take exam' : 'Take test'}</button>`)}
               </div>
             `).join('') || '<p class="muted" style="padding:16px;">None yet.</p>'}
           </div>
@@ -4314,8 +4374,9 @@
       examTimerHandle = null;
       const payload = Object.values(answers);
       try {
-        const { submission, pointsEarned, newBadges } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
-        toast(auto ? `Time's up — submitted automatically. Score ${submission.score}/${submission.total}` : `Submitted — score ${submission.score}/${submission.total} · +${pointsEarned} points`);
+        const { submission, pointsEarned, newBadges, view } = await api(`/assessments/${assessment.id}/submit`, { method: 'POST', body: { answers: payload } });
+        const done = (v) => (v && v.pendingTheory ? 'Your written answers will be marked by your lecturer; your score is recorded after that.' : 'Score ' + LZX.scoreText(v, submission.score, submission.total));
+        toast(auto ? `Time's up — submitted automatically. ${done(view)}` : `Submitted. ${done(view)} · +${pointsEarned} points`);
         (newBadges || []).forEach((b) => setTimeout(() => toast(`Badge earned: ${b.icon} ${b.name}`), 400));
         navigate('take-assessment', { assessmentId: assessment.id, backTo: state.view.backTo, backCourseId: state.view.backCourseId });
       } catch (err) { toast(err.message); }

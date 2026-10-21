@@ -39,7 +39,11 @@ async function withLecturerFlag(u, school) {
   const out = publicUser(u);
   if (u.role === 'STUDENT' && u.schoolId) {
     const s = school || await prisma.school.findUnique({ where: { id: u.schoolId }, select: { independent: true } });
-    if (s && s.independent) out.fromLecturer = true;
+    if (s && s.independent) {
+      out.fromLecturer = true;
+      const l = await prisma.user.findFirst({ where: { schoolId: u.schoolId, role: 'LECTURER' }, orderBy: { createdAt: 'asc' }, select: { fullName: true } });
+      if (l) out.lecturerName = l.fullName;
+    }
   }
   return out;
 }
@@ -352,7 +356,7 @@ router.patch('/me', requireAuth, async (req, res) => {
     if (yearOfStudy !== undefined) data.yearOfStudy = yearOfStudy ? parseInt(yearOfStudy, 10) : null;
   }
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
-  res.json({ user: publicUser(user) });
+  res.json({ user: await withLecturerFlag(user) });
 });
 
 router.post('/me/avatar', requireAuth, avatarUpload.single('avatar'), async (req, res) => {
