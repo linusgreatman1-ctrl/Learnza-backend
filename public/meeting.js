@@ -158,7 +158,7 @@
     const mic = $('mt-mic'), cam = $('mt-cam');
     if (mic) mic.addEventListener('click', () => { if (!local) return toast('No microphone found.'); const on = local.getAudioTracks().some((t) => t.enabled); local.getAudioTracks().forEach((t) => { t.enabled = !on; }); mic.textContent = on ? '🎙️ Unmute' : '🎙️ Mute'; });
     if (cam) cam.addEventListener('click', () => { if (!local || !local.getVideoTracks().length) return toast('No camera found.'); const on = local.getVideoTracks().some((t) => t.enabled); local.getVideoTracks().forEach((t) => { t.enabled = !on; }); cam.textContent = on ? '📷 Camera on' : '📷 Camera off'; });
-    $('mt-leave').addEventListener('click', () => { leaveRoom(); ctx.navigate(hosting ? 'meeting' : 'meeting-join'); });
+    $('mt-leave').addEventListener('click', () => { try { sessionStorage.setItem('mt_declined_' + params.meetingId, '1'); } catch { /* ignore */ } leaveRoom(); ctx.navigate(hosting ? 'meeting' : 'meeting-join'); });
     const end = $('mt-end');
     if (end) end.addEventListener('click', async () => { if (!confirm('End this meeting for everyone?')) return; try { await api('/meetings/' + params.meetingId + '/end', { method: 'POST' }); } catch (err) { toast(err.message); } leaveRoom(); ctx.navigate('meeting'); });
   }

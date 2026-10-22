@@ -622,7 +622,7 @@
           chosen[i] = Number(o.dataset.k);
           view.querySelectorAll('.dc-opt').forEach((x) => x.classList.toggle('sel', x === o));
         }));
-        view.querySelector('#dc-exit').addEventListener('click', () => confirmExit('challenge', () => { stop(); home(); }));
+        view.querySelector('#dc-exit').addEventListener('click', () => confirmExit('challenge', () => { stop(); navigate('my-dashboard'); }));
         view.querySelector('#dc-prev').addEventListener('click', () => { i -= 1; paint(); });
         view.querySelector('#dc-next').addEventListener('click', () => { if (i < last) { i += 1; paint(); } else submit(false); });
         tick();

@@ -957,7 +957,7 @@
     }
     speechCtrl = null;
     if (voiceRecognizer) { try { voiceRecognizer.abort(); } catch { /* already stopped */ } voiceRecognizer = null; }
-    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen && state.view.screen !== 'live-class') { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
+    if (!navGoingBack && state.view && state.view.screen && state.view.screen !== screen && state.view.screen !== 'live-class' && state.view.screen !== 'meeting-room') { navStack.push(state.view); if (navStack.length > 40) navStack.shift(); }
     state.view = Object.assign({ screen }, params);
     markActiveNav(screen);
     render();
