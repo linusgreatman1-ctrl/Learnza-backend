@@ -259,5 +259,81 @@
     view.querySelectorAll('[data-join]').forEach((b) => b.addEventListener('click', () => ctx.navigate('meeting-room', { meetingId: b.dataset.join })));
   }
 
-  window.LZMeet = { meetingHome, schedulesPage, joinPage, openRoom, leaveRoom };
+  // ── an incoming meeting: a pop-up that rings, for everyone invited ──────────────────────────────────────────────
+  // The ring is made with the browser's own sound (no file). Browsers only allow sound after the person has touched the page
+  // once, so the first tap or key press unlocks it; until then the pop-up, the title and a phone vibration still tell them.
+  let visBound = false;
+  let audioCtx = null, ringTimer = null, ringStop = null, watchTimer = null, titleTimer = null;
+  function unlockAudio() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch { /* no sound available */ }
+  }
+  ['click', 'keydown', 'touchstart'].forEach((e) => document.addEventListener(e, unlockAudio, { passive: true }));
+  function ringOnce() {
+    try {
+      if (audioCtx && audioCtx.state === 'running') {
+        const t = audioCtx.currentTime;
+        [[0, 660], [0.34, 880]].forEach(([d, f]) => {
+          const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+          o.type = 'sine'; o.frequency.value = f;
+          g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.3, t + d + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.3);
+          o.connect(g); g.connect(audioCtx.destination); o.start(t + d); o.stop(t + d + 0.32);
+        });
+      }
+      if (navigator.vibrate) navigator.vibrate([250, 120, 250]);
+    } catch { /* ringing is a courtesy */ }
+  }
+  function stopRing() {
+    if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+    if (ringStop) { clearTimeout(ringStop); ringStop = null; }
+    if (titleTimer) { clearInterval(titleTimer); titleTimer = null; document.title = document.title.replace(/^📞 /, ''); }
+  }
+  function startRing() {
+    stopRing(); unlockAudio(); ringOnce();
+    ringTimer = setInterval(ringOnce, 2200);
+    ringStop = setTimeout(() => { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }, 60000);     // rings for a minute; the pop-up stays
+    titleTimer = setInterval(() => { document.title = /^📞 /.test(document.title) ? document.title.replace(/^📞 /, '') : '📞 ' + document.title; }, 900);
+  }
+  function closeCall() { stopRing(); const o = document.getElementById('mt-call'); if (o) o.remove(); }
+  function showCall(m, ctx) {
+    closeCall();
+    const o = document.createElement('div');
+    o.id = 'mt-call'; o.dataset.id = m.id;
+    o.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(5,10,20,.72);display:flex;align-items:center;justify-content:center;padding:20px;';
+    o.innerHTML = `<style>@keyframes mtpulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}100%{box-shadow:0 0 0 26px rgba(34,197,94,0)}}</style>
+      <div style="background:#0f1b2d;color:#fff;border-radius:22px;padding:28px 24px;max-width:340px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+        <div style="width:78px;height:78px;border-radius:50%;margin:0 auto 14px;background:#16a34a;display:flex;align-items:center;justify-content:center;font-size:34px;animation:mtpulse 1.3s infinite;">${m.video ? '🎥' : '📞'}</div>
+        <div style="font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;opacity:.7;">Incoming ${m.video ? 'video' : 'audio'} meeting</div>
+        <div style="font-size:1.25rem;font-weight:800;margin:6px 0 2px;">${ctx.esc(m.hostName || 'Meeting')}</div>
+        <div style="opacity:.85;margin-bottom:20px;">${ctx.esc(m.title)}</div>
+        <div style="display:flex;gap:12px;"><button id="mt-call-no" style="flex:1;padding:14px;border-radius:14px;border:none;background:#b91c1c;color:#fff;font-weight:800;font-size:1rem;cursor:pointer;">Decline</button><button id="mt-call-yes" style="flex:1;padding:14px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:1rem;cursor:pointer;">Join</button></div>
+      </div>`;
+    document.body.appendChild(o);
+    startRing();
+    o.querySelector('#mt-call-yes').onclick = () => { closeCall(); ctx.navigate('meeting-room', { meetingId: m.id }); };
+    o.querySelector('#mt-call-no').onclick = () => { try { sessionStorage.setItem('mt_declined_' + m.id, '1'); } catch { /* ignore */ } closeCall(); };
+  }
+  async function pollCalls(ctx) {
+    try {
+      const { meetings } = await ctx.api('/meetings/active');
+      const incoming = meetings.filter((m) => !m.hosting);
+      const open = document.getElementById('mt-call');
+      if (!incoming.length) { if (open) closeCall(); return; }
+      const m = incoming.find((x) => { try { return !sessionStorage.getItem('mt_declined_' + x.id); } catch { return true; } });
+      if (!m) { if (open) closeCall(); return; }
+      if (ctx.currentScreen && ctx.currentScreen() === 'meeting-room') { if (open) closeCall(); return; }
+      if (!open || open.dataset.id !== m.id) showCall(m, ctx);
+    } catch { /* tries again on the next check */ }
+  }
+  function watch(ctx) {
+    if (watchTimer) clearInterval(watchTimer);
+    pollCalls(ctx);
+    watchTimer = setInterval(() => { if (!document.hidden || document.getElementById('mt-call')) pollCalls(ctx); }, 6000);
+    if (!visBound) { visBound = true; document.addEventListener('visibilitychange', () => { if (!document.hidden) pollCalls(ctx); }); }
+  }
+  function unwatch() { if (watchTimer) { clearInterval(watchTimer); watchTimer = null; } closeCall(); }
+
+  window.LZMeet = { watch, unwatch, meetingHome, schedulesPage, joinPage, openRoom, leaveRoom };
 })();

@@ -675,6 +675,8 @@
     nav.querySelectorAll('.nav-item').forEach((btn) => {
       btn.addEventListener('click', () => { navigate(btn.dataset.screen); closeMobileNav(); });
     });
+    // lecturers and staff are rung when the school admin starts a staff meeting
+    if (window.LZMeet && ['LECTURER', 'STAFF'].includes(state.user.role)) LZMeet.watch(meetCtx()); else if (window.LZMeet) LZMeet.unwatch();
   }
 
   // ---- A back arrow on every screen, the bottom bar on phones and tablets, and the home-page building blocks ----
@@ -925,7 +927,7 @@
     new MutationObserver(() => { clearTimeout(t); t = setTimeout(move, 30); }).observe(view, { childList: true });
   })();
 
-  function meetCtx() { return { api, esc, toast, token: () => state.token, user: state.user, navigate }; }
+  function meetCtx() { return { api, esc, toast, token: () => state.token, user: state.user, navigate, currentScreen: () => (state.view && state.view.screen) || '' }; }
   function navigate(screen, params = {}) {
     if (screen !== 'meeting-room' && window.LZMeet) LZMeet.leaveRoom();
     aiRecStop();
