@@ -38,9 +38,10 @@ function publicSchool(school, role) {
 async function withLecturerFlag(u, school) {
   const out = publicUser(u);
   if (u.role === 'STUDENT' && u.schoolId) {
-    const s = school || await prisma.school.findUnique({ where: { id: u.schoolId }, select: { independent: true } });
+    const s = (school && school.name !== undefined) ? school : await prisma.school.findUnique({ where: { id: u.schoolId }, select: { independent: true, name: true } });
     if (s && s.independent) {
       out.fromLecturer = true;
+      out.lecturerSchool = s.name;
       const l = await prisma.user.findFirst({ where: { schoolId: u.schoolId, role: 'LECTURER' }, orderBy: { createdAt: 'asc' }, select: { fullName: true } });
       if (l) out.lecturerName = l.fullName;
     }
@@ -356,6 +357,17 @@ router.patch('/me', requireAuth, async (req, res) => {
     if (yearOfStudy !== undefined) data.yearOfStudy = yearOfStudy ? parseInt(yearOfStudy, 10) : null;
   }
   const user = await prisma.user.update({ where: { id: req.user.id }, data });
+  // An independent lecturer's school and department ARE the class they teach in: editing them here changes the school name
+  // and department everywhere they show (home banner, students' Digital ID and detail card, the backend admin).
+  if (user.role === 'LECTURER' && user.schoolId && (attendedSchoolName !== undefined || attendedDepartment !== undefined)) {
+    const own = await prisma.school.findUnique({ where: { id: user.schoolId }, select: { independent: true } });
+    if (own && own.independent) {
+      const name = String(attendedSchoolName || '').trim();
+      if (attendedSchoolName !== undefined && name) await prisma.school.update({ where: { id: user.schoolId }, data: { name: name.slice(0, 120) } });
+      const dept = String(attendedDepartment || '').trim();
+      if (attendedDepartment !== undefined && dept && user.departmentId) await prisma.department.update({ where: { id: user.departmentId }, data: { name: dept.slice(0, 100) } });
+    }
+  }
   res.json({ user: await withLecturerFlag(user) });
 });
 

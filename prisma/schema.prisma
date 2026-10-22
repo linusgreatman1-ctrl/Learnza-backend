@@ -1323,6 +1323,80 @@ model Project {
   @@index([schoolId])
 }
 
+// A meeting the school admin hosts with the staff (video or audio), and the meetings and activities they schedule.
+model Meeting {
+  id        String    @id @default(cuid())
+  schoolId  String?
+  hostId    String
+  title     String
+  audience  String // STAFF
+  video     Boolean   @default(true)
+  status    String    @default("ACTIVE") // ACTIVE | ENDED
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([schoolId, status])
+  @@index([hostId, status])
+}
+
+// Admission (school admin): each student's admission details, and the older records the admin types in.
+model StudentAdmission {
+  id            String    @id @default(cuid())
+  schoolId      String
+  studentId     String    @unique
+  admissionNo   String?
+  admissionDate DateTime?
+  admissionYear Int?
+  entryLevel    String?
+  modeOfEntry   String? // UTME | DIRECT_ENTRY | TRANSFER | OTHER
+  jambRegNo     String?
+  previousSchool String?
+  gender        String?
+  dateOfBirth   DateTime?
+  stateOfOrigin String?
+  address       String?
+  guardianName  String?
+  guardianPhone String?
+  note          String?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([schoolId])
+}
+
+model StudentRecordEntry {
+  id          String    @id @default(cuid())
+  schoolId    String
+  studentId   String
+  kind        String // EXAM | TEST | RESULT | FEE | PROJECT | OTHER
+  session     String?
+  term        String?
+  title       String
+  score       Float?
+  maxScore    Float?
+  amountKobo  Int?
+  date        DateTime?
+  note        String?
+  enteredById String
+  createdAt   DateTime  @default(now())
+
+  @@index([studentId, kind])
+  @@index([schoolId])
+}
+
+model MeetingSchedule {
+  id        String   @id @default(cuid())
+  schoolId  String?
+  ownerId   String
+  title     String
+  whenAt    DateTime
+  note      String?
+  audience  String?
+  reminded  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ownerId, whenAt])
+}
+
 model ProjectChapter {
   id          String    @id @default(cuid())
   projectId   String

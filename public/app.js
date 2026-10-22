@@ -587,6 +587,7 @@
     const lines = [`${esc(u.fullName)} · ${esc(roleLabel)}`];
     if (u.fromLecturer) {
       // a lecturer's own student: the lecturer, not a school
+      if (u.lecturerSchool) lines.push(esc(u.lecturerSchool));
       lines.push('Lecturer · ' + esc(u.lecturerName || ''));
       const lb = [u.courseOfStudy, levelLabel(u.yearOfStudy)].filter(Boolean).map(esc);
       if (lb.length) lines.push(lb.join(' · '));
@@ -611,6 +612,7 @@
     const row = (k, v) => `<div><div class="meta">${esc(k)}</div><div class="tabular">${v}</div></div>`;
     if (u.fromLecturer) {
       return `<div class="card" style="padding:24px; max-width:680px; margin-bottom:22px;"><div class="id-grid">
+      ${row('School', esc(u.lecturerSchool || '—'))}
       ${row('Lecturer', esc(u.lecturerName || '—'))}
       ${row('Course of study', esc(u.courseOfStudy || '—'))}
       ${row('Level', esc(levelLabel(u.yearOfStudy) || '—'))}
@@ -693,6 +695,9 @@
     if (state.user.role === 'STUDENT' && state.user.fromLecturer) {
       const at = navItems.findIndex(([k]) => k === 'library');
       navItems = [...navItems.slice(0, at < 0 ? 2 : at), ['my-project', 'Project & Defense'], ...navItems.slice(at < 0 ? 2 : at)];
+      // and sees their Results (tests, and what the lecturer publishes), like every school student
+      const sx = navItems.findIndex(([k]) => k === 'semester-exam-hub');
+      navItems = [...navItems.slice(0, sx < 0 ? navItems.length : sx + 1), ['student-results', 'Results'], ...navItems.slice(sx < 0 ? navItems.length : sx + 1)];
     }
     nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
@@ -770,7 +775,7 @@
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
     const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
       ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${state.user.fromLecturer ? 'lecturer-course' : isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
-      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your Learnza lecturer prepares the lectures.' : 'Open My Courses to enrol.' }]));
+      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your Learnza lecturer prepares the lectures.' : 'Open My Courses to register your courses.' }]));
     const pm = planModel(daily, courses, results);
     const glance = `<div class="sec"><div class="sh"><div class="st">📋 Study Plan — Today</div></div><div class="plan-wrap"><div class="plan-card"><div class="plan-n"><b>${pm.daysLeft}</b><span>days to exam</span></div><div class="plan-n"><b>${pm.hours} hrs</b><span>study/day</span></div><div class="plan-n"><b style="color:#E02020;">${pm.weak.length}</b><span>weak areas</span></div></div><div class="plan-goal">🎯 Goal: <b>${isIndividual ? 'My exams' : 'Semester exam'}</b></div><button class="btn btn-primary" data-jump-nav="study-plan" style="width:100%;">See Full Plan →</button></div></div>`;
     const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
@@ -933,6 +938,20 @@
   }
 
   const view = document.getElementById('view');
+  // On every page, what is already there comes first and the "+ New ..." button sits under it (not up in the page header).
+  (function addButtonsBelow() {
+    let t = null;
+    const move = () => {
+      const buttons = [];
+      view.querySelectorAll(':scope > .page-head button').forEach((b) => { if (/^\s*\+/.test(b.textContent)) buttons.push(b); });
+      ['new-individual-course-btn'].map((id) => document.getElementById(id)).filter(Boolean).forEach((b) => { if (!buttons.includes(b)) buttons.push(b); });
+      if (!buttons.length) return;
+      let dock = view.querySelector(':scope > .add-dock');
+      if (!dock) { dock = document.createElement('div'); dock.className = 'add-dock'; dock.style.cssText = 'margin:24px 0 10px; display:flex; gap:10px; flex-wrap:wrap;'; view.appendChild(dock); }
+      buttons.forEach((b) => { b.style.marginBottom = '0'; dock.appendChild(b); });
+    };
+    new MutationObserver(() => { clearTimeout(t); t = setTimeout(move, 30); }).observe(view, { childList: true });
+  })();
 
   function navigate(screen, params = {}) {
     aiRecStop();
@@ -984,6 +1003,7 @@
         case 'individual-courses': return state.user.fromLecturer ? renderLecturerCourses() : renderIndividualCourses();
         case 'lecturer-course': return renderLecturerCourse();
         case 'my-project': return LZX.projectStudent(view, { api, esc, toast });
+        case 'student-results': return renderStudentResultsHub();
         case 'live-class': return joinLiveInClassApp(view, state.view);
         case 'my-ai-lectures': return renderMyAiLectures();
         case 'my-ai-live': return renderMyAiLive();
@@ -2620,7 +2640,7 @@
     const u = state.user;
     const readOnlyRows = [];
     if (u.fromLecturer) {
-      readOnlyRows.push(['Lecturer', u.lecturerName || '—'], ['Level', levelLabel(u.yearOfStudy) || '—']);
+      readOnlyRows.push(['School', u.lecturerSchool || '—'], ['Lecturer', u.lecturerName || '—'], ['Level', levelLabel(u.yearOfStudy) || '—']);
       if (u.accessCode) readOnlyRows.push(['Access code', u.accessCode]);
     } else if (!u.isIndividual) {
       if (u.role === 'STUDENT') {
@@ -2683,6 +2703,7 @@
         const { user } = await api('/auth/me', { method: 'PATCH', body });
         state.user = user;
         saveSession(state.token, user);
+        try { await loadHeaderContext(); buildSidebar(); } catch { /* the next page load picks it up */ }
         toast('Profile updated');
         navigate('settings');
       } catch (err) { toast(err.message); }
@@ -2813,6 +2834,55 @@
   }
 
   // ---- My Dashboard (a student's hub, laid out like PassNow's): the numbers, then every activity in one place ----
+  // A student's full result history: tests and assessments, and the formal results the lecturer has published.
+  async function renderStudentResultsHub() {
+    const [{ results }, { results: formalResults }] = await Promise.all([
+      api('/students/me/results'),
+      api('/students/me/formal-results').catch(() => ({ results: [] })),
+    ]);
+    view.innerHTML = `
+      <div class="page-head"><h1>Results</h1></div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; assessments</h3>
+      <div class="card" style="overflow-x:auto; margin-bottom:26px;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Assessment</th><th>Type</th><th>Score</th><th>Date</th></tr></thead>
+          <tbody>
+            ${results.map((r) => `
+              <tr class="clickable" data-open-result="${r.assessmentId}" style="cursor:pointer;">
+                <td class="tabular">${esc(r.courseCode || r.courseTitle || '')}</td>
+                <td>${esc(r.assessmentTitle)}</td>
+                <td>${esc(r.assessmentType)}</td>
+                <td class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</td>
+                <td class="tabular">${new Date(r.submittedAt).toLocaleDateString()}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Results published by your lecturer</h3>
+      <div class="card" style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>Course</th><th>Semester</th><th>Score</th><th>Grade</th><th>Remark</th><th>Published</th></tr></thead>
+          <tbody>
+            ${formalResults.map((r) => `
+              <tr>
+                <td class="tabular">${esc(r.course.code)}</td>
+                <td>${esc(r.term)}</td>
+                <td class="tabular">${r.score}</td>
+                <td class="tabular">${esc(r.grade || '—')}</td>
+                <td>${esc(r.remark || '—')}</td>
+                <td class="tabular">${new Date(r.publishedAt).toLocaleDateString()}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="6" class="muted" style="padding:16px;">No results published yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
+    view.querySelectorAll('[data-open-result]').forEach((row) => {
+      row.addEventListener('click', () => navigate('take-assessment', { assessmentId: row.dataset.openResult, backTo: 'student-results' }));
+    });
+  }
+
   function dhTile(nav, icon, label, pal) {
     return `<div class="dh-tile p${pal}" data-jump-nav="${nav}"><div class="dh-i">${icon}</div><div class="dh-l">${label}</div></div>`;
   }
@@ -2836,7 +2906,7 @@
       <div class="dh-title">🏆 Leaderboard Positions</div>
       <div class="dh-grid two">${dhTile('leaderboard', '🌍', 'Leaderboard', 4)}${dhTile('groups', '👨‍👩‍👧', 'Study Groups', 2)}</div>
       <div class="dh-title">📊 Progress</div>
-      <div class="dh-grid two">${dhTile('progress', '📈', 'My Progress', 0)}${isIndividual ? dhTile('billing', '💳', 'Subscription', 1) : dhTile('student-results', '📊', 'Results', 1)}${isIndividual ? '' : dhTile('academic-record', '🎓', 'Academic Record', 3)}${isIndividual ? '' : dhTile('fees', '💰', 'School Fees', 5)}</div>
+      <div class="dh-grid two">${dhTile('progress', '📈', 'My Progress', 0)}${state.user.fromLecturer ? dhTile('student-results', '📊', 'Results', 1) : isIndividual ? dhTile('billing', '💳', 'Subscription', 1) : dhTile('student-results', '📊', 'Results', 1)}${isIndividual ? '' : dhTile('academic-record', '🎓', 'Academic Record', 3)}${isIndividual ? '' : dhTile('fees', '💰', 'School Fees', 5)}</div>
       <div class="dh-title">👤 More</div>
       <div class="dh-grid two">${dhTile('digital-id', '🪪', 'Digital ID & Profile', 2)}${dhTile('settings', '⚙️', 'Settings', 4)}</div>`
       .replace('__X__', '');
@@ -3549,7 +3619,7 @@
           ` : ''}
           ${demonstrations.map((d) => demoCardHtml(d, { courseId: course.id, isIndividual })).join('') || '<p class="muted" style="padding:8px 0;">No practicals published yet.</p>'}
         </div>
-      `).join('') || '<p class="muted">Enroll in (or create) a course first to see its practicals.</p>'}
+      `).join('') || '<p class="muted">Register a course (or create one) first to see its practicals.</p>'}
     `;
     wireLabQuestionPanels(view);
     view.querySelectorAll('[data-teach-lab]').forEach((btn) => {
@@ -3870,7 +3940,7 @@
             `).join('') || '<p class="muted" style="padding:16px;">No groups yet — start one.</p>'}
           </div>
         </div>
-      `).join('') || '<p class="muted">Enroll in (or create) a course first to join its study group.</p>'}
+      `).join('') || '<p class="muted">Register a course (or create one) first to join its study group.</p>'}
     `;
     async function createGroup(courseId, isIndividualCourse) {
       const name = prompt('Name your study group:');

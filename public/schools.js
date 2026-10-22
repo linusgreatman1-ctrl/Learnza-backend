@@ -541,6 +541,7 @@
     ],
     STAFF: [
       ['staff-dashboard', 'Home'],
+      ['meeting-join', 'Meetings'],
       ['library', 'e-Library'],
       ['digital-id', 'Digital ID'],
       ['settings', 'Settings'],
@@ -551,7 +552,10 @@
       ['admin-academics', 'Departments & Courses'],
       ['admin-tests', 'Tests'],
       ['admin-semester-exam', 'Semester Exam'],
+      ['admin-admission', 'Admission'],
       ['admin-projects', 'Project & Defense'],
+      ['meeting', 'Meeting'],
+      ['my-schedules', 'My Schedules'],
       ['admin-activity', 'Lecturer Activity'],
       ['admin-student-activity', 'Student Activity'],
       ['admin-lab-queue', 'Digital Lab'],
@@ -741,7 +745,7 @@
     const streak = homeSection('🔥 Your Streak', null, `<div class="card" style="padding:16px;"><div class="streak-row">${days.map((x) => `<div class="sd"><div class="sc${x.done ? ' done' : ''}${x.today && !x.done ? ' now' : ''}">${x.label}</div><div class="sl">${x.today ? 'TODAY' : x.name}</div></div>`).join('')}</div></div>`).replace('<div class="sh"><div class="st">🔥 Your Streak</div></div>', `<div class="sh"><div class="st">🔥 Your Streak</div><div class="sa" style="cursor:default;">${daily ? daily.streak : 0} day${daily && daily.streak === 1 ? '' : 's'} 🏆</div></div>`);
     const cont = homeSection('Continue Learning', isIndividual ? 'individual-courses' : 'courses', courses.length
       ? courses.slice(0, 4).map((c, i) => `<div class="card cl-row" data-sj-screen="${isIndividual ? 'individual-course-detail' : 'course-detail'}" data-sj-params="${esc(JSON.stringify({ courseId: c.id }))}"><div class="cl-ico" style="background:linear-gradient(135deg,${SJ_COLORS[i % SJ_COLORS.length]})">${SJ_ICONS[i % SJ_ICONS.length]}</div><div class="cl-main"><div class="cl-t">${esc(c.title)}</div><div class="cl-s">${esc(c.code || '')}${c.department && c.department.name ? ' · ' + esc(c.department.name) : ''}</div></div><div class="cl-go">›</div></div>`).join('')
-      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your Learnza lecturer prepares the lectures.' : 'Open My Courses to enrol.' }]));
+      : pnRows([{ icon: '📚', title: 'No courses yet', sub: isIndividual ? 'Create a course and your Learnza lecturer prepares the lectures.' : 'Open My Courses to register your courses.' }]));
     const pm = planModel(daily, courses, results);
     const glance = `<div class="sec"><div class="sh"><div class="st">📋 Study Plan — Today</div></div><div class="plan-wrap"><div class="plan-card"><div class="plan-n"><b>${pm.daysLeft}</b><span>days to exam</span></div><div class="plan-n"><b>${pm.hours} hrs</b><span>study/day</span></div><div class="plan-n"><b style="color:#E02020;">${pm.weak.length}</b><span>weak areas</span></div></div><div class="plan-goal">🎯 Goal: <b>${isIndividual ? 'My exams' : 'Semester exam'}</b></div><button class="btn btn-primary" data-jump-nav="study-plan" style="width:100%;">See Full Plan →</button></div></div>`;
     const due = (assignments || []).filter((a) => !a.mySubmission && a.dueAt).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, 3);
@@ -810,7 +814,7 @@
       // "X is teaching live" shouldn't wait for the student to think to open the bell
       // -- pop it on screen directly too, on top of whatever they're currently doing.
       notifications
-        .filter((n) => !n.read && n.link && n.link.startsWith('live-class'))
+        .filter((n) => !n.read && n.link && (n.link.startsWith('live-class') || n.link.startsWith('meeting-room')))
         .forEach(showLiveClassPopup);
     } catch {
       // silent -- notifications are a convenience, not critical path
@@ -904,8 +908,26 @@
   }
 
   const view = document.getElementById('view');
+  // On every page, what is already there comes first and the "+ Add ..." button sits under it (not up in the page header).
+  (function addButtonsBelow() {
+    let t = null;
+    const move = () => {
+      const heads = view.querySelectorAll(':scope > .page-head');
+      const extra = ['new-assessment-btn', 'new-group-top-btn'].map((id) => document.getElementById(id)).filter(Boolean);
+      const buttons = [];
+      heads.forEach((h) => h.querySelectorAll('button').forEach((b) => { if (/^\s*\+/.test(b.textContent)) buttons.push(b); }));
+      extra.forEach((b) => { if (!buttons.includes(b) && view.contains(b)) buttons.push(b); });
+      if (!buttons.length) return;
+      let dock = view.querySelector(':scope > .add-dock');
+      if (!dock) { dock = document.createElement('div'); dock.className = 'add-dock'; dock.style.cssText = 'margin:24px 0 10px; display:flex; gap:10px; flex-wrap:wrap;'; view.appendChild(dock); }
+      buttons.forEach((b) => { b.style.marginBottom = '0'; dock.appendChild(b); });
+    };
+    new MutationObserver(() => { clearTimeout(t); t = setTimeout(move, 30); }).observe(view, { childList: true });
+  })();
 
+  function meetCtx() { return { api, esc, toast, token: () => state.token, user: state.user, navigate }; }
   function navigate(screen, params = {}) {
+    if (screen !== 'meeting-room' && window.LZMeet) LZMeet.leaveRoom();
     aiRecStop();
     window.speechSynthesis && window.speechSynthesis.cancel();
     if (window.LZI18N) LZI18N.stopSpeaking();
@@ -1042,6 +1064,12 @@
         case 'elections': return LZX.elections(view, { api, esc, toast });
         case 'lect-projects': return LZX.projectLecturer(view, { api, esc, toast });
         case 'admin-projects': return renderAdminProjects();
+        case 'admin-admission': return renderAdminAdmission();
+        case 'admin-admission-student': return renderAdminAdmissionStudent();
+        case 'meeting': return LZMeet.meetingHome(view, meetCtx());
+        case 'my-schedules': return LZMeet.schedulesPage(view, meetCtx());
+        case 'meeting-join': return LZMeet.joinPage(view, meetCtx());
+        case 'meeting-room': return LZMeet.openRoom(view, meetCtx(), state.view);
         case 'my-project': return LZX.projectStudent(view, { api, esc, toast });
         case 'admin-elections': return LZX.electionsAdmin(view, { api, esc, toast });
         case 'class-vote': return LZX.electionsAdmin(view, { api, esc, toast, mode: 'class' });
@@ -1337,8 +1365,8 @@
       <div class="page-head"><h1>My Courses</h1></div>
       ${mine.length ? `<div class="grid-cards" style="margin-bottom:30px;">
         ${mine.map(courseCardHtml).join('')}
-      </div>` : '<p class="muted" style="margin-bottom:24px;">You are not enrolled in any course yet — pick a semester below to see what is on offer.</p>'}
-      <div class="page-head"><h1 style="font-size:1.15rem;">Browse &amp; enroll by semester</h1></div>
+      </div>` : '<p class="muted" style="margin-bottom:24px;">You have not registered any course yet — pick a semester below to see what is on offer.</p>'}
+      <div class="page-head"><h1 style="font-size:1.15rem;">Browse &amp; register courses by semester</h1></div>
       ${semesters.length ? `
         <div class="tabs" style="max-width:420px;">
           ${semesters.map((s) => `<button class="tab-btn ${s.id === activeSemesterId ? 'active' : ''}" data-semester-tab="${s.id}">${esc(semesterLabel(s.name))}</button>`).join('')}
@@ -1367,16 +1395,16 @@
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await api(`/courses/${btn.dataset.enroll}/enroll`, { method: 'POST' });
-        toast('Enrolled. Open the course, and start the Learnza Lecturer class, whenever you are ready.');
+        toast('Course registered. Open the course, and start the Learnza Lecturer class, whenever you are ready.');
         renderStudentCourses();
       });
     });
     view.querySelectorAll('[data-unenroll]').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!confirm('Unenroll from this course?')) return;
+        if (!confirm('Remove your registration for this course?')) return;
         await api(`/courses/${btn.dataset.unenroll}/enroll`, { method: 'DELETE' });
-        toast('Unenrolled');
+        toast('Registration removed');
         renderStudentCourses();
       });
     });
@@ -1388,7 +1416,7 @@
       <div style="margin:4px 0 8px;">${esc(c.title)}</div>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <span class="pill pill-pass">${esc(c.level)}</span>
-        <button class="btn btn-ghost btn-sm" data-unenroll="${c.id}">Unenroll</button>
+        <button class="btn btn-ghost btn-sm" data-unenroll="${c.id}">Unregister</button>
       </div>
     </div>`;
   }
@@ -1397,8 +1425,8 @@
       <div class="code tabular">${esc(c.code)}</div>
       <div style="margin:4px 0 8px;">${esc(c.title)}</div>
       ${enrolled
-        ? '<span class="pill pill-pass">Enrolled</span>'
-        : `<button class="btn btn-accent btn-sm" data-enroll="${c.id}">Enroll — free</button>`}
+        ? '<span class="pill pill-pass">Registered</span>'
+        : `<button class="btn btn-accent btn-sm" data-enroll="${c.id}">Register course — free</button>`}
     </div>`;
   }
 
@@ -2564,6 +2592,135 @@
     }));
   }
 
+  // ── Admission: the file of every student, from the day and year they were admitted ─────────────────
+  async function renderAdminAdmission() {
+    let year = '', q = '';
+    async function paint() {
+      const { students, years } = await api('/admin/admission/students?year=' + encodeURIComponent(year) + '&search=' + encodeURIComponent(q));
+      const sel = document.getElementById('ad-year');
+      if (sel && sel.options.length <= 1) years.forEach((y) => { const o = document.createElement('option'); o.value = y; o.textContent = 'Admitted ' + y; sel.appendChild(o); });
+      document.getElementById('ad-list').innerHTML = students.map((s) => `
+        <div class="list-row clickable" data-student="${s.id}" style="cursor:pointer;">
+          <div style="min-width:0;"><div style="font-weight:600;">${esc(s.fullName)}</div>
+            <div class="meta tabular">${esc(s.matricNumber || '—')}${s.level ? ' · ' + s.level : ''}${s.department ? ' · ' + esc(s.department) : ''}</div>
+            <div class="meta">${s.admissionYear ? 'Admitted ' + s.admissionYear + (s.admissionDate ? ' (' + new Date(s.admissionDate).toLocaleDateString() + ')' : '') : '<b>admission details not entered yet</b>'}${s.admissionNo ? ' · No. ' + esc(s.admissionNo) : ''}</div></div>
+          <span class="pill ${s.hasFile ? 'pill-pass' : 'pill-muted'}">${s.hasFile ? 'File opened' : 'Open file'}</span>
+        </div>`).join('') || '<p class="muted" style="padding:16px;">No students found.</p>';
+      document.querySelectorAll('#ad-list [data-student]').forEach((r) => r.addEventListener('click', () => navigate('admin-admission-student', { studentId: r.dataset.student })));
+    }
+    view.innerHTML = `
+      <div class="page-head"><h1>Admission</h1></div>
+      <p class="muted" style="margin-bottom:14px;">The file of every student: how and when they were admitted, their present class, and everything on record since — results, tests and exams, fee payments, project and attendance. Open a student to see the whole file and to enter or correct their details.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+        <input type="text" id="ad-search" placeholder="Search by name or matric number…" style="max-width:300px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);">
+        <select id="ad-year" style="padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink);"><option value="">Every year of admission</option></select>
+      </div>
+      <div class="card" id="ad-list"></div>`;
+    let t;
+    document.getElementById('ad-search').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); paint(); }, 250); });
+    document.getElementById('ad-year').addEventListener('change', (e) => { year = e.target.value; paint(); });
+    await paint();
+  }
+
+  async function renderAdminAdmissionStudent() {
+    const id = state.view.studentId;
+    const d = await api('/admin/admission/students/' + id);
+    const s = d.student, a = d.admission || {};
+    const naira = (k) => '₦' + (k / 100).toLocaleString('en-NG', { maximumFractionDigits: 0 });
+    const dt = (v) => (v ? new Date(v).toLocaleDateString() : '—');
+    const iv = (v) => (v ? new Date(v).toISOString().slice(0, 10) : '');
+    const table = (heads, rows, empty) => `<div class="card" style="overflow-x:auto; margin-bottom:22px;"><table class="data-table"><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="${heads.length}" class="muted" style="padding:16px;">${empty}</td></tr>`}</tbody></table></div>`;
+    const field = (label, input) => `<div class="field" style="margin:0;"><label class="meta">${label}</label>${input}</div>`;
+    const MODE = { UTME: 'UTME (JAMB)', DIRECT_ENTRY: 'Direct entry', TRANSFER: 'Transfer', OTHER: 'Other' };
+    const KIND = { EXAM: 'Exam', TEST: 'Test', RESULT: 'Result', FEE: 'Fee payment', PROJECT: 'Project', OTHER: 'Other' };
+    view.innerHTML = `
+      <div class="page-head"><h1>${esc(s.fullName)}</h1><button class="btn btn-ghost btn-sm" id="ad-back">← Back to Admission</button></div>
+      <div class="card" style="padding:20px 24px; max-width:760px; margin-bottom:22px;"><div class="id-grid">
+        <div><div class="meta">Matric No.</div><div class="tabular">${esc(s.matricNumber || '—')}</div></div>
+        <div><div class="meta">Department</div><div class="tabular">${esc(s.department || '—')}</div></div>
+        <div><div class="meta">Present class</div><div class="tabular">${esc(s.level || '—')}</div></div>
+        <div><div class="meta">Admitted</div><div class="tabular">${a.admissionYear || s.yearOfAdmission || '—'}${a.admissionDate ? ' (' + dt(a.admissionDate) + ')' : ''}</div></div>
+        <div><div class="meta">CGPA</div><div class="tabular">${s.cgpa != null ? s.cgpa : '—'}</div></div>
+        <div><div class="meta">Fees paid</div><div class="tabular">${naira(d.fees.paidKobo)}</div></div>
+        <div><div class="meta">Attendance</div><div class="tabular">${d.attendance.present} present · ${d.attendance.absent} absent</div></div>
+        <div><div class="meta">Status</div><div class="tabular">${esc(s.status)}</div></div>
+      </div></div>
+
+      <h3 style="margin-bottom:10px; font-size:1rem;">Courses registered</h3>
+      ${table(['Course', 'Level', 'Semester'], d.courses.map((c) => `<tr><td>${esc(c.code)} — ${esc(c.title)}</td><td>${esc(c.level)}</td><td>${esc(c.semester)}</td></tr>`), 'No course registered yet.')}
+      <h3 style="margin-bottom:10px; font-size:1rem;">Results published</h3>
+      ${table(['Course', 'Semester', 'Score', 'Grade', 'Remark'], d.results.map((r) => `<tr><td>${esc(r.course)}</td><td>${esc(r.term)}</td><td class="tabular">${r.score}</td><td>${esc(r.grade || '—')}</td><td>${esc(r.remark || '—')}</td></tr>`), 'No result published yet.')}
+      <h3 style="margin-bottom:10px; font-size:1rem;">Tests &amp; exams taken</h3>
+      ${table(['Course', 'Title', 'Type', 'Score', 'Date'], d.tests.map((t) => `<tr><td>${esc(t.course || '—')}</td><td>${esc(t.title)}</td><td>${esc(t.type)}</td><td class="tabular">${LZX.scoreText(t.view, t.score, t.total)}</td><td>${dt(t.submittedAt)}</td></tr>`), 'No test or exam taken yet.')}
+      <h3 style="margin-bottom:10px; font-size:1rem;">Fee payments</h3>
+      ${table(['Date', 'For', 'Amount', 'Method', 'Receipt', 'Status'], d.fees.payments.map((f) => `<tr><td>${dt(f.paidOn || f.createdAt)}</td><td>${esc((f.items || []).map((i) => i.title).join(', ') || '—')}</td><td class="tabular">${naira(f.amountKobo)}</td><td>${esc(f.method)}</td><td class="tabular">${esc(f.receiptNo || '—')}</td><td>${esc(f.status)}</td></tr>`), 'No fee payment on record.')}
+      <h3 style="margin-bottom:10px; font-size:1rem;">Project &amp; defense</h3>
+      ${d.project ? `<div class="card" style="padding:16px 20px; margin-bottom:22px;"><div style="font-weight:600;">${esc(d.project.title)}</div><div class="meta">${esc(d.project.status)} · chapters ${d.project.chaptersApproved}/5 approved${d.project.defense ? ' · defense ' + dt(d.project.defense.scheduledAt) + ' at ' + esc(d.project.defense.venue) + (d.project.defense.verdict ? ' · ' + esc(d.project.defense.verdict) : '') : ''}${d.project.finalScore != null ? ' · mark ' + d.project.finalScore + '/100' : ''}</div></div>` : '<p class="muted" style="margin-bottom:22px;">No project yet.</p>'}
+      <h3 style="margin-bottom:10px; font-size:1rem;">Disciplinary record</h3>
+      ${table(['Date', 'Matter', 'Status'], d.discipline.map((x) => `<tr><td>${dt(x.createdAt)}</td><td>${esc(x.title)}${x.description ? '<div class="meta">' + esc(x.description) + '</div>' : ''}</td><td>${esc(x.status)}</td></tr>`), 'Nothing on record.')}
+      <h3 style="margin-bottom:10px; font-size:1rem;">Other records entered by the school</h3>
+      ${table(['Type', 'Session / term', 'Record', 'Score / amount', 'Date', ''], d.entries.map((e) => `<tr><td>${esc(KIND[e.kind] || e.kind)}</td><td>${esc([e.session, e.term].filter(Boolean).join(' · ') || '—')}</td><td>${esc(e.title)}${e.note ? '<div class="meta">' + esc(e.note) + '</div>' : ''}</td><td class="tabular">${e.score != null ? e.score + (e.maxScore != null ? '/' + e.maxScore : '') : ''}${e.amountKobo != null ? naira(e.amountKobo) : ''}</td><td>${dt(e.date)}</td><td><button class="btn btn-ghost btn-sm" data-del-rec="${e.id}">Remove</button></td></tr>`), 'No record entered yet.')}
+
+      <h3 style="margin:26px 0 10px; font-size:1rem;">Admission details</h3>
+      <form id="ad-form" class="card" style="padding:22px; max-width:760px; margin-bottom:22px;">
+        <div class="id-grid">
+          ${field('Admission number', `<input id="af-no" value="${esc(a.admissionNo || '')}">`)}
+          ${field('Date admitted', `<input id="af-date" type="date" value="${iv(a.admissionDate)}">`)}
+          ${field('Year admitted', `<input id="af-year" type="number" min="1960" max="${new Date().getFullYear() + 1}" value="${a.admissionYear || s.yearOfAdmission || ''}">`)}
+          ${field('Level admitted into', `<input id="af-entry" value="${esc(a.entryLevel || '')}" placeholder="e.g. 100L">`)}
+          ${field('Mode of entry', `<select id="af-mode"><option value="">Select…</option>${Object.entries(MODE).map(([k, v]) => `<option value="${k}" ${a.modeOfEntry === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
+          ${field('JAMB registration number', `<input id="af-jamb" value="${esc(a.jambRegNo || '')}">`)}
+          ${field('Previous school', `<input id="af-prev" value="${esc(a.previousSchool || '')}">`)}
+          ${field('Gender', `<select id="af-gender"><option value="">Select…</option><option value="MALE" ${a.gender === 'MALE' ? 'selected' : ''}>Male</option><option value="FEMALE" ${a.gender === 'FEMALE' ? 'selected' : ''}>Female</option></select>`)}
+          ${field('Date of birth', `<input id="af-dob" type="date" value="${iv(a.dateOfBirth)}">`)}
+          ${field('State of origin', `<input id="af-state" value="${esc(a.stateOfOrigin || '')}">`)}
+          ${field('Home address', `<input id="af-address" value="${esc(a.address || '')}">`)}
+          ${field('Parent / guardian', `<input id="af-guard" value="${esc(a.guardianName || '')}">`)}
+          ${field('Guardian phone', `<input id="af-gphone" type="tel" value="${esc(a.guardianPhone || '')}">`)}
+        </div>
+        <div class="field" style="margin-top:12px;"><label class="meta">Notes</label><textarea id="af-note" rows="3">${esc(a.note || '')}</textarea></div>
+        <button class="btn btn-primary btn-sm" type="submit">Save admission details</button>
+      </form>
+
+      <h3 style="margin:26px 0 10px; font-size:1rem;">Add a record</h3>
+      <form id="ar-form" class="card" style="padding:22px; max-width:760px; margin-bottom:22px;">
+        <p class="muted" style="font-size:.84rem; margin-bottom:12px;">For anything that happened before the system was used: an old result, an exam or test, a fee paid, a project mark.</p>
+        <div class="id-grid">
+          ${field('Type', `<select id="ar-kind">${Object.entries(KIND).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`)}
+          ${field('Record', '<input id="ar-title" required placeholder="e.g. First semester exam, MTH 101">')}
+          ${field('Session', '<input id="ar-session" placeholder="e.g. 2024/2025">')}
+          ${field('Semester / term', '<input id="ar-term" placeholder="e.g. First semester">')}
+          ${field('Score', '<input id="ar-score" type="number" step="0.01">')}
+          ${field('Out of', '<input id="ar-max" type="number" step="0.01">')}
+          ${field('Amount (₦, for a fee)', '<input id="ar-amount" type="number" step="0.01">')}
+          ${field('Date', '<input id="ar-date" type="date">')}
+        </div>
+        <div class="field" style="margin-top:12px;"><label class="meta">Note</label><input id="ar-note"></div>
+        <button class="btn btn-primary btn-sm" type="submit">+ Add record</button>
+      </form>
+      <div class="add-dock" style="margin:0 0 20px;"><button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ Print this file</button></div>`;
+    document.getElementById('ad-back').addEventListener('click', () => navigate('admin-admission'));
+    const v = (x) => document.getElementById(x).value;
+    document.getElementById('ad-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api('/admin/admission/students/' + id, { method: 'PUT', body: { admissionNo: v('af-no'), admissionDate: v('af-date'), admissionYear: v('af-year'), entryLevel: v('af-entry'), modeOfEntry: v('af-mode'), jambRegNo: v('af-jamb'), previousSchool: v('af-prev'), gender: v('af-gender'), dateOfBirth: v('af-dob'), stateOfOrigin: v('af-state'), address: v('af-address'), guardianName: v('af-guard'), guardianPhone: v('af-gphone'), note: v('af-note') } });
+        toast('Admission details saved'); render();
+      } catch (err) { toast(err.message); }
+    });
+    document.getElementById('ar-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api('/admin/admission/students/' + id + '/records', { method: 'POST', body: { kind: v('ar-kind'), title: v('ar-title'), session: v('ar-session'), term: v('ar-term'), score: v('ar-score'), maxScore: v('ar-max'), amountNaira: v('ar-amount'), date: v('ar-date'), note: v('ar-note') } });
+        toast('Record added'); render();
+      } catch (err) { toast(err.message); }
+    });
+    view.querySelectorAll('[data-del-rec]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Remove this record?')) return;
+      try { await api('/admin/admission/records/' + b.dataset.delRec, { method: 'DELETE' }); toast('Removed'); render(); } catch (err) { toast(err.message); }
+    }));
+  }
+
   // The school admin sees every project and defense of the school (lecturers supervise; students write and defend).
   async function renderAdminProjects() {
     const STAGE = { PROPOSED: 'Topic proposed', TOPIC_REVISE: 'Topic sent back', TOPIC_REJECTED: 'Topic rejected', TOPIC_APPROVED: 'Topic approved', IN_PROGRESS: 'Writing', READY_FOR_DEFENSE: 'Cleared for defense', DEFENSE_SCHEDULED: 'Defense scheduled', DEFENDED: 'Defended', CORRECTIONS: 'Corrections', COMPLETED: 'Completed' };
@@ -3468,7 +3625,7 @@
                 <td class="tabular">${esc(r.courseCode || r.courseTitle)}</td>
                 <td>${esc(r.assessmentTitle)}</td>
                 <td>${esc(r.assessmentType)}</td>
-                <td class="tabular">${r.score}/${r.total}</td>
+                <td class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</td>
                 <td class="tabular">${new Date(r.submittedAt).toLocaleDateString()}</td>
               </tr>
             `).join('') || '<tr><td colspan="5" class="muted" style="padding:16px;">No results yet.</td></tr>'}
@@ -3833,6 +3990,7 @@
         const { user } = await api('/auth/me', { method: 'PATCH', body });
         state.user = user;
         saveSession(state.token, user);
+        try { await loadHeaderContext(); buildSidebar(); } catch { /* the next page load picks it up */ }
         toast('Profile updated');
         navigate('settings');
       } catch (err) { toast(err.message); }
@@ -4833,7 +4991,7 @@
           ` : ''}
           ${demonstrations.map((d) => demoCardHtml(d, { courseId: course.id, isIndividual })).join('') || '<p class="muted" style="padding:8px 0;">No practicals published yet.</p>'}
         </div>
-      `).join('') || '<p class="muted">Enroll in (or create) a course first to see its practicals.</p>'}
+      `).join('') || '<p class="muted">Register a course (or create one) first to see its practicals.</p>'}
     `;
     wireLabQuestionPanels(view);
     view.querySelectorAll('[data-teach-lab]').forEach((btn) => {
@@ -5210,7 +5368,7 @@
             `).join('') || '<p class="muted" style="padding:16px;">No groups yet — start one.</p>'}
           </div>
         </div>
-      `).join('') || '<p class="muted">Enroll in (or create) a course first to join its study group.</p>'}
+      `).join('') || '<p class="muted">Register a course (or create one) first to join its study group.</p>'}
     `;
     async function createGroup(courseId, isIndividualCourse) {
       const name = prompt('Name your study group:');
@@ -5798,7 +5956,7 @@
             <div style="margin:4px 0 8px;">${esc(c.title)}</div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <span class="pill pill-pass">${esc(c.level)}</span>
-              <span class="pill">${counts[i].count} enrolled</span>
+              <span class="pill">${counts[i].count} registered</span>
             </div>
             <button class="btn btn-accent btn-sm" data-go-live="${c.id}" style="margin-top:12px;">🔴 Go live</button>
           </div>
@@ -5844,9 +6002,8 @@
     container.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(480px,92vw); height:fit-content; max-height:86vh; overflow-y:auto; padding:24px; z-index:200;';
     container.innerHTML = `
       <h3 style="margin-bottom:14px;">Add a course</h3>
-      <p class="muted" style="font-size:13px; margin-bottom:14px;">Department: ${department ? esc(department.name) : '—'}</p>
+      <div class="field"><label>Course</label><input type="text" id="ac-title" placeholder="e.g. Data Structures" required></div>
       <div class="field"><label>Course code</label><input type="text" id="ac-code" placeholder="e.g. CSC 201" required></div>
-      <div class="field"><label>Course Title</label><input type="text" id="ac-title" placeholder="e.g. Data Structures" required></div>
       <div class="field"><label>Level</label><select id="ac-level"><option>100L</option><option>200L</option><option>300L</option><option>400L</option><option>500L</option><option>600L</option></select></div>
       <div class="field"><label>Semester</label><select id="ac-semester"><option>First</option><option>Second</option></select></div>
       <div style="display:flex; gap:10px; margin-top:10px;">
@@ -5896,7 +6053,7 @@
       </div>
       <div class="card" style="padding:20px; margin-bottom:22px;">
         <h3 style="margin-bottom:4px; font-size:1rem;">Upload lectures</h3>
-        <p class="meta" style="margin-bottom:12px;">Only the students enrolled in ${esc(course.code)} can see it.</p>
+        <p class="meta" style="margin-bottom:12px;">Only the students registered in ${esc(course.code)} can see it.</p>
         <form id="lesson-form">
           <div class="field"><label>Title</label><input type="text" id="lsn-title" required></div>
           <div class="field"><label>Order</label><input type="number" id="lsn-order" value="${lessons.length + 1}" required></div>
@@ -5983,7 +6140,7 @@
               <button class="btn btn-sm ${r.status === 'ABSENT' ? 'btn-accent' : 'btn-ghost'}" data-mark="ABSENT">Absent</button>
             </div>
           </div>
-        `).join('') || '<p class="muted" style="padding:16px;">No students enrolled yet.</p>'}
+        `).join('') || '<p class="muted" style="padding:16px;">No students registered yet.</p>'}
       </div>
     `;
     document.getElementById('back-btn').addEventListener('click', () => navigate('lect-attendance-hub'));
@@ -6420,6 +6577,8 @@
         ${f('CGPA (you enter it)', `<input id="ie-cgpa" type="number" step="0.01" min="0" max="5" value="${d.cgpaEntered ? d.cgpa : ''}" placeholder="${d.cgpa != null ? d.cgpa + ' (from grades)' : 'e.g. 4.25'}">`)}
         ${f('Position held', `<input id="ie-position" value="${esc(d.classPosition || '')}" placeholder="e.g. Course representative">`)}
         <div><div class="meta">Expected graduation</div><div class="tabular">${d.expectedGraduationYear || '—'}</div></div>
+        <div><div class="meta">School</div><div class="tabular">${esc((state.school && state.school.name) || '—')}</div></div>
+        <div><div class="meta">Lecturer</div><div class="tabular">${esc(state.user.fullName || '—')}</div></div>
         ${d.accessCode ? `<div><div class="meta">Access code</div><div class="tabular"><span style="letter-spacing:.12em; font-weight:700;">${esc(d.accessCode)}</span> <button class="btn btn-ghost btn-sm" type="button" data-copy-code="${esc(d.accessCode)}">Copy</button><div class="muted" style="font-size:.74rem; font-weight:400; margin-top:2px;">The student signs in under Student From Lecturer with their full name and this code. It does not change.</div></div></div>` : ''}
       </div>
       <div style="margin-top:16px;"><button class="btn btn-primary btn-sm" type="submit">Save changes</button></div>
@@ -6480,7 +6639,7 @@
       ` : ''}
     `;
     LZX.digitalId(document.getElementById('lzx-id-host'), {
-      user: { id: data.id, role: 'STUDENT', fullName: data.fullName, matricNumber: data.matricNumber, yearOfStudy: data.yearOfStudy, avatarUrl: data.avatarUrl, createdAt: data.createdAt, schoolId: true, ...(data.independent ? { courseOfStudy: data.courseOfStudy, fromLecturer: true, lecturerName: state.user.fullName } : {}) },
+      user: { id: data.id, role: 'STUDENT', fullName: data.fullName, matricNumber: data.matricNumber, yearOfStudy: data.yearOfStudy, avatarUrl: data.avatarUrl, createdAt: data.createdAt, schoolId: true, ...(data.independent ? { courseOfStudy: data.courseOfStudy, fromLecturer: true, lecturerName: state.user.fullName, lecturerSchool: state.school && state.school.name } : {}) },
       school: state.school, department: { name: data.department }, api, esc, toast,
       photoPath: `/lect/students/${data.id}/photo`,
     });
@@ -6521,7 +6680,7 @@
           <div class="card course-card" data-open="${c.id}" data-title="${esc(c.title)}" data-code="${esc(c.code)}" style="cursor:pointer;">
             <div class="code tabular">${esc(c.code)}</div>
             <div style="margin:4px 0 8px;">${esc(c.title)}</div>
-            <span class="pill">${counts[i].count} enrolled</span>
+            <span class="pill">${counts[i].count} registered</span>
           </div>
         `).join('') || '<p class="muted">No courses yet.</p>'}
       </div>
@@ -7597,7 +7756,7 @@
       <div class="grid-cards">
         <div class="card course-card" data-type="ACADEMIC"><div class="code">Academic Staff</div><div class="meta">Lecturers</div></div>
         <div class="card course-card" data-type="NON_ACADEMIC"><div class="code">Non-Academic Staff</div><div class="meta">Librarians, admin staff, and other non-teaching roles</div></div>
-        <div class="card course-card" data-type="STUDENT"><div class="code">Students</div><div class="meta">All enrolled students</div></div>
+        <div class="card course-card" data-type="STUDENT"><div class="code">Students</div><div class="meta">All registered students</div></div>
       </div>
     `;
     view.querySelectorAll('[data-type]').forEach((el) => {
@@ -7807,7 +7966,20 @@
         <div><span style="font-weight:600;">School licence</span> <span class="meta">— ${esc(school.name)}</span></div>
         <span class="pill ${licenceOk ? 'pill-pass' : 'pill-danger'}">${licenceOk ? 'Active' : (school.status === 'ACTIVE' ? 'Expired' : 'Suspended')}${school.subscriptionExpiresAt ? ` until ${new Date(school.subscriptionExpiresAt).toLocaleDateString()}` : ''}</span>
       </div>
-      <h3 style="margin-bottom:10px; font-size:1rem;">Add Departments and Courses</h3>
+      <h3 style="margin-bottom:10px; font-size:1rem;">Departments and their courses</h3>
+      ${departments.length ? '' : '<p class="muted" style="margin-bottom:18px;">No departments yet. Add the first one below.</p>'}
+      ${departments.map((d) => `
+        <div style="margin-bottom:18px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <div class="muted" style="font-weight:700;">${esc(d.name)} (${esc(d.code)})</div>
+            <button class="btn btn-ghost btn-sm" data-edit-dept="${d.id}" data-name="${esc(d.name)}" data-code="${esc(d.code)}" style="padding:2px 8px; font-size:0.75rem;">✏️ Edit</button>
+          </div>
+          <div class="card">
+            ${deptCourses[d.id].map((c) => `<div class="list-row"><div>${esc(c.code)} — ${esc(c.title)}</div><div style="display:flex; align-items:center; gap:8px;"><span class="pill pill-muted">${esc(c.level)}</span><button class="btn btn-ghost btn-sm" data-edit-course="${c.id}" data-code="${esc(c.code)}" data-title="${esc(c.title)}" data-level="${esc(c.level)}" data-semester="${esc(c.semester)}" style="padding:2px 8px; font-size:0.75rem;">✏️</button></div></div>`).join('') || '<p class="muted" style="padding:16px;">No courses yet.</p>'}
+          </div>
+        </div>
+      `).join('')}
+      <h3 style="margin:26px 0 10px; font-size:1rem;">Add a department or a course</h3>
       <div class="grid-2" style="margin-bottom:26px;">
         <div class="card" style="padding:20px;">
           <h3 style="margin-bottom:12px; font-size:1rem;">Add department</h3>
@@ -7820,26 +7992,15 @@
         <div class="card" style="padding:20px;">
           <h3 style="margin-bottom:12px; font-size:1rem;">Add course</h3>
           <form id="course-form">
-            <div class="field"><label>Department</label><select id="course-dept">${departments.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select></div>
+            <div class="field"><label>Course</label><input type="text" id="course-title" required placeholder="e.g. Introduction to Physics"></div>
             <div class="field"><label>Code</label><input type="text" id="course-code" required placeholder="e.g. PHY 101"></div>
-            <div class="field"><label>Course Title</label><input type="text" id="course-title" required></div>
+            <div class="field"><label>Belongs to department</label><select id="course-dept">${departments.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select></div>
             <div class="field"><label>Level</label><input type="text" id="course-level" value="100L"></div>
             <div class="field"><label>Semester</label><select id="course-semester"><option>First</option><option>Second</option></select></div>
             <button class="btn btn-primary" type="submit">Add course</button>
           </form>
         </div>
       </div>
-      ${departments.map((d) => `
-        <div style="margin-bottom:18px;">
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-            <div class="muted" style="font-weight:700;">${esc(d.name)} (${esc(d.code)})</div>
-            <button class="btn btn-ghost btn-sm" data-edit-dept="${d.id}" data-name="${esc(d.name)}" data-code="${esc(d.code)}" style="padding:2px 8px; font-size:0.75rem;">✏️ Edit</button>
-          </div>
-          <div class="card">
-            ${deptCourses[d.id].map((c) => `<div class="list-row"><div>${esc(c.code)} — ${esc(c.title)}</div><div style="display:flex; align-items:center; gap:8px;"><span class="pill pill-muted">${esc(c.level)}</span><button class="btn btn-ghost btn-sm" data-edit-course="${c.id}" data-code="${esc(c.code)}" data-title="${esc(c.title)}" data-level="${esc(c.level)}" data-semester="${esc(c.semester)}" style="padding:2px 8px; font-size:0.75rem;">✏️</button></div></div>`).join('') || '<p class="muted" style="padding:16px;">No courses yet.</p>'}
-          </div>
-        </div>
-      `).join('')}
     `;
     document.getElementById('dept-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -8347,7 +8508,7 @@
         } else {
           if (!picked) return toast('Search for and select a student first.');
           const courseId = container.querySelector('#sr-course').value;
-          if (!courseId) return toast(`${picked.fullName} isn't enrolled in any course.`);
+          if (!courseId) return toast(`${picked.fullName} has not registered any course.`);
           await api(`/courses/${courseId}/results`, { method: 'POST', body: { studentId: picked.id, send, term, score, grade, remark } });
           toast(send ? 'Result saved and sent' : 'Result saved as a draft');
         }

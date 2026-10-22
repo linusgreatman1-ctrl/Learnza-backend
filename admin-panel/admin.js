@@ -13,6 +13,20 @@
 
   const $ = (id) => document.getElementById(id);
   const view = $('view');
+  // On every page, what is already there comes first and the form to add something new sits under it.
+  (function addFormsBelow() {
+    let t = null;
+    const move = () => {
+      const panels = Array.from(view.querySelectorAll(':scope > .panel')).filter((p) => {
+        const h = p.querySelector(':scope > h3');
+        return h && /^(Add|Onboard|New|Create|Register)\b/i.test(h.textContent.trim());
+      });
+      const after = (p) => { let n = p.nextElementSibling; while (n) { if (!panels.includes(n)) return true; n = n.nextElementSibling; } return false; };
+      panels.filter(after).forEach((p) => { p.style.marginTop = '20px'; });
+      panels.forEach((p) => { if (after(p)) view.appendChild(p); });
+    };
+    new MutationObserver(() => { clearTimeout(t); t = setTimeout(move, 30); }).observe(view, { childList: true });
+  })();
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

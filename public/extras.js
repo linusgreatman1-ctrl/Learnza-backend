@@ -706,6 +706,7 @@
     // a lecturer's own student (or the lecturer): no school and no department, the lecturer takes their place; no staff ID anywhere
     const indep = !!(ctx.school && ctx.school.independent) || !!u.fromLecturer || !!u.lecturerName;
     if (indep && u.role === 'STUDENT') {
+      if (u.lecturerSchool) f.push(['School', u.lecturerSchool]);
       if (u.lecturerName) f.push(['Lecturer', u.lecturerName]);
       if (u.courseOfStudy) f.push(['Course of study', u.courseOfStudy]);
       if (levelOf(u)) f.push(['Level', levelOf(u)]);
@@ -970,7 +971,7 @@
     const { elections: list } = await api(base(ctx) + '');
     view.innerHTML = `
       <div class="page-head"><h1>${ctx.mode === 'class' ? 'Class Rep Voting' : 'Elections'}</h1><button class="btn btn-accent btn-sm" id="el-new">+ ${ctx.mode === 'class' ? 'New class rep vote' : 'New election'}</button></div>
-      <p class="muted" style="margin-bottom:16px;">${ctx.mode === 'class' ? 'Choose one of your courses and add the students standing for class representative. Only the students enrolled in that course can vote. They are told when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.' : 'Run a student union (SUG) election or an election among lecturers. Voters get a notification when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.'}</p>
+      <p class="muted" style="margin-bottom:16px;">${ctx.mode === 'class' ? 'Choose one of your courses and add the students standing for class representative. Only the students registered in that course can vote. They are told when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.' : 'Run a student union (SUG) election or an election among lecturers. Voters get a notification when you open it, vote once, and the ballot is secret — you see each candidate\'s votes and who has turned out, never who voted for whom.'}</p>
       ${list.length ? list.map((e) => `
         <div class="card lzx-card" style="margin-bottom:12px;">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
@@ -1044,7 +1045,7 @@
           <div class="field"><label>Title</label><input id="ef-title" maxlength="120" value="${esc(model.title)}" placeholder="${classMode ? 'e.g. Class Rep — CSC 201' : 'e.g. SUG Election 2026/2027'}"></div>
           <div class="field"><label>Description (optional)</label><textarea id="ef-desc" rows="2" maxlength="600">${esc(model.description)}</textarea></div>
           ${classMode
-            ? `<div class="field"><label>Which course is voting?</label><select id="ef-course"><option value="">Choose a course…</option>${courses.map((c) => `<option value="${c.id}" ${c.id === model.courseId ? 'selected' : ''}>${esc(c.code)} — ${esc(c.title)} (${c.students} student${c.students === 1 ? '' : 's'})</option>`).join('')}</select>${courses.length ? '' : '<div class="meta" style="color:#b45309;margin-top:4px;">You are not assigned to a course yet. Ask your school admin to assign you one.</div>'}<div class="meta" style="margin-top:4px;">Only the students enrolled in this course can stand and vote.</div></div>`
+            ? `<div class="field"><label>Which course is voting?</label><select id="ef-course"><option value="">Choose a course…</option>${courses.map((c) => `<option value="${c.id}" ${c.id === model.courseId ? 'selected' : ''}>${esc(c.code)} — ${esc(c.title)} (${c.students} student${c.students === 1 ? '' : 's'})</option>`).join('')}</select>${courses.length ? '' : '<div class="meta" style="color:#b45309;margin-top:4px;">You are not assigned to a course yet. Ask your school admin to assign you one.</div>'}<div class="meta" style="margin-top:4px;">Only the students registered in this course can stand and vote.</div></div>`
             : `<div class="field"><label>Who is standing?</label><select id="ef-kind"><option value="STUDENT_SUG" ${model.kind === 'STUDENT_SUG' ? 'selected' : ''}>Students — student union (SUG) election</option><option value="LECTURER" ${model.kind === 'LECTURER' ? 'selected' : ''}>Lecturers — lecturers' election</option></select></div>
           <div class="field"><label>Who votes?</label><select id="ef-voters"><option value="STUDENTS" ${model.voters === 'STUDENTS' ? 'selected' : ''}>Students</option><option value="LECTURERS" ${model.voters === 'LECTURERS' ? 'selected' : ''}>Lecturers</option><option value="BOTH" ${model.voters === 'BOTH' ? 'selected' : ''}>Students and lecturers</option></select></div>`}
           <div class="field"><label>Voting opens (optional — leave empty to start when you press Open)</label><input id="ef-opens" type="datetime-local" value="${esc(model.opensAt)}"></div>

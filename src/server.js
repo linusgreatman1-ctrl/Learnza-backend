@@ -34,6 +34,9 @@ const staffRoutes = require('./routes/staff');
 const recordsRoutes = require('./routes/records');
 const individualCoursesRoutes = require('./routes/individualCourses');
 const projectsRoutes = require('./routes/projects');
+const meetingsRoutes = require('./routes/meetings');
+const admissionOfficeRoutes = require('./routes/admissionOffice');
+const { attachMeetingNamespace } = require('./realtime/meeting');
 const classAttendanceRoutes = require('./routes/classAttendance');
 const assignmentsRoutes = require('./routes/assignments');
 const notificationsRoutes = require('./routes/notifications');
@@ -174,6 +177,8 @@ app.use('/api', staffRoutes);
 app.use('/api', recordsRoutes);
 app.use('/api', individualCoursesRoutes);
 app.use('/api', projectsRoutes);
+app.use('/api', meetingsRoutes);
+app.use('/api', admissionOfficeRoutes);
 app.use('/api', classAttendanceRoutes);
 app.use('/api', assignmentsRoutes);
 app.use('/api', notificationsRoutes);
@@ -228,6 +233,8 @@ app.use((err, req, res, next) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: true } });
 attachLiveNamespace(io);
+attachMeetingNamespace(io);
+meetingsRoutes.startScheduleReminders();
 attachNotificationsNamespace(io);
 
 settings.start();
