@@ -166,7 +166,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   console.log('== student app: sign-up, lockout, password reset ==');
   const email = `indep${RUN}@example.com`;
-  r = await call('POST', '/api/auth/register-individual', { body: { fullName: 'Ngozi Eze', email, password: 'secret12', institutionType: 'UNIVERSITY', attendedSchoolName: 'UNILAG', attendedDepartment: 'Law', courseOfStudy: 'LLB', yearOfStudy: 2 } });
+  r = await call('POST', '/api/auth/register-individual', { body: { confirmAdult: true, fullName: 'Ngozi Eze', email, password: 'secret12', institutionType: 'UNIVERSITY', attendedSchoolName: 'UNILAG', attendedDepartment: 'Law', courseOfStudy: 'LLB', yearOfStudy: 2 } });
   check('independent student registers (with a refresh token)', r.status === 200 && r.data.user.isIndividual === true && r.data.refreshToken, r.status);
   const INDEP_REFRESH = r.data.refreshToken;
   r = await call('POST', '/api/auth/login', { body: { email: `tobi${RUN}@test.edu`, password: 'anything' } });
@@ -214,7 +214,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   console.log('== lockout ==');
   const lockEmail = `lock${RUN}@example.com`;
-  await call('POST', '/api/auth/register-individual', { body: { fullName: 'Lock Test', email: lockEmail, password: 'secret12', institutionType: 'OTHER' } });
+  await call('POST', '/api/auth/register-individual', { body: { confirmAdult: true, fullName: 'Lock Test', email: lockEmail, password: 'secret12', institutionType: 'OTHER' } });
   for (let i = 0; i < 5; i++) await call('POST', '/api/auth/login', { body: { email: lockEmail, password: 'bad-pass' } });
   r = await call('POST', '/api/auth/login', { body: { email: lockEmail, password: 'secret12' } });
   check('5 bad passwords lock the account (even for the right password)', r.status === 429 && r.data.code === 'ACCOUNT_LOCKED', r);

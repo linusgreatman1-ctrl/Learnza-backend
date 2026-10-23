@@ -12,6 +12,36 @@ const prisma = require('./db');
 // isEnforced(). The cache is loaded at boot, updated immediately on a save, and re-read every
 // minute so a second server instance picks up a change too.
 const DEFINITIONS = {
+  featureStudyGroups: {
+    type: 'boolean', default: true, category: 'Features',
+    label: 'Study groups',
+    help: 'Turn off to stop students using study groups and their chat. Everyone sees the change at once; the page and the server both obey it.',
+  },
+  featureLibrary: {
+    type: 'boolean', default: true, category: 'Features',
+    label: 'e-Library',
+    help: 'Turn off to hide and block the e-Library. Everyone sees the change at once; the page and the server both obey it.',
+  },
+  featureLiveClasses: {
+    type: 'boolean', default: true, category: 'Features',
+    label: 'Live classes',
+    help: 'Turn off to stop live classes from starting or being joined. Everyone sees the change at once; the page and the server both obey it.',
+  },
+  featureMeetings: {
+    type: 'boolean', default: true, category: 'Features',
+    label: 'Meetings',
+    help: 'Turn off to stop meetings and the meeting schedule. Everyone sees the change at once; the page and the server both obey it.',
+  },
+  featureElections: {
+    type: 'boolean', default: true, category: 'Features',
+    label: 'Elections',
+    help: 'Turn off to hide and block elections and class representative voting. Everyone sees the change at once; the page and the server both obey it.',
+  },
+  featureFees: {
+    type: 'boolean', default: true, category: 'Features',
+    label: 'School fees',
+    help: 'Turn off to hide and block fee payment. Everyone sees the change at once; the page and the server both obey it.',
+  },
   subscriptionEnforced: {
     type: 'select', options: ['env', 'on', 'off'], default: 'env', category: 'Billing',
     label: 'Subscription paywall',

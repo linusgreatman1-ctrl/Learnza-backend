@@ -84,6 +84,7 @@ router.post('/register-individual', async (req, res) => {
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email and password are required.' });
   }
+  if (req.body.confirmAdult !== true) return res.status(400).json({ error: 'You must be 18 years old or older to use Learnza. Please confirm your age.' });
   if (String(password).length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters.' });
   }

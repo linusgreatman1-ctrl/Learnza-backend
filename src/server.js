@@ -143,6 +143,20 @@ app.use('/api', (req, res, next) => {
   };
   db.requestStats.run(stats, next);
 });
+// Feature switches (admin panel > Settings > Features): a feature that is off is hidden in the apps and refused here.
+const FEATURE_GATES = [
+  [/^\/groups(\/|$)/, 'featureStudyGroups', 'Study groups'], [/^\/library(\/|$)/, 'featureLibrary', 'The e-Library'],
+  [/^\/live(\/|-)/, 'featureLiveClasses', 'Live classes'], [/^\/(meetings|meeting-schedules)(\/|$)/, 'featureMeetings', 'Meetings'],
+  [/^\/elections(\/|$)/, 'featureElections', 'Elections'], [/^\/fees(\/|$)/, 'featureFees', 'School fees'],
+];
+app.get('/api/features', (req, res) => {
+  const out = {}; for (const [, key] of FEATURE_GATES) out[key] = settings.get(key);
+  res.json({ features: out });
+});
+app.use('/api', (req, res, next) => {
+  for (const [re, key, label] of FEATURE_GATES) if (re.test(req.path) && !settings.get(key)) return res.status(403).json({ error: label + ' is switched off for now.', code: 'FEATURE_OFF' });
+  next();
+});
 // Maintenance mode (admin panel > Settings): everything but the owner's own panel and the
 // bits that must keep working (token refresh/sign-out, payment webhooks) answers 503.
 app.use('/api', (req, res, next) => {

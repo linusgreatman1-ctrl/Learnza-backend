@@ -55,7 +55,7 @@ const photoForm = () => { const f = new FormData(); f.append('avatar', new Blob(
   const sStu = await login(A, 'Stu ' + RUN, stu.accessCode);
   const stuMe = await call('GET', '/api/auth/me', { token: sStu.data.token });
   check('student /me has matric number and level', stuMe.data.user.matricNumber === 'L/1' && stuMe.data.user.yearOfStudy === 2);
-  const ind = await call('POST', '/api/auth/register-individual', { body: { fullName: 'Solo ' + RUN, email: `solo${RUN}@example.com`, password: 'secret12', institutionType: 'MONOTECHNIC', attendedSchoolName: 'Yaba Mono', courseOfStudy: 'Lab Tech', yearOfStudy: 1 } });
+  const ind = await call('POST', '/api/auth/register-individual', { body: { confirmAdult: true, fullName: 'Solo ' + RUN, email: `solo${RUN}@example.com`, password: 'secret12', institutionType: 'MONOTECHNIC', attendedSchoolName: 'Yaba Mono', courseOfStudy: 'Lab Tech', yearOfStudy: 1 } });
   const indMe = await call('GET', '/api/auth/me', { token: ind.data.token });
   check('independent student /me has institution and programme', indMe.data.user.attendedSchoolName === 'Yaba Mono' && indMe.data.user.courseOfStudy === 'Lab Tech' && indMe.data.user.institutionType === 'MONOTECHNIC');
 

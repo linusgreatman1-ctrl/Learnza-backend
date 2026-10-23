@@ -57,7 +57,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   B.lecturer = (await person(B, '/api/admin/lecturers', { fullName: 'Lec B ' + RUN, departmentId: deptB.id }, 'LECTURER')).token;
   const stuB = await person(B, '/api/lect/students', { fullName: 'Other School ' + RUN, matricNumber: 'B/1' }, 'STUDENT');
   const indieEmail = `commerce${RUN}@example.com`;
-  r = await call('POST', '/api/auth/register-individual', { body: { fullName: 'Indie ' + RUN, email: indieEmail, password: 'secret12', institutionType: 'MONOTECHNIC' } });
+  r = await call('POST', '/api/auth/register-individual', { body: { confirmAdult: true, fullName: 'Indie ' + RUN, email: indieEmail, password: 'secret12', institutionType: 'MONOTECHNIC' } });
   const indie = { token: r.data.token, id: r.data.user.id };
 
   // ================================================================ payments

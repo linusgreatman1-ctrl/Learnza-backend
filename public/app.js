@@ -89,6 +89,9 @@
     if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
   })();
 
+  // Features the owner has switched off in the admin panel (Settings > Features)
+  fetch('/api/features').then((r) => r.json()).then((d) => { window.__lzFeatures = d.features || {}; }).catch(() => {});
+
   // ---------- API helper ----------
   // Access tokens last 15 minutes. When one lapses the server answers 401; the refresh
   // token (kept per tab, like the access token) is swapped for a new pair and the request
@@ -441,6 +444,7 @@
         method: 'POST',
         body: {
           fullName: document.getElementById('lg-reg-name').value.trim(),
+          confirmAdult: document.getElementById('lg-reg-18').checked,
           email: document.getElementById('lg-reg-email').value.trim(),
           phone: document.getElementById('lg-reg-phone').value.trim(),
           institutionType: document.getElementById('lg-reg-type').value,
@@ -701,6 +705,7 @@
       const sx = navItems.findIndex(([k]) => k === 'semester-exam-hub');
       navItems = [...navItems.slice(0, sx < 0 ? navItems.length : sx + 1), ['student-results', 'Results'], ...navItems.slice(sx < 0 ? navItems.length : sx + 1)];
     }
+    try { const f = (window.__lzFeatures || {}); const off = { groups: 'featureStudyGroups', library: 'featureLibrary', elections: 'featureElections', fees: 'featureFees', meeting: 'featureMeetings', 'meeting-join': 'featureMeetings', 'my-schedules': 'featureMeetings', 'live-class': 'featureLiveClasses' }; navItems = navItems.filter(([k]) => !(off[k] && f[off[k]] === false)); } catch (e) { /* show everything */ }
     nav.innerHTML = navItems
       .map(([key, label]) => `<button class="nav-item" data-screen="${key}">${esc(label)}</button>`)
       .join('');
