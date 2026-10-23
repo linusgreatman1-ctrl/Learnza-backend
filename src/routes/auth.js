@@ -400,6 +400,12 @@ router.post('/change-password', requireAuth, async (req, res) => {
 
 // "Mute notifications" -- suppresses new in-app notifications for this user without
 // deleting anything already delivered; checked centrally in notification.service.js.
+router.patch('/me/theme', requireAuth, async (req, res) => {
+  const theme = req.body.theme === 'dark' ? 'dark' : 'light';
+  const user = await prisma.user.update({ where: { id: req.user.id }, data: { theme } });
+  res.json({ user: publicUser(user) });
+});
+
 router.patch('/me/notifications', requireAuth, async (req, res) => {
   const user = await prisma.user.update({ where: { id: req.user.id }, data: { notificationsMuted: !!req.body.muted } });
   res.json({ user: publicUser(user) });

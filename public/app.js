@@ -471,6 +471,8 @@
 
 
   async function onAuthed(token, user, refreshToken) {
+    // the Dark Mode choice lives on the server, so it follows this person to any device
+    if (user && (user.theme === 'dark' || user.theme === 'light')) { try { localStorage.setItem('vp_theme', user.theme); } catch (e) { /* private mode */ } document.documentElement.setAttribute('data-theme', user.theme); }
     state.token = token;
     state.refreshToken = refreshToken || null;
     state.user = user;
@@ -2608,6 +2610,7 @@
           const next = currentTheme === 'dark' ? 'light' : 'dark';
           localStorage.setItem('vp_theme', next);
           document.documentElement.setAttribute('data-theme', next);
+          api('/auth/me/theme', { method: 'PATCH', body: { theme: next } }).then((r) => { if (r && r.user) { state.user = r.user; } }).catch(() => {});
           render();
           return;
         }
