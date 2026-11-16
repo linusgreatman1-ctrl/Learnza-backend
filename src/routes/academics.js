@@ -209,7 +209,6 @@ router.post('/lect/students', requireAuth, requireRole('LECTURER'), async (req, 
     if (!req.body.yearOfStudy) return res.status(400).json({ error: 'Choose the student\'s level.' });
     delete req.body.attendedDepartment;
     req.body.courseOfStudy = clean(req.body.courseOfStudy, 100);
-    if (!req.body.matricNumber) req.body.matricNumber = 'STU-' + Math.random().toString(36).slice(2, 8).toUpperCase();
   }
   const courseIds = adminRoutes.parseCourseIds(req.body);
   const mine = new Set(scope.courses.map((c) => c.id));

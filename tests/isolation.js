@@ -75,8 +75,10 @@ async function loginCode(school, fullName, accessCode) {
   check('duplicate email (any case) -> 409', r.status === 409, r);
 
   console.log('== only lecturers add students; the school admin views and edits them ==');
-  r = await call('POST', '/api/admin/students', { token: A.admin, body: { fullName: 'Student One', matricNumber: 'AB/001', departmentId: deptA.id, yearOfStudy: 1 } });
-  check('a school admin cannot add a student', r.status === 403, r);
+  // the school admin adds students too (Staff & Student Directory > Add student), inside their own school only
+  r = await call('POST', '/api/admin/students', { token: A.admin, body: { fullName: 'Admin Added', departmentId: deptA.id, yearOfStudy: 1 } });
+  check('a school admin can add a student (a matric number is made for them)', r.status === 201 && /\/001$/.test(r.data.user.matricNumber), r);
+  await call('POST', `/api/admin/students/${r.data.user.id}/expel`, { token: A.admin }); // an expelled student is not offered in class pickers
   const lecToken = await loginCode(A, 'Dr Ada Obi', lecA.accessCode);
   r = await call('GET', '/api/lect/add-student-options', { token: lecToken });
   check("the lecturer's options are their own department and classes", r.status === 200 && r.data.departments.length === 1 && r.data.departments[0].id === deptA.id && r.data.courses.length === 1 && r.data.courses[0].id === courseA.id, r.data);
@@ -95,7 +97,7 @@ async function loginCode(school, fullName, accessCode) {
   r = await call('PATCH', `/api/admin/students/${s1.user.id}`, { token: A.admin, body: { phone: '08011112222' } });
   check('the school admin can still edit a student', r.status === 200 && r.data.user.phone === '08011112222', r);
   r = await call('GET', '/api/admin/students', { token: A.admin });
-  check('...and sees them in the directory', r.status === 200 && r.data.students.length === 2, r.data.students && r.data.students.length);
+  check('...and sees them in the directory', r.status === 200 && r.data.students.length === 3, r.data.students && r.data.students.length);
   r = await call('PATCH', `/api/lect/students/${s1.user.id}`, { token: lecToken, body: { matricNumber: 'AB/001A' } });
   check('the lecturer who added a student can edit them', r.status === 200 && r.data.user.matricNumber === 'AB/001A', r);
   r = await call('PATCH', `/api/lect/students/${s1.user.id}`, { token: bioToken, body: { fullName: 'hacked' } });
@@ -216,7 +218,7 @@ async function loginCode(school, fullName, accessCode) {
   t = await titles(lecBToken);
   check('B sees only the platform book', !t.includes('A-only book') && t.includes('Platform book'), t);
   const indEmail = `ind${RUN}@example.com`;
-  r = await call('POST', '/api/auth/register-individual', { body: { fullName: 'Solo', email: indEmail, password: 'secret12', institutionType: 'OTHER' } });
+  r = await call('POST', '/api/auth/register-individual', { body: { confirmAdult: true, fullName: 'Solo', email: indEmail, password: 'secret12', institutionType: 'OTHER' } });
   t = await titles(r.data.token);
   check('independent learner sees only the platform catalog', !t.includes('A-only book') && t.includes('Platform book'), t);
   r = await call('GET', `/api/courses/${courseA.id}`, { token: r.data.token });

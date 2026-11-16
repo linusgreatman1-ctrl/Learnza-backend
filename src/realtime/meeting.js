@@ -46,6 +46,8 @@ function attachMeetingNamespace(io) {
       if (!socket.meetingId || !to) return;
       const target = nsp.sockets.get(to);
       if (!target || target.meetingId !== socket.meetingId) return;
+      // star shape: every connection runs between the host and one participant, never between two participants
+      if (!socket.isHost && !target.isHost) return;
       target.emit('meeting:signal', { from: socket.id, data });
     });
     // a participant who turns up before the host has connected asks again once the host is there

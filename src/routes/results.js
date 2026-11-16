@@ -28,7 +28,7 @@ router.post('/courses/:id/results', requireAuth, requireRole('LECTURER', 'ADMIN'
     include: { student: { select: { fullName: true, schoolId: true } } },
   });
   if (send !== false) {
-    await notify(studentId, 'Result published', `Your result for ${term} is ready.`, 'digital-id');
+    await notify(studentId, 'Result published', `Your result for ${term} is ready.`, 'student-results');
     await notifySchoolAdmins(
       result.student.schoolId,
       'Score released',
@@ -52,7 +52,7 @@ router.post('/results/:id/send', requireAuth, requireRole('LECTURER', 'ADMIN'), 
   if (result.authorId !== req.user.id && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'You can only send results you created.' });
 
   const updated = await prisma.result.update({ where: { id: result.id }, data: { sentAt: result.sentAt || new Date() } });
-  await notify(result.studentId, 'Result published', `Your result for ${result.term} is ready.`, 'digital-id');
+  await notify(result.studentId, 'Result published', `Your result for ${result.term} is ready.`, 'student-results');
   await notifySchoolAdmins(
     result.student.schoolId,
     'Score released',
@@ -91,7 +91,7 @@ router.post('/courses/:id/results/publish', requireAuth, requireRole('LECTURER',
   if (!drafts.length) return res.json({ count: 0 });
   await prisma.result.updateMany({ where: { id: { in: drafts.map((d) => d.id) } }, data: { sentAt: new Date() } });
   for (const result of drafts) {
-    await notify(result.studentId, 'Result published', `Your result for ${result.term} is ready.`, 'digital-id');
+    await notify(result.studentId, 'Result published', `Your result for ${result.term} is ready.`, 'student-results');
     await notifySchoolAdmins(
       result.student.schoolId,
       'Score released',

@@ -349,10 +349,12 @@ router.post('/non-academic-staff', async (req, res) => {
   res.json({ user: safe, accessCode: created.accessCode, tempPassword: created.tempPassword });
 });
 
-// Students are added by their lecturers (My Students), for the lecturer's own department and
-// classes -- the school admin views and edits them here but does not create them.
-router.post('/students', (req, res) => {
-  res.status(403).json({ error: 'Students are added by their lecturers, from My Students. You can view and edit them here.', code: 'LECTURERS_ADD_STUDENTS' });
+// The school admin adds a student directly (Staff & Student Directory > Add student). Same details and the same
+// path as a lecturer adding one from My Students: the matric number is made by the system when none is typed in.
+router.post('/students', async (req, res) => {
+  const departmentId = String(req.body.departmentId || '').trim();
+  if (!departmentId) return res.status(400).json({ error: 'Choose the department the student is joining.' });
+  await createStudent(req, res, { departmentId, courseIds: parseCourseIds(req.body) });
 });
 
 // Used by routes/academics.js when a lecturer adds a student.
@@ -363,10 +365,18 @@ async function createStudent(req, res, { departmentId, courseIds }) {
   if (admitted !== null && !(admitted >= 1980 && admitted <= thisYear + 1)) return res.status(400).json({ error: 'Enter a valid year of admission, for example ' + thisYear + '.' });
   const length = req.body.programmeYears ? parseInt(req.body.programmeYears, 10) : null;
   if (length !== null && !(length >= 1 && length <= 8)) return res.status(400).json({ error: 'Programme length must be from 1 to 8 years.' });
+  // No matric number typed in: the system makes the next one for this school, department and year.
+  let matric = String(matricNumber || '').trim();
+  if (!matric) {
+    const department = await prisma.department.findFirst({ where: { id: departmentId, schoolId: req.user.schoolId } });
+    if (!department) return res.status(400).json({ error: 'That department does not exist in your school. Pick one from the list.' });
+    const school = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { id: true, name: true } });
+    matric = await require('../services/matric.service').generateMatricNumber(school, department, admitted || undefined);
+  }
   const created = await createSchoolUser(req, res, {
     role: 'STUDENT',
-    requiredFields: ['matricNumber'],
-    extraFields: { matricNumber, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, yearOfAdmission: admitted, programmeYears: length, addedById: req.user.id, ...(req.body.attendedDepartment ? { attendedDepartment: req.body.attendedDepartment } : {}), ...(req.body.courseOfStudy ? { courseOfStudy: req.body.courseOfStudy } : {}) },
+    requiredFields: [],
+    extraFields: { matricNumber: matric, departmentId, yearOfStudy: yearOfStudy ? parseInt(yearOfStudy, 10) : null, yearOfAdmission: admitted, programmeYears: length, addedById: req.user.id, ...(req.body.attendedDepartment ? { attendedDepartment: req.body.attendedDepartment } : {}), ...(req.body.courseOfStudy ? { courseOfStudy: req.body.courseOfStudy } : {}) },
     courseIds,
   });
   if (!created) return;
@@ -384,7 +394,7 @@ async function createStudent(req, res, { departmentId, courseIds }) {
 // sign in to the Schools app with their access code, like lecturers and students.
 router.get('/admins', async (req, res) => {
   const admins = await prisma.user.findMany({
-    where: { schoolId: req.user.schoolId, role: 'ADMIN', NOT: { email: { endsWith: '@internal.learnza.local' } } },
+    where: { schoolId: req.user.schoolId, role: 'ADMIN', NOT: { email: { endsWith: '@internal.learnza.local' }, accessCode: null } }, // the founding admin (join code, no access code) is not a person on this list; an admin added without an email is
     orderBy: { createdAt: 'asc' },
   });
   res.json({ admins: admins.map(({ passwordHash, ...a }) => a) });
@@ -563,7 +573,7 @@ async function setUserStatus(req, res, next, { role, statuses }) {
   const user = await prisma.user.findFirst({ where: { id: req.params.id, schoolId: req.user.schoolId, role } });
   if (!user) return res.status(404).json({ error: 'Not found' });
   const updated = await prisma.user.update({ where: { id: user.id }, data: { status } });
-  await notify(user.id, 'Account status changed', STATUS_NOTE[status]);
+  await notify(user.id, 'Account status changed', STATUS_NOTE[status], 'my-dashboard');
   const { passwordHash, ...safe } = updated;
   res.json({ user: safe });
 }
@@ -653,7 +663,7 @@ router.post('/hostels/:id/allocate', async (req, res) => {
   const application = existing
     ? await prisma.hostelApplication.update({ where: { id: existing.id }, data: { hostelId: hostel.id, roomAssigned: roomAssigned || 'To be confirmed', decidedAt: new Date() } })
     : await prisma.hostelApplication.create({ data: { studentId, hostelId: hostel.id, roomAssigned: roomAssigned || 'To be confirmed', status: 'APPROVED', decidedAt: new Date() } });
-  await notify(studentId, 'Hostel allocated', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'digital-id');
+  await notify(studentId, 'Hostel allocated', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'hostel');
   res.json({ application });
 });
 

@@ -618,6 +618,11 @@ model Publication {
   outlet    String
   year      Int
   url       String?
+  kind        String  @default("PUBLICATION") // PUBLICATION | JOURNAL | BOOK | CONFERENCE | CPD | OTHER
+  fileUrl     String? // an uploaded copy (PDF, Word or a photo)
+  fileName    String?
+  description String?
+  libraryId   String? // the e-Library entry made from this one (read only for students)
   createdAt DateTime @default(now())
 
   @@index([userId])
@@ -630,7 +635,13 @@ model TranscriptRequest {
   id          String    @id @default(cuid())
   student     User      @relation(fields: [studentId], references: [id])
   studentId   String
-  status      String    @default("PENDING") // PENDING | ISSUED
+  status      String    @default("PENDING") // PENDING | ISSUED | DECLINED
+  kind        String    @default("TRANSCRIPT") // TRANSCRIPT | CERTIFICATE | STATEMENT_OF_RESULT | LETTER | OTHER
+  title       String?   // what "Other" is, in the student's words
+  note        String?   // what the student says about the request
+  fileUrl     String?   // the document the school admin uploads when issuing it
+  fileName    String?
+  adminNote   String?   // the school's note to the student (why it was declined, or a word with the document)
   requestedAt DateTime  @default(now())
   issuedAt    DateTime?
 
@@ -676,6 +687,8 @@ model Credential {
   studentId  String
   title      String
   verifyCode String   @unique
+  fileUrl    String?  // the certificate or letter itself, uploaded by the school admin
+  fileName   String?
   issuedAt   DateTime @default(now())
 
   @@index([studentId])

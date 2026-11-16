@@ -11,28 +11,46 @@ const router = express.Router();
 // A missing schoolId would make Prisma drop the filter, so refuse that outright.
 const inMySchool = (req) => (req.user.schoolId ? { student: { schoolId: req.user.schoolId } } : { id: '__none__' });
 
-// ---- Transcript ----
+// ---- Transcript and other credentials ----
+// A student asks the school for a transcript, a certificate, a statement of result, a letter or something else; the request lands
+// with the school admin, who uploads the document (or, for a transcript, issues the one the system makes from the student's results)
+// and the student is told. It then shows on the student's Transcript & Credentials page with a download.
+const { memoryUpload, saveUpload } = require('../services/fileUpload.service');
+const docUpload = memoryUpload(15);
+const KINDS = { TRANSCRIPT: 'Transcript', CERTIFICATE: 'Certificate', STATEMENT_OF_RESULT: 'Statement of result', LETTER: 'Letter', OTHER: 'Other document' };
+const requestLabel = (r) => (r.kind === 'OTHER' && r.title ? r.title : KINDS[r.kind] || 'Document');
+const presentRequest = (r) => ({
+  id: r.id, kind: r.kind, label: requestLabel(r), title: r.title, note: r.note, status: r.status, requestedAt: r.requestedAt, issuedAt: r.issuedAt,
+  fileUrl: r.fileUrl, fileName: r.fileName, adminNote: r.adminNote,
+});
+const DOC_TYPES = /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.[a-z.]+|image\/(png|jpe?g|webp))$/;
 
 router.post('/students/me/transcript-request', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const existing = await prisma.transcriptRequest.findFirst({
-    where: { studentId: req.user.id, status: 'PENDING' },
-  });
-  if (existing) return res.json({ request: existing });
-  const request = await prisma.transcriptRequest.create({ data: { studentId: req.user.id } });
-  await notifySchoolAdmins(req.user.schoolId, 'Transcript requested', `${req.user.fullName} requested a transcript.`, 'admin-student-requests');
-  res.json({ request });
+  const kind = KINDS[req.body && req.body.kind] ? req.body.kind : 'TRANSCRIPT';
+  const title = String((req.body && req.body.title) || '').trim().slice(0, 120) || null;
+  const note = String((req.body && req.body.note) || '').trim().slice(0, 400) || null;
+  if (kind === 'OTHER' && !title) return res.status(400).json({ error: 'Say which document you need.' });
+  const existing = await prisma.transcriptRequest.findFirst({ where: { studentId: req.user.id, status: 'PENDING', kind, ...(kind === 'OTHER' ? { title } : {}) } });
+  if (existing) return res.json({ request: presentRequest(existing) });
+  const request = await prisma.transcriptRequest.create({ data: { studentId: req.user.id, kind, title: kind === 'OTHER' ? title : null, note } });
+  await notifySchoolAdmins(req.user.schoolId, `${requestLabel(request)} requested`, `${req.user.fullName}${req.user.matricNumber ? ' (' + req.user.matricNumber + ')' : ''} requested a ${requestLabel(request).toLowerCase()}.`, 'admin-student-requests');
+  res.json({ request: presentRequest(request) });
 });
 
+// The latest transcript request (the Digital ID card still reads this one).
 router.get('/students/me/transcript-request', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const request = await prisma.transcriptRequest.findFirst({
-    where: { studentId: req.user.id },
-    orderBy: { requestedAt: 'desc' },
-  });
-  res.json({ request });
+  const request = await prisma.transcriptRequest.findFirst({ where: { studentId: req.user.id, kind: 'TRANSCRIPT' }, orderBy: { requestedAt: 'desc' } });
+  res.json({ request: request ? presentRequest(request) : null });
+});
+
+// Everything the student has asked for, newest first, with the document when the school has sent it.
+router.get('/students/me/transcript-requests', requireAuth, requireRole('STUDENT'), async (req, res) => {
+  const requests = await prisma.transcriptRequest.findMany({ where: { studentId: req.user.id }, orderBy: { requestedAt: 'desc' }, take: 50 });
+  res.json({ requests: requests.map(presentRequest), kinds: KINDS });
 });
 
 router.get('/students/me/transcript', requireAuth, requireRole('STUDENT'), async (req, res) => {
-  const issued = await prisma.transcriptRequest.findFirst({ where: { studentId: req.user.id, status: 'ISSUED' } });
+  const issued = await prisma.transcriptRequest.findFirst({ where: { studentId: req.user.id, kind: 'TRANSCRIPT', status: 'ISSUED' }, orderBy: { issuedAt: 'desc' } });
   if (!issued) return res.status(403).json({ error: 'No issued transcript yet. Request one first.' });
   const submissions = await prisma.submission.findMany({
     where: { studentId: req.user.id, submittedAt: { not: null } },
@@ -40,7 +58,7 @@ router.get('/students/me/transcript', requireAuth, requireRole('STUDENT'), async
     orderBy: { submittedAt: 'asc' },
   });
   res.json({
-    issuedAt: issued.issuedAt,
+    issuedAt: issued.issuedAt, fileUrl: issued.fileUrl, fileName: issued.fileName,
     results: submissions.map((s) => ({
       courseCode: s.assessment.course.code,
       courseTitle: s.assessment.course.title,
@@ -51,24 +69,42 @@ router.get('/students/me/transcript', requireAuth, requireRole('STUDENT'), async
   });
 });
 
+// Pending requests for the school admin, with who asked and for what; the ones already dealt with show underneath.
 router.get('/admin/transcript-requests', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const requests = await prisma.transcriptRequest.findMany({
-    where: { status: 'PENDING', student: { schoolId: req.user.schoolId } },
-    include: { student: { select: { fullName: true, matricNumber: true } } },
-    orderBy: { requestedAt: 'asc' },
-  });
-  res.json({ requests });
+  const include = { student: { select: { id: true, fullName: true, matricNumber: true, department: { select: { name: true } } } } };
+  const [pending, done] = await Promise.all([
+    prisma.transcriptRequest.findMany({ where: { status: 'PENDING', student: { schoolId: req.user.schoolId } }, include, orderBy: { requestedAt: 'asc' } }),
+    prisma.transcriptRequest.findMany({ where: { status: { not: 'PENDING' }, student: { schoolId: req.user.schoolId } }, include, orderBy: { issuedAt: 'desc' }, take: 15 }),
+  ]);
+  const shape = (r) => ({ ...presentRequest(r), student: r.student });
+  res.json({ requests: pending.map(shape), recent: done.map(shape) });
 });
 
-router.post('/admin/transcript-requests/:id/issue', requireAuth, requireRole('ADMIN'), async (req, res) => {
+// Issue it: upload the document (a transcript can also be issued without one, and then the student opens the one the system
+// makes from their results). The student is notified and it appears on their Transcript & Credentials page.
+router.post('/admin/transcript-requests/:id/issue', requireAuth, requireRole('ADMIN'), docUpload.single('file'), async (req, res) => {
   const found = await prisma.transcriptRequest.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
   if (!found) return res.status(404).json({ error: 'Request not found' });
-  const request = await prisma.transcriptRequest.update({
-    where: { id: found.id },
-    data: { status: 'ISSUED', issuedAt: new Date() },
-  });
-  await notify(request.studentId, 'Transcript issued', 'Your official transcript is ready to view.', 'digital-id');
-  res.json({ request });
+  if (found.status !== 'PENDING') return res.status(409).json({ error: 'This request has already been dealt with.' });
+  if (!req.file && found.kind !== 'TRANSCRIPT') return res.status(400).json({ error: 'Upload the document to send to the student.' });
+  if (req.file && !DOC_TYPES.test(req.file.mimetype)) return res.status(400).json({ error: 'Upload a PDF, a Word document or a photo.' });
+  let fileUrl = null, fileName = null;
+  if (req.file) { ({ url: fileUrl } = await saveUpload(req.file)); fileName = req.file.originalname.slice(0, 160); }
+  const adminNote = String((req.body && req.body.note) || '').trim().slice(0, 300) || null;
+  const request = await prisma.transcriptRequest.update({ where: { id: found.id }, data: { status: 'ISSUED', issuedAt: new Date(), fileUrl, fileName, adminNote } });
+  await notify(request.studentId, `${requestLabel(request)} issued`, `Your ${requestLabel(request).toLowerCase()} is ready${fileUrl ? ' to download' : ' to view'} on your Transcript & Credentials page.`, 'transcript-hub');
+  res.json({ request: presentRequest(request) });
+});
+
+router.post('/admin/transcript-requests/:id/decline', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  const found = await prisma.transcriptRequest.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
+  if (!found) return res.status(404).json({ error: 'Request not found' });
+  if (found.status !== 'PENDING') return res.status(409).json({ error: 'This request has already been dealt with.' });
+  const adminNote = String((req.body && req.body.reason) || '').trim().slice(0, 300);
+  if (!adminNote) return res.status(400).json({ error: 'Say why, so the student knows what to do.' });
+  const request = await prisma.transcriptRequest.update({ where: { id: found.id }, data: { status: 'DECLINED', adminNote, issuedAt: new Date() } });
+  await notify(request.studentId, `${requestLabel(request)} request not granted`, adminNote, 'transcript-hub');
+  res.json({ request: presentRequest(request) });
 });
 
 // ---- Clearance ----
@@ -107,7 +143,7 @@ router.post('/admin/clearance-requests/:id/decide', requireAuth, requireRole('AD
     where: { id: found.id },
     data: { status, note: note || null, decidedAt: new Date() },
   });
-  await notify(request.studentId, 'Clearance update', status === 'CLEARED' ? 'You have been cleared.' : `Clearance denied${note ? `: ${note}` : ''}.`, 'digital-id');
+  await notify(request.studentId, 'Clearance update', status === 'CLEARED' ? 'You have been cleared.' : `Clearance denied${note ? `: ${note}` : ''}.`, 'clearance');
   res.json({ request });
 });
 
@@ -152,7 +188,7 @@ router.post('/admin/hostel-applications/:id/approve', requireAuth, requireRole('
     where: { id: found.id },
     data: { status: 'APPROVED', hostelId, roomAssigned: roomAssigned || 'To be confirmed', decidedAt: new Date() },
   });
-  await notify(application.studentId, 'Hostel application approved', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'digital-id');
+  await notify(application.studentId, 'Hostel application approved', `You've been allocated to ${hostel.name}${roomAssigned ? `, room ${roomAssigned}` : ''}.`, 'hostel');
   res.json({ application });
 });
 
@@ -163,20 +199,26 @@ router.post('/admin/hostel-applications/:id/reject', requireAuth, requireRole('A
     where: { id: found.id },
     data: { status: 'REJECTED', decidedAt: new Date() },
   });
-  await notify(application.studentId, 'Hostel application update', 'Your hostel application was not approved.', 'digital-id');
+  await notify(application.studentId, 'Hostel application update', 'Your hostel application was not approved.', 'hostel');
   res.json({ application });
 });
 
 // ---- Digital credentials (e.g. graduation certificates), publicly verifiable ----
 
-router.post('/admin/credentials', requireAuth, requireRole('ADMIN'), async (req, res) => {
-  const { studentId, title } = req.body;
+router.post('/admin/credentials', requireAuth, requireRole('ADMIN'), docUpload.single('file'), async (req, res) => {
+  const { studentId } = req.body;
+  const title = String((req.body && req.body.title) || '').trim().slice(0, 160);
   if (!studentId || !title) return res.status(400).json({ error: 'Student and credential title are required.' });
   const student = await prisma.user.findFirst({ where: { id: studentId, schoolId: req.user.schoolId, role: 'STUDENT' } });
   if (!student) return res.status(404).json({ error: 'Student not found' });
+  if (req.file && !DOC_TYPES.test(req.file.mimetype)) return res.status(400).json({ error: 'Upload a PDF, a Word document or a photo.' });
+  let fileUrl = null, fileName = null;
+  if (req.file) { ({ url: fileUrl } = await saveUpload(req.file)); fileName = req.file.originalname.slice(0, 160); }
 
   const verifyCode = crypto.randomBytes(6).toString('hex');
-  const credential = await prisma.credential.create({ data: { studentId, title, verifyCode } });
+  const credential = await prisma.credential.create({ data: { studentId, title, verifyCode, fileUrl, fileName } });
+  // the student hears about it and finds it (with the document) on their Transcript & Credentials page
+  await notify(studentId, 'A credential was issued to you', `${title} is ready${fileUrl ? ' to download' : ''} on your Transcript & Credentials page.`, 'transcript-hub');
   res.json({ credential });
 });
 
@@ -298,6 +340,7 @@ router.post('/admin/disciplinary-records/:id/resolve', requireAuth, requireRole(
   const found = await prisma.disciplinaryRecord.findFirst({ where: { id: req.params.id, ...inMySchool(req) } });
   if (!found) return res.status(404).json({ error: 'Record not found' });
   const record = await prisma.disciplinaryRecord.update({ where: { id: found.id }, data: { status: 'RESOLVED' } });
+  await notify(record.studentId, 'Disciplinary record resolved', record.title, 'academic-record');
   res.json({ record });
 });
 

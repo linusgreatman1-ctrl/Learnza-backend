@@ -1153,6 +1153,24 @@
     bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
     return { el: bg.firstElementChild, close };
   }
+  // A student's whole fee picture for the school admin: what is billed, what has been paid and for what, what is still owing, and
+  // every payment made (with its status, method, reference and receipt number). Used on the fees screen and in the student's directory page.
+  function feeStudentHtml(esc, d) {
+    const t = d.totals || {};
+    const fig = (label, v, colour) => `<div style="flex:1;min-width:110px;"><div class="meta">${label}</div><div style="font-weight:800;font-size:1.05rem;${colour ? 'color:' + colour + ';' : ''}">${money(v)}</div></div>`;
+    const lines = d.fees.map((x) => { const c = FEE_CHIP[x.status] || FEE_CHIP.UNPAID; return `<tr><td><b>${esc(x.title)}</b><div class="meta">${esc([x.session, x.semester].filter(Boolean).join(' · '))}</div></td><td class="tabular">${money(x.amountKobo)}</td><td class="tabular">${money(x.paidKobo)}</td><td class="tabular" style="font-weight:700;">${money(x.balanceKobo)}</td><td><span class="pill ${c[0]}">${c[1]}</span></td></tr>`; }).join('');
+    const pays = (d.payments || []).map((p) => { const c = FEE_PAY[p.status] || FEE_PAY.PENDING; return `<div class="list-row" style="align-items:flex-start;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc((p.items || []).map((i) => i.title).join(', ') || 'Payment')}</div><div class="meta">${esc(onDate(p.paidOn || p.createdAt))} · ${esc(methodLabel(p))}${p.reference ? ' · ref ' + esc(p.reference) : ''}${p.depositorName ? ' · by ' + esc(p.depositorName) : ''}${p.receiptNo ? ' · receipt ' + esc(p.receiptNo) : ''}${p.rejectReason ? ' · ' + esc(p.rejectReason) : ''}</div></div><div style="text-align:right;"><div style="font-weight:800;">${money(p.amountKobo)}</div><span class="pill ${c[0]}">${c[1]}</span></div></div>`; }).join('');
+    return `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;">${fig('Billed to this student', t.dueKobo)}${fig('Paid so far', t.paidKobo, '#1f8a5b')}${fig('Awaiting confirmation', t.pendingKobo)}${fig('Still to pay', t.balanceKobo, t.balanceKobo > 0 ? '#b42318' : '#1f8a5b')}</div>
+      ${d.fees.length ? `<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>Paying for</th><th>Amount</th><th>Paid</th><th>Still to pay</th><th>Status</th></tr></thead><tbody>${lines}</tbody></table></div>` : '<p class="muted">No fees have been set for the level and department of this student yet.</p>'}
+      <h4 style="margin:16px 0 4px;">Payments made</h4>${pays || '<p class="muted">No payment has been made or reported yet.</p>'}`;
+  }
+  async function studentFees(host, studentId, ctx) {
+    const { api, esc } = ctx;
+    host.innerHTML = '<p class="muted">Loading the fee details…</p>';
+    try { host.innerHTML = feeStudentHtml(esc, await api('/fees/admin/students/' + studentId)); }
+    catch (err) { host.innerHTML = '<p class="muted">' + esc(err.message || 'Could not load the fee details.') + '</p>'; }
+  }
+
   // a receipt photo is cropped down so it is quick to send
   function shrinkPhoto(file) {
     return new Promise((resolve, reject) => {
@@ -1359,11 +1377,23 @@
       async function drawList() {
         const { students } = await api('/fees/admin/students?q=' + encodeURIComponent(state.sq));
         if (!alive()) return;
-        list.innerHTML = students.length ? `<div class="card lzx-card" style="padding-top:4px;padding-bottom:4px;">${students.map((s) => { const c = FEE_CHIP[s.status]; return `<div class="list-row" style="align-items:center;gap:10px;"><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(s.name)}</div><div class="meta">${esc([s.matricNumber, s.department, s.level].filter(Boolean).join(' · '))}</div></div><div style="text-align:right;"><div style="font-weight:700;">${s.status === 'NO_FEES' ? '—' : money(s.balanceKobo) + ' owing'}</div><span class="pill ${c[0]}">${c[1]}</span></div><button class="btn btn-ghost btn-sm" data-rec="${s.id}">Record payment</button></div>`; }).join('')}</div>` : '<div class="card lzx-card"><p class="muted">No students found.</p></div>';
+        list.innerHTML = students.length ? `<div class="card lzx-card" style="padding-top:4px;padding-bottom:4px;">${students.map((s) => { const c = FEE_CHIP[s.status]; return `<div class="list-row" data-view-student="${s.id}" style="align-items:center;gap:10px;cursor:pointer;"><div style="flex:1;min-width:0;"><div style="font-weight:700;">${esc(s.name)}</div><div class="meta">${esc([s.matricNumber, s.department, s.level].filter(Boolean).join(' · '))}</div></div><div style="text-align:right;"><div style="font-weight:700;">${s.status === 'NO_FEES' ? '—' : money(s.balanceKobo) + ' owing'}</div><span class="pill ${c[0]}">${c[1]}</span></div><button class="btn btn-ghost btn-sm" data-rec="${s.id}">Record payment</button></div>`; }).join('')}</div>` : '<div class="card lzx-card"><p class="muted">No students found.</p></div>';
         list.querySelectorAll('[data-rec]').forEach((b) => b.addEventListener('click', () => recordFor(b.dataset.rec, refresh, drawList)));
+        // clicking the student opens everything about them: details, what they have paid for, and what is still owing
+        list.querySelectorAll('[data-view-student]').forEach((r) => r.addEventListener('click', (e) => { if (e.target.closest('[data-rec]')) return; showStudentFees(r.dataset.viewStudent, refresh, drawList); }));
       }
       let timer; body.querySelector('#fs-q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { state.sq = e.target.value.trim(); drawList(); }, 300); });
       await drawList();
+    }
+    async function showStudentFees(studentId, refresh, redraw) {
+      let d;
+      try { d = await api('/fees/admin/students/' + studentId); } catch (err) { return toast(err.message); }
+      const s = d.student;
+      const m = feeModal(`<h3 style="margin-bottom:2px;">${esc(s.name)}</h3><p class="meta" style="margin-bottom:12px;">${esc([s.matricNumber, s.department, s.level].filter(Boolean).join(' · '))}</p>${feeStudentHtml(esc, d)}
+        <button class="btn btn-primary" id="sf-rec" style="width:100%;margin-top:14px;">Record a payment</button><button class="btn btn-ghost" id="sf-x" style="width:100%;margin-top:8px;">Close</button>`);
+      m.el.parentElement.firstElementChild.style.maxWidth = '640px';
+      m.el.querySelector('#sf-x').addEventListener('click', m.close);
+      m.el.querySelector('#sf-rec').addEventListener('click', () => { m.close(); recordFor(studentId, refresh, redraw); });
     }
     async function recordFor(studentId, refresh, redraw) {
       let d;
@@ -1691,5 +1721,5 @@
     if (view.objective && view.theory) return o + ' · ' + t + ' · Total ' + view.recorded.score + '/' + view.recorded.max;
     return o || t || '—';
   }
-  window.LZX = { scoreText, projectStudent, projectLecturer, support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin };
+  window.LZX = { scoreText, projectStudent, projectLecturer, support, wallet, groupExtras, seenLabel, practice, dailyChallenge, digitalId, progress, lib, pay, payReturn, elections, electionsAdmin, electionBanner, practiceWatch, fees: feesStudent, feesAdmin, studentFees };
 })();

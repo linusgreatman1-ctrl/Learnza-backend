@@ -495,7 +495,7 @@
       ['course-registration', 'Course Registration'],
       ['hostel', 'Hostel / Accommodation'],
       ['clearance', 'Clearance'],
-      ['transcript-hub', 'Transcript'],
+      ['transcript-hub', 'Transcript & Credentials'],
       ['fees', 'School Fees'],
       ['elections', 'Elections'],
       ['study-plan', 'Study Plan'],
@@ -538,6 +538,7 @@
       ['lect-projects', 'Project & Defense'],
       ['research', 'Learnza Research Assistant'],
       ['staff-profile', 'My Staff Profile'],
+      ['my-publications', 'My Publications'],
       ['class-vote', 'Class Rep Voting'],
       ['elections', 'Elections'],
       ['digital-id', 'Digital ID'],
@@ -555,6 +556,7 @@
       ['admin-dashboard', 'Home'],
       ['admin-directory', 'Staff & Student Directory'],
       ['admin-academics', 'Departments & Courses'],
+      ['library', 'e-Library'],
       ['admin-tests', 'Tests'],
       ['admin-semester-exam', 'Semester Exam'],
       ['admin-admission', 'Admission'],
@@ -1005,10 +1007,18 @@
     fetcher().then((d) => { if (last === null) last = JSON.stringify(d); }).catch(() => {});
   }
 
+  // The access code a person sees on their own screens is the one stored on the server. The copy kept in the browser is refreshed
+  // before any screen that shows it, so a code the backend re-issued never shows as the old one.
+  const SHOWS_OWN_CODE = new Set(['digital-id', 'settings', 'settings-profile', 'settings-password', 'admin-dashboard']);
+  async function freshMe() {
+    try { const { user } = await api('/auth/me'); if (user) { state.user = user; saveSession(state.token, user); } } catch { /* the stored copy will do */ }
+  }
+
   async function render() {
     clearInterval(watchTimer);
     LZX.progress(true);
     try {
+      if (SHOWS_OWN_CODE.has(state.view.screen)) await freshMe();
       await renderScreen();
     } finally {
       LZX.progress(false);
@@ -1097,6 +1107,7 @@
         case 'lect-courses': return renderLecturerCourses();
         case 'lect-lessons': return renderLecturerLessons();
         case 'lect-library': return renderLibrary(true);
+        case 'my-publications': return renderMyPublications();
         case 'lect-tests': return renderAssessments(true, { heading: 'Tests', excludeTypes: ['SEMESTER_EXAM', 'PAST_QUESTION'], allowedTypes: ['CA', 'Test', 'Mock'] });
         case 'lect-classwork-quiz': return renderAssessments(true, { heading: 'Classwork / Quiz', typeFilter: ['Classwork', 'Quiz'], defaultType: 'Classwork', allowedTypes: ['Classwork', 'Quiz'] });
         case 'lect-mark-work': return renderMarkWorkHub();
@@ -3744,7 +3755,7 @@
       <div id="certificates-section">
       ${credentials.length ? `
         <div class="card" style="margin-bottom:28px;">
-          ${credentials.map((c) => `<div class="list-row"><div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">Issued ${new Date(c.issuedAt).toLocaleDateString()} · verification code <span class="tabular">${esc(c.verifyCode)}</span></div></div><a class="btn btn-ghost btn-sm" href="verify.html?code=${esc(c.verifyCode)}" target="_blank" rel="noopener">Verify link</a></div>`).join('')}
+          ${credentials.map((c) => `<div class="list-row"><div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">Issued ${new Date(c.issuedAt).toLocaleDateString()} · verification code <span class="tabular">${esc(c.verifyCode)}</span></div></div>${c.fileUrl ? `<a class="btn btn-primary btn-sm" href="${esc(c.fileUrl)}" target="_blank" rel="noopener" download>Download</a>` : ''}<a class="btn btn-ghost btn-sm" href="verify.html?code=${esc(c.verifyCode)}" target="_blank" rel="noopener">Verify link</a></div>`).join('')}
         </div>
       ` : ''}
       </div>
@@ -4061,10 +4072,11 @@
             ${data.results.map((r) => `<tr><td class="tabular">${r.courseCode ? `${esc(r.courseCode)} — ` : ''}${esc(r.courseTitle)}</td><td>${esc(r.assessmentTitle)}</td><td class="tabular">${LZX.scoreText(r.view, r.score, r.total)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No results on record.</td></tr>'}
           </tbody>
         </table>
+        ${data.fileUrl ? `<p class="no-print" style="margin-top:16px;"><a class="btn btn-accent btn-sm" href="${esc(data.fileUrl)}" target="_blank" rel="noopener" download>Download the copy the school sent you</a></p>` : ''}
         <button class="btn btn-primary no-print" style="margin-top:20px;" id="print-btn">Print / Save as PDF</button>
       </div>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => navigate('digital-id'));
+    document.getElementById('back-btn').addEventListener('click', () => navigate('transcript-hub'));
     document.getElementById('print-btn').addEventListener('click', () => window.print());
   }
 
@@ -4251,18 +4263,40 @@
       if (b) b.addEventListener('click', async () => { try { await api('/students/me/clearance-request', { method: 'POST' }); toast('Clearance requested'); render(); } catch (err) { toast(err.message); } });
       return;
     }
-    const { request: t } = await api('/students/me/transcript-request');
+    // Transcript and other documents: ask the school, follow the request, and download what the school sends back.
+    const [{ requests, kinds }, { credentials }] = await Promise.all([api('/students/me/transcript-requests'), api('/students/me/credentials')]);
+    const stat = { PENDING: ['pill-accent', 'With the school'], ISSUED: ['pill-pass', 'Ready'], DECLINED: ['pill-danger', 'Not granted'] };
+    const dl = (url) => `<a class="btn btn-primary btn-sm" href="${esc(url)}" target="_blank" rel="noopener" download>Download</a>`;
     view.innerHTML = `
-      <div class="page-head"><h1>Transcript</h1></div>
-      <div class="card" style="padding:20px;">
-        ${t ? (t.status === 'ISSUED' ? '<span class="pill pill-pass">Issued</span><p class="muted" style="margin:12px 0 14px;">Your official transcript is ready.</p><button class="btn btn-primary" id="svc-view">View transcript</button>'
-          : '<span class="pill pill-accent">Pending admin review</span><p class="muted" style="margin-top:12px;">Your request has been sent to the school.</p>')
-        : '<p class="muted" style="margin-bottom:14px;">Request your official transcript from the school.</p><button class="btn btn-primary" id="svc-apply">Request transcript</button>'}
+      <div class="page-head"><h1>Transcript &amp; Credentials</h1></div>
+      <div class="card" style="padding:20px; margin-bottom:20px; max-width:620px;">
+        <h3 style="margin-bottom:6px;">Ask the school for a document</h3>
+        <p class="muted" style="font-size:13px; margin-bottom:12px;">Your request goes straight to the school admin. When it is ready it appears below and you get a notification.</p>
+        <div class="field"><label>Which document?</label><select id="rq-kind">${Object.entries(kinds).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></div>
+        <div class="field" id="rq-title-box" hidden><label>Name the document</label><input id="rq-title" maxlength="120" placeholder="e.g. Letter of recommendation"></div>
+        <div class="field"><label>Note for the school (optional)</label><input id="rq-note" maxlength="400" placeholder="e.g. needed for an application, who it is addressed to"></div>
+        <button class="btn btn-primary" id="rq-go">Send request</button>
+      </div>
+      <h3 style="margin-bottom:8px; font-size:1rem;">Your requests</h3>
+      <div class="card" style="margin-bottom:22px;">
+        ${requests.map((r) => `<div class="list-row" style="align-items:center; gap:10px;"><div style="flex:1; min-width:0;"><div style="font-weight:600;">${esc(r.label)}</div><div class="meta">Requested ${new Date(r.requestedAt).toLocaleDateString()}${r.issuedAt ? ' · ' + (r.status === 'ISSUED' ? 'issued ' : 'answered ') + new Date(r.issuedAt).toLocaleDateString() : ''}${r.adminNote ? ' · ' + esc(r.adminNote) : ''}</div></div><span class="pill ${stat[r.status][0]}">${stat[r.status][1]}</span>${r.status === 'ISSUED' ? (r.fileUrl ? dl(r.fileUrl) : r.kind === 'TRANSCRIPT' ? '<button class="btn btn-primary btn-sm" data-view-transcript>View</button>' : '') : ''}</div>`).join('') || '<p class="muted" style="padding:16px;">You have not asked for anything yet.</p>'}
+      </div>
+      <h3 style="margin-bottom:8px; font-size:1rem;">Credentials issued to you</h3>
+      <div class="card">
+        ${credentials.map((c) => `<div class="list-row" style="align-items:center; gap:10px;"><div style="flex:1; min-width:0;"><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">Issued ${new Date(c.issuedAt).toLocaleDateString()} · verification code <span class="tabular">${esc(c.verifyCode)}</span></div></div>${c.fileUrl ? dl(c.fileUrl) : ''}<a class="btn btn-ghost btn-sm" href="verify.html?code=${esc(c.verifyCode)}" target="_blank" rel="noopener">Verify link</a></div>`).join('') || '<p class="muted" style="padding:16px;">Nothing has been issued to you yet.</p>'}
       </div>`;
-    const rb = view.querySelector('#svc-apply');
-    if (rb) rb.addEventListener('click', async () => { try { await api('/students/me/transcript-request', { method: 'POST' }); toast('Transcript requested'); render(); } catch (err) { toast(err.message); } });
-    const vb = view.querySelector('#svc-view');
-    if (vb) vb.addEventListener('click', () => navigate('transcript'));
+    watchScreen(() => api('/students/me/transcript-requests').then((d) => d.requests.map((r) => [r.id, r.status])));
+    const kindSel = view.querySelector('#rq-kind');
+    kindSel.addEventListener('change', () => { view.querySelector('#rq-title-box').hidden = kindSel.value !== 'OTHER'; });
+    view.querySelector('#rq-go').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        await api('/students/me/transcript-request', { method: 'POST', body: { kind: kindSel.value, title: view.querySelector('#rq-title').value, note: view.querySelector('#rq-note').value } });
+        toast('Request sent to the school');
+        render();
+      } catch (err) { e.target.disabled = false; toast(err.message); }
+    });
+    view.querySelectorAll('[data-view-transcript]').forEach((b) => b.addEventListener('click', () => navigate('transcript')));
   }
 
   async function renderStudentHub() {
@@ -5283,21 +5317,103 @@
   const libIcon = (u) => { const e = String(u || '').split('?')[0].split('.').pop().toLowerCase(); return e === 'pdf' ? '📕' : /png|jpe?g|webp|gif/.test(e) ? '🖼️' : /docx?/.test(e) ? '📘' : /pptx?/.test(e) ? '📙' : /xlsx?/.test(e) ? '📗' : '📄'; };
   const libInline = (u) => /\.(pdf|png|jpe?g|webp|gif)(\?|#|$)/i.test(String(u || ''));
   async function renderIndividualLibrary() { return renderLibrary(false); }
+  // The e-Library. Lecturers (an independent lecturer too) and the school admin add books (PDF or photo) to their school's library; everyone
+  // reads them page by page, read only: no download button, the file's address is never handed to a reader, and the page cannot be
+  // selected or printed. The book comes through an authenticated inline endpoint (/api/library/:id/read).
+  let pdfjsLoading = null;
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (pdfjsLoading) return pdfjsLoading;
+    pdfjsLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/pdfjs/pdf.min.js';
+      s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js'; resolve(window.pdfjsLib); };
+      s.onerror = () => { pdfjsLoading = null; reject(new Error('The reader could not load. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+    return pdfjsLoading;
+  }
+
   async function renderLibrary(isLecturer) {
-    const lecturer = false; // only the backend admin adds e-books; lecturers and students read them
+    const canAdd = state.user.role === 'LECTURER' || state.user.role === 'ADMIN';
     const { items } = await api('/library');
     const filter = { q: '', type: '', course: '' };
     const courseLabel = (it) => (it.course ? `${it.course.code} — ${it.course.title}` : '');
+    const extOf = (it) => it.fileExt || '';
     const old = document.getElementById('lib-viewer'); if (old) old.remove();
     const viewer = document.createElement('div');
     viewer.id = 'lib-viewer';
-    viewer.innerHTML = '<div class="lib-bar"><button class="lib-btn" id="lib-close">← Close</button><b id="lib-vt"></b><a class="lib-btn g" id="lib-vd" download target="_blank" rel="noopener">⬇ Download</a></div><div id="lib-vbody"></div>';
+    viewer.innerHTML = '<div class="lib-bar"><button class="lib-btn" id="lib-close">← Close</button><b id="lib-vt"></b><span id="lib-vpg" class="lib-pg"></span></div><div id="lib-vbody"></div><div class="lib-nav"><button class="lib-btn" id="lib-prev">◀ Previous page</button><span class="lib-jump">Page <input id="lib-go" type="number" min="1" value="1"> of <b id="lib-total">1</b></span><button class="lib-btn g" id="lib-next">Next page ▶</button></div>';
     document.body.appendChild(viewer);
-    const closeViewer = () => { viewer.classList.remove('on'); viewer.querySelector('#lib-vbody').innerHTML = ''; };
+    viewer.addEventListener('contextmenu', (e) => e.preventDefault());
+    viewer.addEventListener('dragstart', (e) => e.preventDefault());
+    let reader = null; // { total, page, show(n) }
+    const closeViewer = () => { viewer.classList.remove('on'); viewer.querySelector('#lib-vbody').innerHTML = ''; reader = null; document.removeEventListener('keydown', onKey); };
+    function onKey(e) {
+      if (!reader) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); reader.show(reader.page + 1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); reader.show(reader.page - 1); }
+      else if (e.key === 'Escape') closeViewer();
+      else if ((e.ctrlKey || e.metaKey) && ['s', 'p'].includes(e.key.toLowerCase())) e.preventDefault();
+    }
     viewer.querySelector('#lib-close').addEventListener('click', closeViewer);
+    viewer.querySelector('#lib-prev').addEventListener('click', () => reader && reader.show(reader.page - 1));
+    viewer.querySelector('#lib-next').addEventListener('click', () => reader && reader.show(reader.page + 1));
+    viewer.querySelector('#lib-go').addEventListener('change', (e) => reader && reader.show(parseInt(e.target.value, 10) || 1));
+
+    // opens one book: fetched through the read-only endpoint, drawn one page at a time
+    async function openBook(it) {
+      viewer.querySelector('#lib-vt').textContent = it.title;
+      const body = viewer.querySelector('#lib-vbody');
+      body.innerHTML = '<p class="lib-wait">Opening the book…</p>';
+      viewer.classList.add('on');
+      document.addEventListener('keydown', onKey);
+      const setNav = (page, total) => {
+        viewer.querySelector('#lib-vpg').textContent = `Page ${page} of ${total}`;
+        viewer.querySelector('#lib-go').value = page; viewer.querySelector('#lib-go').max = total;
+        viewer.querySelector('#lib-total').textContent = total;
+        viewer.querySelector('#lib-prev').disabled = page <= 1; viewer.querySelector('#lib-next').disabled = page >= total;
+      };
+      try {
+        const res = await fetch('/api/library/' + encodeURIComponent(it.id) + '/read', { headers: { Authorization: 'Bearer ' + state.token } });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'The book could not be opened.');
+        const buf = await res.arrayBuffer();
+        if (extOf(it) !== 'pdf') {
+          const url = URL.createObjectURL(new Blob([buf], { type: res.headers.get('content-type') || 'image/jpeg' }));
+          body.innerHTML = `<div class="lib-page"><img alt="${esc(it.title)}" src="${url}" draggable="false"></div>`;
+          reader = { total: 1, page: 1, show() {} }; setNav(1, 1);
+          return;
+        }
+        const pdfjs = await loadPdfJs();
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+        body.innerHTML = '<div class="lib-page"><canvas id="lib-canvas"></canvas></div>';
+        const canvas = body.querySelector('#lib-canvas');
+        let busy = false, want = null;
+        reader = {
+          total: doc.numPages, page: 1,
+          async show(n) {
+            n = Math.min(Math.max(1, n), doc.numPages);
+            if (busy) { want = n; return; }
+            busy = true; reader.page = n; setNav(n, doc.numPages);
+            try {
+              const page = await doc.getPage(n);
+              const base = page.getViewport({ scale: 1 });
+              const room = Math.min(body.clientWidth - 24, 1000);
+              const scale = Math.max(0.4, room / base.width);
+              const vp = page.getViewport({ scale: scale * (window.devicePixelRatio || 1) });
+              canvas.width = vp.width; canvas.height = vp.height;
+              canvas.style.width = Math.floor(vp.width / (window.devicePixelRatio || 1)) + 'px';
+              await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+              body.scrollTop = 0;
+            } finally { busy = false; if (want != null) { const w = want; want = null; if (w !== reader.page) reader.show(w); } }
+          },
+        };
+        await reader.show(1);
+      } catch (err) { body.innerHTML = `<p class="lib-wait">${esc(err.message)}</p>`; }
+    }
 
     view.innerHTML = `
-      <div class="page-head"><h1>📖 e-Library</h1></div>
+      <div class="page-head"><h1>📖 e-Library</h1>${canAdd ? '<button class="btn btn-accent btn-sm" id="lib-add">+ Add a book</button>' : ''}</div>
       <div class="card" style="padding:14px; margin-bottom:12px;">
         <input class="lib-q" id="lib-q" placeholder="Search by title, author or course…">
         <div class="lib-two" style="margin-top:10px;">
@@ -5305,6 +5421,7 @@
           <select id="lib-fcourse"><option value="">All courses</option></select>
         </div>
       </div>
+      <p class="muted" style="font-size:12px; margin:0 0 10px;">Books are read here, page by page. They cannot be downloaded or saved.</p>
       <div id="lib-list"></div>`;
 
     const fcourse = view.querySelector('#lib-fcourse');
@@ -5314,21 +5431,13 @@
       const shown = items.filter((it) => (!filter.type || it.type === filter.type) && (!filter.course || courseLabel(it) === filter.course)
         && (!filter.q || `${it.title} ${it.author || ''} ${courseLabel(it)}`.toLowerCase().includes(filter.q)));
       const list = view.querySelector('#lib-list');
-      if (!shown.length) { list.innerHTML = `<div class="lib-empty">${items.length ? 'Nothing matches that search.' : 'No files yet. Lecturers add textbooks, handouts and past questions here, and they show up as soon as they are added.'}</div>`; return; }
+      if (!shown.length) { list.innerHTML = `<div class="lib-empty">${items.length ? 'Nothing matches that search.' : 'No books yet. Lecturers add textbooks, journals and handouts here, and they show up as soon as they are added.'}</div>`; return; }
       list.innerHTML = shown.map((it) => {
-        const mine = lecturer && it.schoolId && it.uploaderId === state.user.id;
         const meta = [it.type, courseLabel(it) || 'Every course', it.schoolId ? null : 'Learnza library'].filter(Boolean).map(esc).join(' · ');
-        return `<div class="lib-row"><div class="lib-ic">${libIcon(it.fileUrl)}</div><div class="lib-mid"><div class="lib-t">${esc(it.title)}</div><div class="lib-m">${meta}</div><div class="lib-m">${it.author ? 'by ' + esc(it.author) + ' · ' : ''}${it.uploader ? 'added by ' + esc(it.uploader.fullName) + ' · ' : ''}${new Date(it.createdAt).toLocaleDateString()}</div></div>
-          <div class="lib-side"><button class="lib-btn g" data-lib-open="${it.id}">${libInline(it.fileUrl) ? 'Open' : 'Download'}</button>${mine ? `<button class="lib-btn r" data-lib-del="${it.id}">Delete</button>` : ''}</div></div>`;
+        return `<div class="lib-row"><div class="lib-ic">${libIcon('x.' + extOf(it))}</div><div class="lib-mid"><div class="lib-t">${esc(it.title)}</div><div class="lib-m">${meta}</div><div class="lib-m">${it.author ? 'by ' + esc(it.author) + ' · ' : ''}${it.uploader ? 'added by ' + esc(it.uploader.fullName) + ' · ' : ''}${new Date(it.createdAt).toLocaleDateString()}</div></div>
+          <div class="lib-side"><button class="lib-btn g" data-lib-open="${it.id}">Read</button>${it.mine ? `<button class="lib-btn r" data-lib-del="${it.id}">Delete</button>` : ''}</div></div>`;
       }).join('');
-      list.querySelectorAll('[data-lib-open]').forEach((b) => b.addEventListener('click', () => {
-        const it = items.find((x) => x.id === b.dataset.libOpen);
-        if (!libInline(it.fileUrl)) { window.open(it.fileUrl, '_blank', 'noopener'); return; }
-        viewer.querySelector('#lib-vt').textContent = it.title;
-        viewer.querySelector('#lib-vd').href = it.fileUrl;
-        viewer.querySelector('#lib-vbody').innerHTML = /\.pdf(\?|#|$)/i.test(it.fileUrl) ? `<iframe title="${esc(it.title)}" src="${esc(it.fileUrl)}"></iframe>` : `<img alt="${esc(it.title)}" src="${esc(it.fileUrl)}">`;
-        viewer.classList.add('on');
-      }));
+      list.querySelectorAll('[data-lib-open]').forEach((b) => b.addEventListener('click', () => openBook(items.find((x) => x.id === b.dataset.libOpen))));
       list.querySelectorAll('[data-lib-del]').forEach((b) => b.addEventListener('click', async () => {
         const it = items.find((x) => x.id === b.dataset.libDel);
         if (!confirm(`Delete “${it.title}” from the e-Library?`)) return;
@@ -5340,6 +5449,122 @@
     fcourse.addEventListener('change', (e) => { filter.course = e.target.value; paint(); });
     paint();
 
+    const addBtn = view.querySelector('#lib-add');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      let courses = [];
+      try { courses = state.user.role === 'ADMIN' ? (await api('/admin/courses')).courses : (await ensureLectCourses()).courses; } catch { /* a book needs no course */ }
+      const backdrop = document.createElement('div');
+      backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+      const box = document.createElement('div');
+      box.className = 'card';
+      box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(520px,94vw); height:fit-content; max-height:90vh; overflow-y:auto; padding:24px; z-index:200;';
+      box.innerHTML = `<h3 style="margin-bottom:6px;">Add a book to the e-Library</h3>
+        <p class="muted" style="font-size:13px; margin-bottom:12px;">Students read it page by page; they cannot download or save it. Upload it as a PDF (or a photo).</p>
+        <form id="lb-form">
+          <div class="field"><label>Title</label><input id="lb-title" required maxlength="240"></div>
+          <div class="field"><label>Author</label><input id="lb-author" required maxlength="200" value="${state.user.role === 'LECTURER' ? esc(state.user.fullName) : ''}"></div>
+          <div class="field"><label>Publisher or journal (optional)</label><input id="lb-pub" maxlength="200"></div>
+          <div class="field"><label>Type</label><select id="lb-type">${LIB_TYPES.map((t) => `<option>${t}</option>`).join('')}</select></div>
+          <div class="field"><label>Course (optional)</label><select id="lb-course"><option value="">Every course</option>${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+          <div class="field"><label>The book (PDF or photo)</label><input type="file" id="lb-file" accept="application/pdf,image/*" required></div>
+          <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Add to the library</button><button class="btn btn-ghost" type="button" id="lb-cancel">Cancel</button></div>
+        </form>`;
+      document.body.appendChild(backdrop); document.body.appendChild(box);
+      const close = () => { backdrop.remove(); box.remove(); };
+      backdrop.addEventListener('click', close);
+      box.querySelector('#lb-cancel').addEventListener('click', close);
+      box.querySelector('#lb-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.submitter || box.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Uploading…';
+        const fd = new FormData();
+        fd.append('title', box.querySelector('#lb-title').value); fd.append('author', box.querySelector('#lb-author').value);
+        fd.append('publisher', box.querySelector('#lb-pub').value); fd.append('type', box.querySelector('#lb-type').value);
+        fd.append('courseId', box.querySelector('#lb-course').value); fd.append('file', box.querySelector('#lb-file').files[0]);
+        try { await api('/library', { method: 'POST', body: fd }); toast('Added to the e-Library'); close(); render(); } catch (err) { btn.disabled = false; btn.textContent = 'Add to the library'; toast(err.message); }
+      });
+    });
+  }
+
+  // ================= MY PUBLICATIONS (lecturers) =================
+  // Publications, journals, books, conference papers and CPD: each as a link and/or an uploaded file, with view, edit and remove.
+  // A PDF or photo can be put in the e-Library (from here or from the e-Library screen) for students to read.
+  const PUB_KINDS = { PUBLICATION: 'Publication', JOURNAL: 'Journal article', BOOK: 'Book', CONFERENCE: 'Conference paper', CPD: 'CPD / training', OTHER: 'Other' };
+  async function renderMyPublications() {
+    const { records } = await api('/staff/publications/me');
+    const thisYear = new Date().getFullYear();
+    const kindOptions = (sel) => Object.entries(PUB_KINDS).map(([k, l]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(l)}</option>`).join('');
+    view.innerHTML = `
+      <div class="page-head"><h1>My Publications</h1><button class="btn btn-accent btn-sm" id="mp-add">+ Add</button></div>
+      <p class="muted" style="margin-bottom:16px;">Your publications, journals, books, conference papers and CPD. Each can be a web link, an uploaded file, or both. You can put a PDF or photo in the e-Library for students to read; they can read it page by page but not download it.</p>
+      <div class="card" style="padding:16px; margin-bottom:20px;">
+        ${records.map((p) => `<div class="list-row" style="align-items:flex-start; gap:10px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:220px;"><div style="font-weight:600;">${esc(p.title)}</div>
+            <div class="meta">${esc(PUB_KINDS[p.kind] || 'Publication')} · ${esc(p.outlet)} · ${p.year}</div>
+            ${p.description ? `<div class="meta">${esc(p.description)}</div>` : ''}
+            <div class="meta">${p.url ? '<span class="pill pill-muted">Link</span> ' : ''}${p.fileUrl ? '<span class="pill pill-muted">File</span> ' : ''}${p.inLibrary ? '<span class="pill pill-accent">In the e-Library</span>' : ''}</div></div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${p.url ? `<a class="btn btn-ghost btn-sm" href="${esc(p.url)}" target="_blank" rel="noopener">Open link</a>` : ''}
+            ${p.fileUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(p.fileUrl)}" target="_blank" rel="noopener">View file</a>` : ''}
+            <button class="btn btn-ghost btn-sm" data-pub-edit="${p.id}">Edit</button>
+            ${p.canLibrary ? `<button class="btn btn-ghost btn-sm" data-pub-lib="${p.id}" data-on="${p.inLibrary ? '1' : '0'}">${p.inLibrary ? 'Remove from e-Library' : 'Add to e-Library'}</button>` : ''}
+            <button class="btn btn-ghost btn-sm" style="color:#b42318;" data-pub-del="${p.id}">Remove</button>
+          </div></div>`).join('') || '<p class="muted" style="padding:6px;">Nothing here yet. Tap + Add to list your first one.</p>'}
+      </div>`;
+
+    const openForm = (cur) => {
+      const backdrop = document.createElement('div');
+      backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+      const box = document.createElement('div');
+      box.className = 'card';
+      box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(540px,94vw); height:fit-content; max-height:92vh; overflow-y:auto; padding:24px; z-index:200;';
+      const c = cur || { kind: 'PUBLICATION', title: '', outlet: '', year: thisYear, url: '', description: '' };
+      box.innerHTML = `<h3 style="margin-bottom:12px;">${cur ? 'Edit' : 'Add'} a publication</h3>
+        <form id="mp-form">
+          <div class="field"><label>What is it?</label><select id="mp-kind">${kindOptions(c.kind)}</select></div>
+          <div class="field"><label>Title</label><input id="mp-title" required maxlength="240" value="${esc(c.title)}"></div>
+          <div class="field"><label>Journal, publisher, conference or CPD provider</label><input id="mp-outlet" required maxlength="200" value="${esc(c.outlet)}"></div>
+          <div class="field"><label>Year</label><input id="mp-year" type="number" min="1950" max="${thisYear + 1}" required value="${c.year}"></div>
+          <div class="field"><label>Link (optional)</label><input id="mp-url" type="url" maxlength="500" placeholder="https://" value="${esc(c.url || '')}"></div>
+          <div class="field"><label>Upload the file (optional: PDF, Word or a photo)${cur && cur.fileUrl ? ' — a file is already attached; choose one to replace it' : ''}</label><input id="mp-file" type="file" accept="application/pdf,.doc,.docx,image/*"></div>
+          ${cur && cur.fileUrl ? '<label style="display:flex; gap:8px; align-items:center; margin:-4px 0 12px; font-weight:500;"><input type="checkbox" id="mp-rmfile"> Remove the attached file</label>' : ''}
+          <div class="field"><label>A few words about it (optional)</label><textarea id="mp-desc" rows="3" maxlength="1200">${esc(c.description || '')}</textarea></div>
+          ${cur ? '' : '<label style="display:flex; gap:8px; align-items:center; margin-bottom:12px; font-weight:500;"><input type="checkbox" id="mp-lib"> Also add it to the e-Library (needs a PDF or photo)</label>'}
+          <p class="muted" style="font-size:12px; margin-bottom:10px;">Add a link, a file, or both.</p>
+          <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">${cur ? 'Save changes' : 'Add'}</button><button class="btn btn-ghost" type="button" id="mp-cancel">Cancel</button></div>
+        </form>`;
+      document.body.appendChild(backdrop); document.body.appendChild(box);
+      const close = () => { backdrop.remove(); box.remove(); };
+      backdrop.addEventListener('click', close);
+      box.querySelector('#mp-cancel').addEventListener('click', close);
+      box.querySelector('#mp-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.submitter || box.querySelector('[type=submit]'); btn.disabled = true;
+        const fd = new FormData();
+        fd.append('kind', box.querySelector('#mp-kind').value); fd.append('title', box.querySelector('#mp-title').value);
+        fd.append('outlet', box.querySelector('#mp-outlet').value); fd.append('year', box.querySelector('#mp-year').value);
+        fd.append('url', box.querySelector('#mp-url').value); fd.append('description', box.querySelector('#mp-desc').value);
+        const file = box.querySelector('#mp-file').files[0];
+        if (file) fd.append('file', file);
+        const rm = box.querySelector('#mp-rmfile');
+        if (rm && rm.checked && !file) fd.append('removeFile', 'true');
+        const lib = box.querySelector('#mp-lib');
+        if (lib && lib.checked) fd.append('addToLibrary', 'true');
+        try {
+          await api(cur ? `/staff/publications/${cur.id}` : '/staff/publications', { method: cur ? 'PUT' : 'POST', body: fd });
+          toast(cur ? 'Saved' : 'Added'); close(); render();
+        } catch (err) { btn.disabled = false; toast(err.message); }
+      });
+    };
+    view.querySelector('#mp-add').addEventListener('click', () => openForm(null));
+    view.querySelectorAll('[data-pub-edit]').forEach((b) => b.addEventListener('click', () => openForm(records.find((p) => p.id === b.dataset.pubEdit))));
+    view.querySelectorAll('[data-pub-del]').forEach((b) => b.addEventListener('click', async () => {
+      const p = records.find((x) => x.id === b.dataset.pubDel);
+      if (!confirm(`Remove “${p.title}”?${p.inLibrary ? ' It also comes out of the e-Library.' : ''}`)) return;
+      try { await api('/staff/publications/' + p.id, { method: 'DELETE' }); toast('Removed'); render(); } catch (err) { toast(err.message); }
+    }));
+    view.querySelectorAll('[data-pub-lib]').forEach((b) => b.addEventListener('click', async () => {
+      try { await api(`/staff/publications/${b.dataset.pubLib}/library`, { method: b.dataset.on === '1' ? 'DELETE' : 'POST' }); toast(b.dataset.on === '1' ? 'Taken out of the e-Library' : 'Added to the e-Library'); render(); } catch (err) { toast(err.message); }
+    }));
   }
 
   async function renderGroups() {
@@ -7441,15 +7666,9 @@
         ${cpd.map((c) => `<div class="list-row"><div><div style="font-weight:600;">${esc(c.title)}</div><div class="meta">${esc(c.provider)} · ${c.hours}h · ${new Date(c.completedAt).toLocaleDateString()}</div></div></div>`).join('') || '<p class="muted" style="padding:16px;">No CPD records yet.</p>'}
       </div>
 
-      <div class="card" style="padding:20px; margin-bottom:22px;">
-        <h3 style="margin-bottom:12px; font-size:1rem;">Log a publication</h3>
-        <form id="pub-form">
-          <div class="field"><label>Title</label><input type="text" id="pub-title" required></div>
-          <div class="field"><label>Outlet / journal</label><input type="text" id="pub-outlet" required></div>
-          <div class="field"><label>Year</label><input type="number" id="pub-year" min="1990" max="2100" required></div>
-          <div class="field"><label>Link (optional)</label><input type="url" id="pub-url" placeholder="https://"></div>
-          <button class="btn btn-primary" type="submit">Add publication</button>
-        </form>
+      <div class="card" style="padding:20px; margin-bottom:22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div><div style="font-weight:600;">Publications</div><div class="meta">${publications.length} listed. Add publications, journals, books, conference papers and CPD (a link, a file, or both) in My Publications.</div></div>
+        <button class="btn btn-primary btn-sm" id="open-publications">Open My Publications</button>
       </div>
       <div class="card">
         ${publications.map((p) => `<div class="list-row"><div><div style="font-weight:600;">${esc(p.title)}</div><div class="meta">${esc(p.outlet)} · ${p.year}${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener">Link</a>` : ''}</div></div></div>`).join('') || '<p class="muted" style="padding:16px;">No publications logged yet.</p>'}
@@ -7474,20 +7693,7 @@
       render();
     });
 
-    document.getElementById('pub-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await api('/staff/publications', {
-        method: 'POST',
-        body: {
-          title: document.getElementById('pub-title').value,
-          outlet: document.getElementById('pub-outlet').value,
-          year: document.getElementById('pub-year').value,
-          url: document.getElementById('pub-url').value.trim() || null,
-        },
-      });
-      toast('Publication added');
-      render();
-    });
+    document.getElementById('open-publications').addEventListener('click', () => navigate('my-publications'));
   }
 
   // ================= ADMIN =================
@@ -7563,9 +7769,19 @@
         { key: 'lift-suspension', label: 'Lift suspension', show: (u) => u.status === 'SUSPENDED' },
         { key: 'expel', label: 'Expel', show: (u) => u.status !== 'EXPELLED' },
       ],
-      // Students are added by their lecturers (My Students); the admin views and edits them.
-      addFields: null,
-      addNote: 'Students are added by their lecturers, from My Students. You can view and edit them here.',
+      // The admin can add a student here too: same details as a lecturer adding one from My Students.
+      addLabel: 'Add student',
+      addFields: [
+        { key: 'fullName', label: 'Full name', required: true },
+        { key: 'matricNumber', label: 'Matric number (leave blank and the system makes one)' },
+        { key: 'departmentId', label: 'Department', type: 'department', required: true },
+        { key: 'yearOfStudy', label: 'Level', type: 'year', required: true },
+        { key: 'yearOfAdmission', label: 'Year admitted', type: 'number', attrs: 'min="1980" max="2100" placeholder="e.g. 2026"' },
+        { key: 'programmeYears', label: 'Programme length (years)', type: 'number', attrs: 'min="1" max="8" placeholder="4 for a degree"' },
+        { key: 'courseIds', label: 'Course(s)', type: 'courses' },
+        { key: 'email', label: 'Email (optional)', type: 'email' },
+        { key: 'phone', label: 'Phone number', type: 'tel' },
+      ],
       editFields: [
         { key: 'fullName', label: 'Full name', required: true },
         { key: 'matricNumber', label: 'Matric number', required: true },
@@ -7658,8 +7874,12 @@
         <div class="card course-card" data-jump-nav="admin-management"><div class="code">${admins.length}</div><div class="meta">School admins</div></div>
       </div>
       <div class="grid-cards tiles center">${homeTile('admin-directory', '👥', 'Staff & Student Directory', 'Staff and students')}${homeTile('admin-academics', '📚', 'Departments & Courses', 'Programmes')}${homeTile('admin-results', '📊', 'Results', 'Publish and review')}${homeTile('admin-announce', '📣', 'Announce', 'Notify everyone')}${homeTile('admin-fees', '💰', 'Fee Payment', 'Fees and receipts')}${homeTile('admin-bulk-message', '✉️', 'Bulk SMS / Email', 'Message groups')}</div>
+      ${u.accessCode ? `<div class="card" style="padding:14px 16px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div><div class="meta">Your access code <span class="muted">(you sign in with your name, the school name and this code; the same code the backend has on file for you)</span></div><div class="tabular" style="font-size:1.5rem; letter-spacing:2px; font-weight:800;">${esc(u.accessCode)}</div></div>
+        <button class="btn btn-ghost btn-sm" id="copy-my-code">Copy</button>
+      </div>` : ''}
       <div class="card joincode" style="padding:14px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div><div class="meta">School Join Code</div><div class="tabular" style="font-size:1.5rem; letter-spacing:2px; font-weight:800;">${esc(school.joinCode || '—')}</div></div>
+        <div><div class="meta">School Join Code <span class="muted">(the school's own code, a different code from a personal access code)</span></div><div class="tabular" style="font-size:1.5rem; letter-spacing:2px; font-weight:800;">${esc(school.joinCode || '—')}</div></div>
         <button class="btn btn-ghost btn-sm" id="copy-join-code">Copy</button>
       </div>
       ${homeSection('👨‍🏫 Lecturers', 'admin-directory', pnRows(lecturers.slice(0, 5).map((l) => ({ icon: '👨‍🏫', title: l.fullName, sub: [l.staffId, l.departmentName || (l.department && l.department.name)].filter(Boolean).join(' · ') }))))}
@@ -7682,6 +7902,8 @@
     `;
     wireSelfAvatarUpload('avatar-admin-dash');
     document.getElementById('copy-join-code').addEventListener('click', () => copyToClipboard(school.joinCode));
+    const copyMine = document.getElementById('copy-my-code');
+    if (copyMine) copyMine.addEventListener('click', () => copyToClipboard(u.accessCode));
     view.querySelectorAll('[data-jump-nav]').forEach((el) => el.addEventListener('click', () => navigate(el.dataset.jumpNav)));
   }
 
@@ -7789,7 +8011,7 @@
       <div class="page-head">
         <h1>${cfg.label}</h1>
         <div style="display:flex; gap:10px;">
-          ${cfg.addFields ? '<button class="btn btn-accent btn-sm" id="add-btn">+ Add</button>' : ''}
+          ${cfg.addFields ? `<button class="btn btn-accent btn-sm" id="add-btn">+ ${esc(cfg.addLabel || 'Add')}</button>` : ''}
           <button class="btn btn-ghost btn-sm" id="back-btn">← Back</button>
         </div>
       </div>
@@ -7849,7 +8071,7 @@
         if (f.type === 'courses') {
           return await coursePickerHtml(`add-${f.key}`, f.label, []);
         }
-        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="add-${f.key}" ${f.required ? 'required' : ''}></div>`;
+        return `<div class="field"><label>${f.label}</label><input type="${f.type || 'text'}" id="add-${f.key}" ${f.attrs || ''} ${f.required ? 'required' : ''}></div>`;
       }));
       box.innerHTML = `<form id="add-form" class="card" style="padding:20px; margin-bottom:18px;">${fieldsHtml.join('')}<button class="btn btn-primary" type="submit">${cfg.generatesAccessCode ? 'Add & generate access code' : 'Add'}</button></form>`;
       box.hidden = false;
@@ -7863,7 +8085,7 @@
         }
         try {
           const { user, accessCode } = await api(cfg.base, { method: 'POST', body });
-          alert(`${user.fullName} added.\n\nAccess code: ${accessCode}\n\nThey sign in from the Schools app with their full name, this school's name and this access code.`);
+          alert(`${user.fullName} added.${user.matricNumber && state.view.directoryType === 'STUDENT' ? '\n\nMatric number: ' + user.matricNumber : ''}\n\nAccess code: ${accessCode}\n\nThey sign in from the Schools app with their full name, this school's name and this access code.`);
           render();
         } catch (err) { toast(err.message); }
       });
@@ -7900,7 +8122,9 @@
         </div>
       </div>
       <div id="edit-box" style="max-width:560px;" hidden></div>
+      ${state.view.directoryType === 'STUDENT' ? '<div class="card" style="padding:20px; max-width:760px; margin-top:18px;"><h3 style="margin-bottom:10px;">Fees and payments</h3><div id="dir-fees-host"></div></div>' : ''}
     `;
+    if (state.view.directoryType === 'STUDENT') LZX.studentFees(document.getElementById('dir-fees-host'), u.id, { api, esc });
     LZX.digitalId(document.getElementById('lzx-id-host'), {
       user: u, school: state.school, department: u.department, api, esc, toast,
       photoPath: `/admin/users/${u.id}/photo`,
@@ -7919,14 +8143,7 @@
       });
     });
     const issueBtn = document.getElementById('issue-credential-btn');
-    if (issueBtn) issueBtn.addEventListener('click', async () => {
-      const title = prompt(`Credential title for ${u.fullName}:`, '');
-      if (!title || !title.trim()) return;
-      try {
-        const { credential } = await api('/admin/credentials', { method: 'POST', body: { studentId: u.id, title: title.trim() } });
-        alert(`Credential issued.\n\nVerification link: ${location.origin}/verify.html?code=${credential.verifyCode}`);
-      } catch (err) { toast(err.message); }
-    });
+    if (issueBtn) issueBtn.addEventListener('click', () => openIssueCredentialDialog(u));
     document.getElementById('edit-btn').addEventListener('click', async () => {
       const box = document.getElementById('edit-box');
       box.hidden = !box.hidden;
@@ -8175,8 +8392,67 @@
     `;
   }
 
+  // Issue a requested document: upload the file the student asked for (a transcript can be sent without one, and then the student
+  // opens the transcript the system makes from their results). The student is notified and it lands on their Transcript & Credentials page.
+  function openIssueDocumentDialog(r) {
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(500px,94vw); height:fit-content; max-height:88vh; overflow-y:auto; padding:24px; z-index:200;';
+    box.innerHTML = `<h3 style="margin-bottom:6px;">Issue ${esc(r.label.toLowerCase())} to ${esc(r.who)}</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:12px;">${r.kind === 'TRANSCRIPT' ? 'Upload the signed transcript (PDF or a photo). You can also issue without a file: the student then opens the transcript the system makes from their results.' : 'Upload the document (PDF, Word or a photo). The student gets a notification and can download it from their Transcript & Credentials page.'}</p>
+      <form id="id-form"><div class="field"><label>Document ${r.kind === 'TRANSCRIPT' ? '(optional)' : ''}</label><input type="file" id="id-file" accept="application/pdf,.doc,.docx,image/*" ${r.kind === 'TRANSCRIPT' ? '' : 'required'}></div>
+      <div class="field"><label>A word for the student (optional)</label><input id="id-note" maxlength="300"></div>
+      <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Issue and notify the student</button><button class="btn btn-ghost" type="button" id="id-cancel">Cancel</button></div></form>`;
+    document.body.appendChild(backdrop); document.body.appendChild(box);
+    const close = () => { backdrop.remove(); box.remove(); };
+    backdrop.addEventListener('click', close);
+    box.querySelector('#id-cancel').addEventListener('click', close);
+    box.querySelector('#id-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.submitter || box.querySelector('[type=submit]'); btn.disabled = true;
+      const fd = new FormData();
+      const file = box.querySelector('#id-file').files[0];
+      if (file) fd.append('file', file);
+      fd.append('note', box.querySelector('#id-note').value);
+      try { await api(`/admin/transcript-requests/${r.id}/issue`, { method: 'POST', body: fd }); toast('Issued. The student has been notified.'); close(); render(); } catch (err) { btn.disabled = false; toast(err.message); }
+    });
+  }
+
+  // From a student's directory page: issue a certificate or any credential straight to them, with the document attached.
+  function openIssueCredentialDialog(u) {
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(500px,94vw); height:fit-content; max-height:88vh; overflow-y:auto; padding:24px; z-index:200;';
+    box.innerHTML = `<h3 style="margin-bottom:6px;">Issue a credential to ${esc(u.fullName)}</h3>
+      <p class="muted" style="font-size:13px; margin-bottom:12px;">For example a certificate, a statement of result or a letter. The student is notified and finds it on their Transcript &amp; Credentials page, with a verification link anyone can check.</p>
+      <form id="ic-form"><div class="field"><label>Title</label><input id="ic-title" maxlength="160" required placeholder="e.g. Certificate of completion"></div>
+      <div class="field"><label>Document (optional)</label><input type="file" id="ic-file" accept="application/pdf,.doc,.docx,image/*"></div>
+      <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Issue</button><button class="btn btn-ghost" type="button" id="ic-cancel">Cancel</button></div></form>`;
+    document.body.appendChild(backdrop); document.body.appendChild(box);
+    const close = () => { backdrop.remove(); box.remove(); };
+    backdrop.addEventListener('click', close);
+    box.querySelector('#ic-cancel').addEventListener('click', close);
+    box.querySelector('#ic-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.submitter || box.querySelector('[type=submit]'); btn.disabled = true;
+      const fd = new FormData();
+      fd.append('studentId', u.id); fd.append('title', box.querySelector('#ic-title').value.trim());
+      const file = box.querySelector('#ic-file').files[0];
+      if (file) fd.append('file', file);
+      try {
+        const { credential } = await api('/admin/credentials', { method: 'POST', body: fd });
+        close();
+        alert(`Credential issued and the student has been notified.\n\nVerification link: ${location.origin}/verify.html?code=${credential.verifyCode}`);
+      } catch (err) { btn.disabled = false; toast(err.message); }
+    });
+  }
+
   async function renderAdminStudentRequests() {
-    const [{ requests: transcripts }, { requests: clearances }, { applications: hostelApps }] = await Promise.all([
+    const [{ requests: transcripts, recent: recentDocs }, { requests: clearances }, { applications: hostelApps }] = await Promise.all([
       api('/admin/transcript-requests'),
       api('/admin/clearance-requests'),
       api('/admin/hostel-applications'),
@@ -8185,15 +8461,16 @@
     view.innerHTML = `
       <div class="page-head"><h1>Student Requests</h1></div>
 
-      <h3 style="margin-bottom:10px; font-size:1rem;">Transcript requests</h3>
-      <div class="card" style="margin-bottom:26px;">
+      <h3 style="margin-bottom:10px; font-size:1rem;">Transcript and document requests</h3>
+      <div class="card" style="margin-bottom:12px;">
         ${transcripts.map((t) => `
-          <div class="list-row">
-            <div><div style="font-weight:600;">${esc(t.student.fullName)}</div><div class="meta tabular">${esc(t.student.matricNumber || '—')} · requested ${new Date(t.requestedAt).toLocaleDateString()}</div></div>
-            <button class="btn btn-primary btn-sm" data-issue-transcript="${t.id}">Issue</button>
+          <div class="list-row" style="align-items:center; gap:10px;">
+            <div style="flex:1; min-width:0;"><div style="font-weight:600;">${esc(t.label)} · ${esc(t.student.fullName)}</div><div class="meta tabular">${esc(t.student.matricNumber || '—')}${t.student.department ? ' · ' + esc(t.student.department.name) : ''} · requested ${new Date(t.requestedAt).toLocaleDateString()}${t.note ? ' · “' + esc(t.note) + '”' : ''}</div></div>
+            <div style="display:flex; gap:8px;"><button class="btn btn-primary btn-sm" data-issue-transcript="${t.id}" data-kind="${esc(t.kind)}" data-label="${esc(t.label)}" data-who="${esc(t.student.fullName)}">Issue</button><button class="btn btn-ghost btn-sm" data-decline-transcript="${t.id}">Decline</button></div>
           </div>
         `).join('') || '<p class="muted" style="padding:16px;">No pending requests.</p>'}
       </div>
+      ${recentDocs.length ? `<p class="meta" style="margin:0 0 6px;">Recently dealt with</p><div class="card" style="margin-bottom:26px;">${recentDocs.map((t) => `<div class="list-row"><div><div style="font-weight:600;">${esc(t.label)} · ${esc(t.student.fullName)}</div><div class="meta">${t.status === 'ISSUED' ? 'Issued' : 'Declined'} ${t.issuedAt ? new Date(t.issuedAt).toLocaleDateString() : ''}${t.fileName ? ' · ' + esc(t.fileName) : ''}${t.adminNote ? ' · ' + esc(t.adminNote) : ''}</div></div><span class="pill ${t.status === 'ISSUED' ? 'pill-pass' : 'pill-danger'}">${t.status === 'ISSUED' ? 'Issued' : 'Declined'}</span></div>`).join('')}</div>` : '<div style="margin-bottom:26px;"></div>'}
 
       <h3 style="margin-bottom:10px; font-size:1rem;">Clearance requests</h3>
       <div class="card" style="margin-bottom:26px;">
@@ -8223,7 +8500,14 @@
     `;
 
     view.querySelectorAll('[data-issue-transcript]').forEach((btn) => {
-      btn.addEventListener('click', async () => { await api(`/admin/transcript-requests/${btn.dataset.issueTranscript}/issue`, { method: 'POST' }); toast('Transcript issued'); render(); });
+      btn.addEventListener('click', () => openIssueDocumentDialog({ id: btn.dataset.issueTranscript, kind: btn.dataset.kind, label: btn.dataset.label, who: btn.dataset.who }));
+    });
+    view.querySelectorAll('[data-decline-transcript]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const reason = prompt('Why is this request not being granted? The student will see it:');
+        if (!reason || !reason.trim()) return;
+        try { await api(`/admin/transcript-requests/${btn.dataset.declineTranscript}/decline`, { method: 'POST', body: { reason: reason.trim() } }); toast('Declined. The student has been told.'); render(); } catch (err) { toast(err.message); }
+      });
     });
     view.querySelectorAll('[data-clear]').forEach((btn) => {
       btn.addEventListener('click', async () => { await api(`/admin/clearance-requests/${btn.dataset.clear}/decide`, { method: 'POST', body: { status: 'CLEARED' } }); toast('Cleared'); render(); });

@@ -3854,21 +3854,103 @@
   const libIcon = (u) => { const e = String(u || '').split('?')[0].split('.').pop().toLowerCase(); return e === 'pdf' ? '📕' : /png|jpe?g|webp|gif/.test(e) ? '🖼️' : /docx?/.test(e) ? '📘' : /pptx?/.test(e) ? '📙' : /xlsx?/.test(e) ? '📗' : '📄'; };
   const libInline = (u) => /\.(pdf|png|jpe?g|webp|gif)(\?|#|$)/i.test(String(u || ''));
   async function renderIndividualLibrary() { return renderLibrary(false); }
+  // The e-Library. Lecturers (an independent lecturer too) and the school admin add books (PDF or photo) to their school's library; everyone
+  // reads them page by page, read only: no download button, the file's address is never handed to a reader, and the page cannot be
+  // selected or printed. The book comes through an authenticated inline endpoint (/api/library/:id/read).
+  let pdfjsLoading = null;
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (pdfjsLoading) return pdfjsLoading;
+    pdfjsLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/pdfjs/pdf.min.js';
+      s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js'; resolve(window.pdfjsLib); };
+      s.onerror = () => { pdfjsLoading = null; reject(new Error('The reader could not load. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+    return pdfjsLoading;
+  }
+
   async function renderLibrary(isLecturer) {
-    const lecturer = false; // only the backend admin adds e-books; lecturers and students read them
+    const canAdd = state.user.role === 'LECTURER' || state.user.role === 'ADMIN';
     const { items } = await api('/library');
     const filter = { q: '', type: '', course: '' };
     const courseLabel = (it) => (it.course ? `${it.course.code} — ${it.course.title}` : '');
+    const extOf = (it) => it.fileExt || '';
     const old = document.getElementById('lib-viewer'); if (old) old.remove();
     const viewer = document.createElement('div');
     viewer.id = 'lib-viewer';
-    viewer.innerHTML = '<div class="lib-bar"><button class="lib-btn" id="lib-close">← Close</button><b id="lib-vt"></b><a class="lib-btn g" id="lib-vd" download target="_blank" rel="noopener">⬇ Download</a></div><div id="lib-vbody"></div>';
+    viewer.innerHTML = '<div class="lib-bar"><button class="lib-btn" id="lib-close">← Close</button><b id="lib-vt"></b><span id="lib-vpg" class="lib-pg"></span></div><div id="lib-vbody"></div><div class="lib-nav"><button class="lib-btn" id="lib-prev">◀ Previous page</button><span class="lib-jump">Page <input id="lib-go" type="number" min="1" value="1"> of <b id="lib-total">1</b></span><button class="lib-btn g" id="lib-next">Next page ▶</button></div>';
     document.body.appendChild(viewer);
-    const closeViewer = () => { viewer.classList.remove('on'); viewer.querySelector('#lib-vbody').innerHTML = ''; };
+    viewer.addEventListener('contextmenu', (e) => e.preventDefault());
+    viewer.addEventListener('dragstart', (e) => e.preventDefault());
+    let reader = null; // { total, page, show(n) }
+    const closeViewer = () => { viewer.classList.remove('on'); viewer.querySelector('#lib-vbody').innerHTML = ''; reader = null; document.removeEventListener('keydown', onKey); };
+    function onKey(e) {
+      if (!reader) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); reader.show(reader.page + 1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); reader.show(reader.page - 1); }
+      else if (e.key === 'Escape') closeViewer();
+      else if ((e.ctrlKey || e.metaKey) && ['s', 'p'].includes(e.key.toLowerCase())) e.preventDefault();
+    }
     viewer.querySelector('#lib-close').addEventListener('click', closeViewer);
+    viewer.querySelector('#lib-prev').addEventListener('click', () => reader && reader.show(reader.page - 1));
+    viewer.querySelector('#lib-next').addEventListener('click', () => reader && reader.show(reader.page + 1));
+    viewer.querySelector('#lib-go').addEventListener('change', (e) => reader && reader.show(parseInt(e.target.value, 10) || 1));
+
+    // opens one book: fetched through the read-only endpoint, drawn one page at a time
+    async function openBook(it) {
+      viewer.querySelector('#lib-vt').textContent = it.title;
+      const body = viewer.querySelector('#lib-vbody');
+      body.innerHTML = '<p class="lib-wait">Opening the book…</p>';
+      viewer.classList.add('on');
+      document.addEventListener('keydown', onKey);
+      const setNav = (page, total) => {
+        viewer.querySelector('#lib-vpg').textContent = `Page ${page} of ${total}`;
+        viewer.querySelector('#lib-go').value = page; viewer.querySelector('#lib-go').max = total;
+        viewer.querySelector('#lib-total').textContent = total;
+        viewer.querySelector('#lib-prev').disabled = page <= 1; viewer.querySelector('#lib-next').disabled = page >= total;
+      };
+      try {
+        const res = await fetch('/api/library/' + encodeURIComponent(it.id) + '/read', { headers: { Authorization: 'Bearer ' + state.token } });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'The book could not be opened.');
+        const buf = await res.arrayBuffer();
+        if (extOf(it) !== 'pdf') {
+          const url = URL.createObjectURL(new Blob([buf], { type: res.headers.get('content-type') || 'image/jpeg' }));
+          body.innerHTML = `<div class="lib-page"><img alt="${esc(it.title)}" src="${url}" draggable="false"></div>`;
+          reader = { total: 1, page: 1, show() {} }; setNav(1, 1);
+          return;
+        }
+        const pdfjs = await loadPdfJs();
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+        body.innerHTML = '<div class="lib-page"><canvas id="lib-canvas"></canvas></div>';
+        const canvas = body.querySelector('#lib-canvas');
+        let busy = false, want = null;
+        reader = {
+          total: doc.numPages, page: 1,
+          async show(n) {
+            n = Math.min(Math.max(1, n), doc.numPages);
+            if (busy) { want = n; return; }
+            busy = true; reader.page = n; setNav(n, doc.numPages);
+            try {
+              const page = await doc.getPage(n);
+              const base = page.getViewport({ scale: 1 });
+              const room = Math.min(body.clientWidth - 24, 1000);
+              const scale = Math.max(0.4, room / base.width);
+              const vp = page.getViewport({ scale: scale * (window.devicePixelRatio || 1) });
+              canvas.width = vp.width; canvas.height = vp.height;
+              canvas.style.width = Math.floor(vp.width / (window.devicePixelRatio || 1)) + 'px';
+              await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+              body.scrollTop = 0;
+            } finally { busy = false; if (want != null) { const w = want; want = null; if (w !== reader.page) reader.show(w); } }
+          },
+        };
+        await reader.show(1);
+      } catch (err) { body.innerHTML = `<p class="lib-wait">${esc(err.message)}</p>`; }
+    }
 
     view.innerHTML = `
-      <div class="page-head"><h1>📖 e-Library</h1></div>
+      <div class="page-head"><h1>📖 e-Library</h1>${canAdd ? '<button class="btn btn-accent btn-sm" id="lib-add">+ Add a book</button>' : ''}</div>
       <div class="card" style="padding:14px; margin-bottom:12px;">
         <input class="lib-q" id="lib-q" placeholder="Search by title, author or course…">
         <div class="lib-two" style="margin-top:10px;">
@@ -3876,6 +3958,7 @@
           <select id="lib-fcourse"><option value="">All courses</option></select>
         </div>
       </div>
+      <p class="muted" style="font-size:12px; margin:0 0 10px;">Books are read here, page by page. They cannot be downloaded or saved.</p>
       <div id="lib-list"></div>`;
 
     const fcourse = view.querySelector('#lib-fcourse');
@@ -3885,21 +3968,13 @@
       const shown = items.filter((it) => (!filter.type || it.type === filter.type) && (!filter.course || courseLabel(it) === filter.course)
         && (!filter.q || `${it.title} ${it.author || ''} ${courseLabel(it)}`.toLowerCase().includes(filter.q)));
       const list = view.querySelector('#lib-list');
-      if (!shown.length) { list.innerHTML = `<div class="lib-empty">${items.length ? 'Nothing matches that search.' : 'No files yet. Lecturers add textbooks, handouts and past questions here, and they show up as soon as they are added.'}</div>`; return; }
+      if (!shown.length) { list.innerHTML = `<div class="lib-empty">${items.length ? 'Nothing matches that search.' : 'No books yet. Lecturers add textbooks, journals and handouts here, and they show up as soon as they are added.'}</div>`; return; }
       list.innerHTML = shown.map((it) => {
-        const mine = lecturer && it.schoolId && it.uploaderId === state.user.id;
         const meta = [it.type, courseLabel(it) || 'Every course', it.schoolId ? null : 'Learnza library'].filter(Boolean).map(esc).join(' · ');
-        return `<div class="lib-row"><div class="lib-ic">${libIcon(it.fileUrl)}</div><div class="lib-mid"><div class="lib-t">${esc(it.title)}</div><div class="lib-m">${meta}</div><div class="lib-m">${it.author ? 'by ' + esc(it.author) + ' · ' : ''}${it.uploader ? 'added by ' + esc(it.uploader.fullName) + ' · ' : ''}${new Date(it.createdAt).toLocaleDateString()}</div></div>
-          <div class="lib-side"><button class="lib-btn g" data-lib-open="${it.id}">${libInline(it.fileUrl) ? 'Open' : 'Download'}</button>${mine ? `<button class="lib-btn r" data-lib-del="${it.id}">Delete</button>` : ''}</div></div>`;
+        return `<div class="lib-row"><div class="lib-ic">${libIcon('x.' + extOf(it))}</div><div class="lib-mid"><div class="lib-t">${esc(it.title)}</div><div class="lib-m">${meta}</div><div class="lib-m">${it.author ? 'by ' + esc(it.author) + ' · ' : ''}${it.uploader ? 'added by ' + esc(it.uploader.fullName) + ' · ' : ''}${new Date(it.createdAt).toLocaleDateString()}</div></div>
+          <div class="lib-side"><button class="lib-btn g" data-lib-open="${it.id}">Read</button>${it.mine ? `<button class="lib-btn r" data-lib-del="${it.id}">Delete</button>` : ''}</div></div>`;
       }).join('');
-      list.querySelectorAll('[data-lib-open]').forEach((b) => b.addEventListener('click', () => {
-        const it = items.find((x) => x.id === b.dataset.libOpen);
-        if (!libInline(it.fileUrl)) { window.open(it.fileUrl, '_blank', 'noopener'); return; }
-        viewer.querySelector('#lib-vt').textContent = it.title;
-        viewer.querySelector('#lib-vd').href = it.fileUrl;
-        viewer.querySelector('#lib-vbody').innerHTML = /\.pdf(\?|#|$)/i.test(it.fileUrl) ? `<iframe title="${esc(it.title)}" src="${esc(it.fileUrl)}"></iframe>` : `<img alt="${esc(it.title)}" src="${esc(it.fileUrl)}">`;
-        viewer.classList.add('on');
-      }));
+      list.querySelectorAll('[data-lib-open]').forEach((b) => b.addEventListener('click', () => openBook(items.find((x) => x.id === b.dataset.libOpen))));
       list.querySelectorAll('[data-lib-del]').forEach((b) => b.addEventListener('click', async () => {
         const it = items.find((x) => x.id === b.dataset.libDel);
         if (!confirm(`Delete “${it.title}” from the e-Library?`)) return;
@@ -3911,6 +3986,40 @@
     fcourse.addEventListener('change', (e) => { filter.course = e.target.value; paint(); });
     paint();
 
+    const addBtn = view.querySelector('#lib-add');
+    if (addBtn) addBtn.addEventListener('click', async () => {
+      let courses = [];
+      try { courses = state.user.role === 'ADMIN' ? (await api('/admin/courses')).courses : (await ensureLectCourses()).courses; } catch { /* a book needs no course */ }
+      const backdrop = document.createElement('div');
+      backdrop.style.cssText = 'position:fixed; inset:0; background:rgba(20,32,51,0.45); z-index:190;';
+      const box = document.createElement('div');
+      box.className = 'card';
+      box.style.cssText = 'position:fixed; inset:0; margin:auto; width:min(520px,94vw); height:fit-content; max-height:90vh; overflow-y:auto; padding:24px; z-index:200;';
+      box.innerHTML = `<h3 style="margin-bottom:6px;">Add a book to the e-Library</h3>
+        <p class="muted" style="font-size:13px; margin-bottom:12px;">Students read it page by page; they cannot download or save it. Upload it as a PDF (or a photo).</p>
+        <form id="lb-form">
+          <div class="field"><label>Title</label><input id="lb-title" required maxlength="240"></div>
+          <div class="field"><label>Author</label><input id="lb-author" required maxlength="200" value="${state.user.role === 'LECTURER' ? esc(state.user.fullName) : ''}"></div>
+          <div class="field"><label>Publisher or journal (optional)</label><input id="lb-pub" maxlength="200"></div>
+          <div class="field"><label>Type</label><select id="lb-type">${LIB_TYPES.map((t) => `<option>${t}</option>`).join('')}</select></div>
+          <div class="field"><label>Course (optional)</label><select id="lb-course"><option value="">Every course</option>${courses.map((c) => `<option value="${c.id}">${esc(c.code)} — ${esc(c.title)}</option>`).join('')}</select></div>
+          <div class="field"><label>The book (PDF or photo)</label><input type="file" id="lb-file" accept="application/pdf,image/*" required></div>
+          <div style="display:flex; gap:10px;"><button class="btn btn-primary" type="submit">Add to the library</button><button class="btn btn-ghost" type="button" id="lb-cancel">Cancel</button></div>
+        </form>`;
+      document.body.appendChild(backdrop); document.body.appendChild(box);
+      const close = () => { backdrop.remove(); box.remove(); };
+      backdrop.addEventListener('click', close);
+      box.querySelector('#lb-cancel').addEventListener('click', close);
+      box.querySelector('#lb-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.submitter || box.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Uploading…';
+        const fd = new FormData();
+        fd.append('title', box.querySelector('#lb-title').value); fd.append('author', box.querySelector('#lb-author').value);
+        fd.append('publisher', box.querySelector('#lb-pub').value); fd.append('type', box.querySelector('#lb-type').value);
+        fd.append('courseId', box.querySelector('#lb-course').value); fd.append('file', box.querySelector('#lb-file').files[0]);
+        try { await api('/library', { method: 'POST', body: fd }); toast('Added to the e-Library'); close(); render(); } catch (err) { btn.disabled = false; btn.textContent = 'Add to the library'; toast(err.message); }
+      });
+    });
   }
 
   async function renderGroups() {
